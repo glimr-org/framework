@@ -1,0 +1,24 @@
+# glimr_package
+
+[![Package Version](https://img.shields.io/hexpm/v/glimr_package)](https://hex.pm/packages/glimr_package)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/glimr_package/)
+
+```sh
+gleam add glimr_package@1
+```
+```gleam
+import glimr_package
+
+pub fn main() -> Nil {
+  // TODO: An example of the project in use
+}
+```
+
+Further documentation can be found at <https://hexdocs.pm/glimr_package>.
+
+## Development
+
+```sh
+gleam run   # Run the project
+gleam test  # Run the tests
+```
