@@ -38,7 +38,7 @@ For a complete application structure with controllers, middleware, and configura
 
 Glimr is built on top of these excellent Gleam libraries:
 
-- [**Wisp**](https://hexdocs.pm/wisp/) - The web server foundation that powers Glimr's HTTP handling
+- [**Wisp**](https://hexdocs.pm/wisp/) - The web framework that powers Glimr's HTTP handling
 - [**gleam_http**](https://hexdocs.pm/gleam_http/) - HTTP types and utilities
 - [**gleam_json**](https://hexdocs.pm/gleam_json/) - JSON encoding and decoding
 - [**gleam_stdlib**](https://hexdocs.pm/gleam_stdlib/) - Gleam's standard library
