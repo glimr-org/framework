@@ -34,11 +34,17 @@ pub type RouteRequest {
 /// ------------------------------------------------------------
 ///
 /// Groups routes together with a shared middleware group which
-/// determines which global middlewares are applied to all 
-/// routes in the group. 
+/// determines which global middlewares are applied to all
+/// routes in the group. Routes are lazily loaded with a function
+/// to avoid loading unnecessary route modules. The prefix field
+/// is used for efficient route matching.
 ///
 pub type RouteGroup(context) {
-  RouteGroup(middleware_group: MiddlewareGroup, routes: List(Route(context)))
+  RouteGroup(
+    prefix: String,
+    middleware_group: MiddlewareGroup,
+    routes: fn() -> List(Route(context)),
+  )
 }
 
 /// ------------------------------------------------------------
@@ -360,7 +366,7 @@ pub fn group_middleware(
 /// ])
 /// ```
 ///
-pub fn group_path_prefix(
+pub fn prefix_path(
   prefix: String,
   routes: List(List(Route(context))),
 ) -> List(Route(context)) {
@@ -396,7 +402,7 @@ pub fn group_path_prefix(
 /// ])
 /// ```
 ///
-pub fn group_name_prefix(
+pub fn prefix_name(
   name: String,
   routes: List(List(Route(context))),
 ) -> List(Route(context)) {

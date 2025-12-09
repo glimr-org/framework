@@ -60,7 +60,13 @@ pub fn matches_path_root_test() {
 
 pub fn find_matching_route_exact_match_test() {
   let routes = [route.get("/users", helpers.test_handler)]
-  let groups = [route.RouteGroup(middleware_group: kernel.Web, routes: routes)]
+  let groups = [
+    route.RouteGroup(
+      prefix: "",
+      middleware_group: kernel.Web,
+      routes: fn() { routes },
+    ),
+  ]
 
   router.find_matching_route_in_groups(groups, "/users", http.Get)
   |> should.be_ok()
@@ -68,7 +74,13 @@ pub fn find_matching_route_exact_match_test() {
 
 pub fn find_matching_route_with_params_test() {
   let routes = [route.get("/users/{id}", helpers.test_handler)]
-  let groups = [route.RouteGroup(middleware_group: kernel.Web, routes: routes)]
+  let groups = [
+    route.RouteGroup(
+      prefix: "",
+      middleware_group: kernel.Web,
+      routes: fn() { routes },
+    ),
+  ]
 
   let result =
     router.find_matching_route_in_groups(groups, "/users/123", http.Get)
@@ -87,7 +99,13 @@ pub fn find_matching_route_multiple_params_test() {
   let routes = [
     route.get("/users/{user_id}/posts/{post_id}", helpers.test_handler),
   ]
-  let groups = [route.RouteGroup(middleware_group: kernel.Web, routes: routes)]
+  let groups = [
+    route.RouteGroup(
+      prefix: "",
+      middleware_group: kernel.Web,
+      routes: fn() { routes },
+    ),
+  ]
 
   let result =
     router.find_matching_route_in_groups(groups, "/users/42/posts/99", http.Get)
@@ -108,18 +126,30 @@ pub fn find_matching_route_multiple_params_test() {
 
 pub fn find_matching_route_no_match_test() {
   let routes = [route.get("/users", helpers.test_handler)]
-  let groups = [route.RouteGroup(middleware_group: kernel.Web, routes: routes)]
+  let groups = [
+    route.RouteGroup(
+      prefix: "",
+      middleware_group: kernel.Web,
+      routes: fn() { routes },
+    ),
+  ]
 
   router.find_matching_route_in_groups(groups, "/posts", http.Get)
-  |> should.be_error()
+  |> should.equal(Error(router.NoRouteFound))
 }
 
 pub fn find_matching_route_wrong_method_test() {
   let routes = [route.get("/users", helpers.test_handler)]
-  let groups = [route.RouteGroup(middleware_group: kernel.Web, routes: routes)]
+  let groups = [
+    route.RouteGroup(
+      prefix: "",
+      middleware_group: kernel.Web,
+      routes: fn() { routes },
+    ),
+  ]
 
   router.find_matching_route_in_groups(groups, "/users", http.Post)
-  |> should.be_error()
+  |> should.equal(Error(router.MethodNotAllowed))
 }
 
 pub fn find_matching_route_multiple_routes_test() {
@@ -128,7 +158,13 @@ pub fn find_matching_route_multiple_routes_test() {
     route.get("/posts", helpers.test_handler),
     route.post("/users", helpers.test_handler),
   ]
-  let groups = [route.RouteGroup(middleware_group: kernel.Web, routes: routes)]
+  let groups = [
+    route.RouteGroup(
+      prefix: "",
+      middleware_group: kernel.Web,
+      routes: fn() { routes },
+    ),
+  ]
 
   router.find_matching_route_in_groups(groups, "/posts", http.Get)
   |> should.be_ok()
@@ -139,8 +175,16 @@ pub fn find_matching_route_multiple_groups_test() {
   let api_routes = [route.get("/api/users", helpers.test_handler)]
 
   let groups = [
-    route.RouteGroup(middleware_group: kernel.Web, routes: web_routes),
-    route.RouteGroup(middleware_group: kernel.Api, routes: api_routes),
+    route.RouteGroup(
+      prefix: "",
+      middleware_group: kernel.Web,
+      routes: fn() { web_routes },
+    ),
+    route.RouteGroup(
+      prefix: "/api",
+      middleware_group: kernel.Api,
+      routes: fn() { api_routes },
+    ),
   ]
 
   let result =
@@ -160,8 +204,16 @@ pub fn find_matching_route_first_group_wins_test() {
   let api_routes = [route.get("/users", helpers.test_handler)]
 
   let groups = [
-    route.RouteGroup(middleware_group: kernel.Web, routes: web_routes),
-    route.RouteGroup(middleware_group: kernel.Api, routes: api_routes),
+    route.RouteGroup(
+      prefix: "",
+      middleware_group: kernel.Web,
+      routes: fn() { web_routes },
+    ),
+    route.RouteGroup(
+      prefix: "/api",
+      middleware_group: kernel.Api,
+      routes: fn() { api_routes },
+    ),
   ]
 
   let result = router.find_matching_route_in_groups(groups, "/users", http.Get)
@@ -183,7 +235,13 @@ pub fn get_all_routes_single_group_test() {
     route.get("/users", helpers.test_handler),
     route.get("/posts", helpers.test_handler),
   ]
-  let groups = [route.RouteGroup(middleware_group: kernel.Web, routes: routes)]
+  let groups = [
+    route.RouteGroup(
+      prefix: "",
+      middleware_group: kernel.Web,
+      routes: fn() { routes },
+    ),
+  ]
 
   let all_routes = router.get_all_routes(groups)
 
@@ -200,8 +258,16 @@ pub fn get_all_routes_multiple_groups_test() {
   ]
 
   let groups = [
-    route.RouteGroup(middleware_group: kernel.Web, routes: web_routes),
-    route.RouteGroup(middleware_group: kernel.Api, routes: api_routes),
+    route.RouteGroup(
+      prefix: "",
+      middleware_group: kernel.Web,
+      routes: fn() { web_routes },
+    ),
+    route.RouteGroup(
+      prefix: "/api",
+      middleware_group: kernel.Api,
+      routes: fn() { api_routes },
+    ),
   ]
 
   let all_routes = router.get_all_routes(groups)

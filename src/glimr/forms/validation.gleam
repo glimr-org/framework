@@ -12,9 +12,8 @@ import gleam/list
 import gleam/result
 import gleam/string
 import glimr/forms/form
-import glimr/routing/route.{type RouteRequest}
 import simplifile
-import wisp.{type FormData, type Response, type UploadedFile}
+import wisp.{type FormData, type Request, type Response, type UploadedFile}
 
 // ------------------------------------------------------------- Public Types
 
@@ -81,10 +80,10 @@ pub type FileRule {
 ///
 pub fn handle(
   rules: fn(FormData) -> Result(Nil, List(ValidationError)),
-  req: RouteRequest,
+  req: Request,
   on_valid: fn(FormData) -> Response,
 ) -> Response {
-  use form <- wisp.require_form(req.request)
+  use form <- wisp.require_form(req)
 
   case rules(form) {
     Ok(_) -> on_valid(form)

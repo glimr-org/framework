@@ -3,7 +3,7 @@
 //// ------------------------------------------------------------
 ////
 //// Route matching engine that finds and executes matching routes
-//// from registered route groups. Handles URL parameter 
+//// from registered route groups. Handles URL parameter
 //// extraction, middleware application, and route resolution.
 ////
 
@@ -14,6 +14,21 @@ import gleam/string
 import glimr/http/kernel.{type Middleware, type MiddlewareGroup}
 import glimr/routing/route.{type Route, type RouteGroup, type RouteRequest}
 import wisp.{type Response}
+
+// ------------------------------------------------------------- Public Types
+
+/// ------------------------------------------------------------
+/// RouteMatchError Type
+/// ------------------------------------------------------------
+///
+/// Describes why a route match failed. This allows callers to
+/// distinguish between a path not existing (404) versus a path
+/// existing but the HTTP method being wrong (405).
+///
+pub type RouteMatchError {
+  NoRouteFound
+  MethodNotAllowed
+}
 
 // ------------------------------------------------------------- Public Functions
 
@@ -47,23 +62,43 @@ pub fn apply_middleware(
 /// Find Matching Route in Groups
 /// ------------------------------------------------------------
 ///
-/// Searches through route groups to find a route matching the 
-/// given path and HTTP method. Returns the matched route, and 
-/// extracted URL parameters, and the middleware group. Returns 
-/// Error if no match is found.
+/// Searches through route groups to find a route matching the
+/// given path and HTTP method. Returns the matched route,
+/// extracted URL parameters, and the middleware group. Returns
+/// a specific error indicating why the match failed.
 ///
 pub fn find_matching_route_in_groups(
   route_groups: List(RouteGroup(context)),
   path: String,
   method: Method,
-) -> Result(#(Route(context), Dict(String, String), MiddlewareGroup), Nil) {
-  route_groups
-  |> list.find_map(fn(group) {
-    case find_matching_route(group.routes, path, method) {
-      Ok(#(route, params)) -> Ok(#(route, params, group.middleware_group))
-      Error(_) -> Error(Nil)
+) -> Result(
+  #(Route(context), Dict(String, String), MiddlewareGroup),
+  RouteMatchError,
+) {
+  do_find_in_groups(route_groups, path, method, NoRouteFound)
+}
+
+fn do_find_in_groups(
+  route_groups: List(RouteGroup(context)),
+  path: String,
+  method: Method,
+  worst_error: RouteMatchError,
+) -> Result(
+  #(Route(context), Dict(String, String), MiddlewareGroup),
+  RouteMatchError,
+) {
+  case route_groups {
+    [] -> Error(worst_error)
+    [group, ..rest] -> {
+      case find_matching_route(group.routes(), path, method) {
+        Ok(#(route, params)) -> Ok(#(route, params, group.middleware_group))
+        Error(MethodNotAllowed) ->
+          do_find_in_groups(rest, path, method, MethodNotAllowed)
+        Error(NoRouteFound) ->
+          do_find_in_groups(rest, path, method, worst_error)
+      }
     }
-  })
+  }
 }
 
 /// ------------------------------------------------------------
@@ -78,7 +113,7 @@ pub fn get_all_routes(
   route_groups: List(RouteGroup(context)),
 ) -> List(Route(context)) {
   route_groups
-  |> list.flat_map(fn(group) { group.routes })
+  |> list.flat_map(fn(group) { group.routes() })
 }
 
 /// ------------------------------------------------------------
@@ -99,32 +134,47 @@ pub fn matches_path(pattern: String, path: String) -> Bool {
   }
 }
 
-// ------------------------------------------------------------- Private Functions
-
 /// ------------------------------------------------------------
 /// Find Matching Route
 /// ------------------------------------------------------------
 ///
-/// Finds the first route that matches the given path and HTTP 
-/// method. Returns the matched route and extracted parameters, 
-/// or Error if no match is found.
+/// Finds the first route that matches the given path and HTTP
+/// method. Returns the matched route and extracted parameters,
+/// or a specific error indicating why the match failed.
 ///
-fn find_matching_route(
+pub fn find_matching_route(
   routes: List(Route(context)),
   path: String,
   method: Method,
-) -> Result(#(Route(context), Dict(String, String)), Nil) {
-  routes
-  |> list.find_map(fn(route) {
-    case route.method == method && matches_path(route.path, path) {
-      True -> {
-        let params = extract_params(route.path, path)
-        Ok(#(route, params))
+) -> Result(#(Route(context), Dict(String, String)), RouteMatchError) {
+  // First try to find exact match (path + method)
+  case
+    routes
+    |> list.find_map(fn(route) {
+      case route.method == method && matches_path(route.path, path) {
+        True -> {
+          let params = extract_params(route.path, path)
+          Ok(#(route, params))
+        }
+        False -> Error(Nil)
       }
-      False -> Error(Nil)
+    })
+  {
+    Ok(result) -> Ok(result)
+    Error(_) -> {
+      let path_exists =
+        routes
+        |> list.any(fn(route) { matches_path(route.path, path) })
+
+      case path_exists {
+        True -> Error(MethodNotAllowed)
+        False -> Error(NoRouteFound)
+      }
     }
-  })
+  }
 }
+
+// ------------------------------------------------------------- Private Functions
 
 /// ------------------------------------------------------------
 /// Do Match Segments
