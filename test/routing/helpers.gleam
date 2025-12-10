@@ -1,17 +1,9 @@
 import gleam/http
 import gleam/http/request
-import glimr/routing/route
 import wisp
 
 pub type TestContext {
   TestContext(value: String)
-}
-
-pub fn test_handler(
-  _req: route.RouteRequest,
-  _ctx: TestContext,
-) -> wisp.Response {
-  wisp.response(200)
 }
 
 @external(erlang, "erlang", "make_ref")

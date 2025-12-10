@@ -2,13 +2,15 @@
  
 A type-safe web framework for Gleam that brings functional programming elegance and developer productivity to web development.
 
+If you'd like to stay updated on Glimr's development, Follow [@migueljarias](https://x.com/migueljarias) on X (that's me) for updates, behind-the-scenes stuff and overall nonsense.
+
 ## About Glimr
 
 > **Note:** This repository contains the core code of the Glimr framework. If you want to build an application using Glimr, visit the main [Glimr repository](https://github.com/glimr-org/glimr).
 
 ## Features
 
-- **Routing** - Laravel-style routing with route parameter extraction
+- **Type Safe Routing** - Laravel-style routing with type safe parameter extraction and handling
 - **Route Grouping** - Group routes by middleware, path prefix, or name prefix
 - **Middleware System** - Composable middleware at the route and group level
 - **Middleware Groups** - Separate handling for web and API routes with appropriate error responses

@@ -1,175 +1,119 @@
 //// ------------------------------------------------------------
-//// Route Matcher
+//// Router
 //// ------------------------------------------------------------
 ////
-//// Route matching engine that finds and executes matching routes
-//// from registered route groups. Handles URL parameter
-//// extraction, middleware application, and route resolution.
+//// Pattern matching router with prefix-based route groups for
+//// organizing routes with shared middleware. Provides type-safe
+//// parameter extraction and lazy loading of route handlers
+//// based on URL prefix matching.
 ////
 
-import gleam/dict.{type Dict}
 import gleam/http.{type Method}
+import gleam/http/response
 import gleam/list
 import gleam/string
-import glimr/http/kernel.{type Middleware, type MiddlewareGroup}
-import glimr/routing/route.{type Route, type RouteGroup, type RouteRequest}
-import wisp.{type Response}
+import glimr/http/kernel.{type MiddlewareGroup}
+import wisp.{type Request, type Response}
 
 // ------------------------------------------------------------- Public Types
 
 /// ------------------------------------------------------------
-/// RouteMatchError Type
+/// RouteGroup Type
 /// ------------------------------------------------------------
 ///
-/// Describes why a route match failed. This allows callers to
-/// distinguish between a path not existing (404) versus a path
-/// existing but the HTTP method being wrong (405).
+/// Groups routes together with a shared middleware group and
+/// handler function. Routes use pattern matching for type-safe
+/// parameter extraction. The prefix field enables efficient
+/// route matching and lazy loading of route modules.
 ///
-pub type RouteMatchError {
-  NoRouteFound
-  MethodNotAllowed
+pub type RouteGroup(context) {
+  RouteGroup(
+    prefix: String,
+    middleware_group: MiddlewareGroup,
+    routes: fn(List(String), Method, Request, context) -> Response,
+  )
 }
 
 // ------------------------------------------------------------- Public Functions
 
 /// ------------------------------------------------------------
-/// Apply Route Middleware
+/// Handle Request
 /// ------------------------------------------------------------
 ///
-/// Recursively applies middleware to a request in order. The 
-/// first middleware in the list wraps all others, so it has the 
-/// final say on the response. Middleware execute in order 
-/// going in, and reverse order coming out.
+/// Main entry point for routing HTTP requests. Matches the
+/// request path against registered route groups, strips the
+/// prefix, applies middleware, and calls the route handler.
 ///
-pub fn apply_middleware(
-  route_req: RouteRequest,
-  ctx: context,
-  middleware: List(Middleware(context)),
-  handler: fn(RouteRequest, context) -> Response,
+/// Route groups are checked in order. The first matching
+/// prefix wins. Empty prefix ("") acts as a catch-all and
+/// should always be last in your route group list.
+///
+/// Flow for GET /api/users/123:
+/// 1. Parse path into ["api", "users", "123"]
+/// 2. Find group with prefix "/api"
+/// 3. Strip prefix → ["users", "123"]
+/// 4. Apply API middleware group
+/// 5. Call routes(["users", "123"], Get, req, ctx)
+///
+pub fn handle(
+  req: Request,
+  ctx,
+  route_groups: List(RouteGroup(ctx)),
+  kernel_handle: fn(Request, ctx, MiddlewareGroup, fn(Request) -> Response) ->
+    Response,
 ) -> Response {
-  case middleware {
-    [] -> handler(route_req, ctx)
-    [first, ..rest] -> {
-      use req <- first(route_req.request, ctx)
+  // Parse request path into segments
+  // Example: "/api/users/123" → ["api", "users", "123"]
+  let path_segments = wisp.path_segments(req)
+  let method = req.method
 
-      let req = route.RouteRequest(..route_req, request: req)
-      apply_middleware(req, ctx, rest, handler)
-    }
-  }
-}
+  // Find first route group whose prefix matches the path
+  // Empty prefix ("") matches everything, so put it last
+  let matching_group =
+    list.find(route_groups, fn(group) {
+      case group.prefix {
+        // Empty prefix is a catch-all
+        "" -> True
 
-/// ------------------------------------------------------------
-/// Find Matching Route in Groups
-/// ------------------------------------------------------------
-///
-/// Searches through route groups to find a route matching the
-/// given path and HTTP method. Returns the matched route,
-/// extracted URL parameters, and the middleware group. Returns
-/// a specific error indicating why the match failed.
-///
-pub fn find_matching_route_in_groups(
-  route_groups: List(RouteGroup(context)),
-  path: String,
-  method: Method,
-) -> Result(
-  #(Route(context), Dict(String, String), MiddlewareGroup),
-  RouteMatchError,
-) {
-  do_find_in_groups(route_groups, path, method, NoRouteFound)
-}
+        // Check if path starts with prefix segments
+        prefix -> {
+          // Convert "/api" → ["api"]
+          let prefix_segments =
+            string.split(prefix, "/")
+            |> list.filter(fn(segment) { segment != "" })
 
-fn do_find_in_groups(
-  route_groups: List(RouteGroup(context)),
-  path: String,
-  method: Method,
-  worst_error: RouteMatchError,
-) -> Result(
-  #(Route(context), Dict(String, String), MiddlewareGroup),
-  RouteMatchError,
-) {
-  case route_groups {
-    [] -> Error(worst_error)
-    [group, ..rest] -> {
-      case find_matching_route(group.routes(), path, method) {
-        Ok(#(route, params)) -> Ok(#(route, params, group.middleware_group))
-        Error(MethodNotAllowed) ->
-          do_find_in_groups(rest, path, method, MethodNotAllowed)
-        Error(NoRouteFound) ->
-          do_find_in_groups(rest, path, method, worst_error)
-      }
-    }
-  }
-}
-
-/// ------------------------------------------------------------
-/// Get All Routes
-/// ------------------------------------------------------------
-///
-/// Extracts all routes from all route groups into a single flat
-/// list. Useful for debugging, route listing, or determining if
-/// a path exists (for 404 vs 405 status codes).
-///
-pub fn get_all_routes(
-  route_groups: List(RouteGroup(context)),
-) -> List(Route(context)) {
-  route_groups
-  |> list.flat_map(fn(group) { group.routes() })
-}
-
-/// ------------------------------------------------------------
-/// Check Path Match
-/// ------------------------------------------------------------
-///
-/// Tests if a URL path matches a route pattern. This Supports 
-/// dynamic parameters like /users/{id}. Compares segment by 
-/// segment, treating parameters as wildcards that match a value
-///
-pub fn matches_path(pattern: String, path: String) -> Bool {
-  let pattern_segments = string.split(pattern, "/")
-  let path_segments = string.split(path, "/")
-
-  case list.length(pattern_segments) == list.length(path_segments) {
-    False -> False
-    True -> do_match_segments(pattern_segments, path_segments)
-  }
-}
-
-/// ------------------------------------------------------------
-/// Find Matching Route
-/// ------------------------------------------------------------
-///
-/// Finds the first route that matches the given path and HTTP
-/// method. Returns the matched route and extracted parameters,
-/// or a specific error indicating why the match failed.
-///
-pub fn find_matching_route(
-  routes: List(Route(context)),
-  path: String,
-  method: Method,
-) -> Result(#(Route(context), Dict(String, String)), RouteMatchError) {
-  // First try to find exact match (path + method)
-  case
-    routes
-    |> list.find_map(fn(route) {
-      case route.method == method && matches_path(route.path, path) {
-        True -> {
-          let params = extract_params(route.path, path)
-          Ok(#(route, params))
+          // Check if ["api", "users"] starts with ["api"]
+          starts_with(path_segments, prefix_segments)
         }
-        False -> Error(Nil)
       }
     })
-  {
-    Ok(result) -> Ok(result)
-    Error(_) -> {
-      let path_exists =
-        routes
-        |> list.any(fn(route) { matches_path(route.path, path) })
 
-      case path_exists {
-        True -> Error(MethodNotAllowed)
-        False -> Error(NoRouteFound)
+  case matching_group {
+    Ok(group) -> {
+      // Strip prefix from path before passing to handler
+      // Example: "/api" prefix + ["api", "users"] → ["users"]
+      let handler_path = case group.prefix {
+        "" -> path_segments
+
+        prefix -> {
+          let prefix_segments =
+            string.split(prefix, "/")
+            |> list.filter(fn(segment) { segment != "" })
+
+          // Drop prefix segments from path
+          list.drop(path_segments, list.length(prefix_segments))
+        }
       }
+
+      // Apply group middleware then call route handler
+      use req <- kernel_handle(req, ctx, group.middleware_group)
+      group.routes(handler_path, method, req, ctx)
+    }
+
+    // No matching group (should never happen with catch-all)
+    Error(_) -> {
+      use _req <- kernel_handle(req, ctx, kernel.Web)
+      response.Response(404, [], wisp.Text(""))
     }
   }
 }
@@ -177,97 +121,31 @@ pub fn find_matching_route(
 // ------------------------------------------------------------- Private Functions
 
 /// ------------------------------------------------------------
-/// Do Match Segments
+/// Starts With
 /// ------------------------------------------------------------
 ///
-/// Recursively compares path segments, treating parameters 
-/// (in curly braces) as wildcards. Both lists must have the 
-/// same length and all non-parameter segments must match.
+/// Checks if a list starts with a given prefix. Used to match
+/// URL path segments against route group prefixes.
 ///
-fn do_match_segments(
-  pattern_segments: List(String),
-  path_segments: List(String),
-) -> Bool {
-  case pattern_segments, path_segments {
-    [], [] -> True
-    [p, ..rest_p], [s, ..rest_s] -> {
-      let matches = case is_param(p) {
-        True -> True
-        False -> p == s
-      }
-      case matches {
-        True -> do_match_segments(rest_p, rest_s)
+/// Returns True if list begins with all elements in prefix,
+/// False otherwise. Empty prefix always matches.
+///
+fn starts_with(list: List(a), prefix: List(a)) -> Bool {
+  case list, prefix {
+    // Empty prefix always matches
+    _, [] -> True
+
+    // Prefix has items but list is empty
+    [], _ -> False
+
+    // Both have items - check if first items match
+    [h1, ..t1], [h2, ..t2] ->
+      case h1 == h2 {
+        // First items match, check rest recursively
+        True -> starts_with(t1, t2)
+
+        // First items don't match
         False -> False
       }
-    }
-    _, _ -> False
-  }
-}
-
-/// ------------------------------------------------------------
-/// Is Param
-/// ------------------------------------------------------------
-///
-/// Checks if a path segment is a parameter by testing if it's 
-/// wrapped in curly braces like {id} or {user_id}.
-///
-fn is_param(segment: String) -> Bool {
-  string.starts_with(segment, "{") && string.ends_with(segment, "}")
-  // TODO: make this work with {user:id} for example, where user would be
-  // the param name, but behind the scenes we can resolve the user by what comes
-  // after the : (in this case id)
-}
-
-/// ------------------------------------------------------------
-/// Extract Params
-/// ------------------------------------------------------------
-///
-/// Extracts parameter values from a URL path by comparing it 
-/// against the route pattern. Returns a dictionary that maps 
-/// parameter names to their values from the URL.
-///
-fn extract_params(pattern: String, path: String) -> Dict(String, String) {
-  // TODO: if param contains a : use that to extract the correct value
-  // and we can possibly throw an error from here like a 404 for example
-  // if we get {user:id} and the url value is "10" but a user of id 10
-  // does not exist. That way it doesn't have to be handled every time
-  // in the controller method
-
-  let pattern_segments = string.split(pattern, "/")
-  let path_segments = string.split(path, "/")
-
-  do_extract_params(pattern_segments, path_segments, dict.new())
-}
-
-/// ------------------------------------------------------------
-/// Do Extract Params
-/// ------------------------------------------------------------
-///
-/// Recursively extracts parameters by walking through pattern 
-/// and path segments simultaneously. When a parameter segment 
-/// is found (like {id}), extracts the parameter name and stores
-/// the corresponding path value.
-///
-fn do_extract_params(
-  pattern_segments: List(String),
-  path_segments: List(String),
-  params: Dict(String, String),
-) -> Dict(String, String) {
-  case pattern_segments, path_segments {
-    [], [] -> params
-    [p, ..rest_p], [s, ..rest_s] -> {
-      let new_params = case is_param(p) {
-        True -> {
-          let param_name =
-            p
-            |> string.drop_start(1)
-            |> string.drop_end(1)
-          dict.insert(params, param_name, s)
-        }
-        False -> params
-      }
-      do_extract_params(rest_p, rest_s, new_params)
-    }
-    _, _ -> params
   }
 }
