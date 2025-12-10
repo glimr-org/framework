@@ -10,13 +10,15 @@ If you'd like to stay updated on Glimr's development, Follow [@migueljarias](htt
 
 ## Features
 
-- **Type Safe Routing** - Laravel-style routing with type safe parameter extraction and handling
-- **Route Grouping** - Group routes by middleware, path prefix, or name prefix
-- **Middleware System** - Composable middleware at the route and group level
-- **Middleware Groups** - Separate handling for web and API routes with appropriate error responses
-- **Context System** - Type-safe dependency injection throughout your application
+- **Type Safe Routing** - Pattern matching routes with compile-time type safety and automatic 404/405 handling
+- **View Builder** - Fluent API for rendering HTML and Lustre components with layouts
+- **Template Engine** - Simple `{{variable}}` syntax for dynamic content
+- **Redirect Builder** - Clean redirect API with flash message support
+- **Middleware System** - Composable middleware at route and group levels
+- **Middleware Groups** - Pre-configured middleware stacks for different route types (Web, API, Custom)
+- **Lustre Integration** - Server-side rendering of Lustre components
+- **Context/Singleton System** - Type-safe use of singletons throughout your application
 - **Form Validation** - Built-in validation rules for validating form requests
-- **HTML and Lustre** - Return HTML or lustre views
 
 ## Installation
 
