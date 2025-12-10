@@ -118,6 +118,46 @@ pub fn handle(
   }
 }
 
+/// ------------------------------------------------------------
+/// Handle Methods
+/// ------------------------------------------------------------
+///
+/// Helper for matching HTTP methods to handlers within a route.
+/// Returns 405 Method Not Allowed if the method doesn't match
+/// any of the provided handlers. Uses lazy evaluation through
+/// functions to avoid executing all handlers.
+///
+/// This allows grouping handlers by path, separating path
+/// matching from method matching for cleaner route definitions.
+///
+/// ------------------------------------------------------------
+///
+/// *Example:*
+///
+/// ```gleam
+/// pub fn routes(path, method, req, ctx) {
+///   case path {
+///     ["users"] ->
+///       router.match(method, [
+///         #(Get, fn() { user_controller.index(req, ctx) }),
+///         #(Post, fn() { user_controller.create(req, ctx) }),
+///       ])
+///
+///     _ -> wisp.response(404)
+///   }
+/// }
+/// ```
+///
+pub fn match(
+  method: Method,
+  handlers: List(#(Method, fn() -> Response)),
+) -> Response {
+  case list.find(handlers, fn(pair) { pair.0 == method }) {
+    Ok(#(_, handler)) -> handler()
+    Error(_) -> wisp.response(405)
+  }
+}
+
 // ------------------------------------------------------------- Private Functions
 
 /// ------------------------------------------------------------
