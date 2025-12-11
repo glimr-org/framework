@@ -9,7 +9,7 @@
 
 import gleam/bool
 import gleam/json
-import gleam/string
+import glimr/response/view
 import wisp.{type Response}
 
 // ------------------------------------------------------------- Public Functions
@@ -32,36 +32,13 @@ pub fn default_html_responses(handle_request: fn() -> Response) -> Response {
     return: response,
   )
 
-  // TODO: instead of returning default when there is no body
-  // we should have a nice page for responses and use the 
-  // contents of the response in the body if there is any
-
-  case is_empty_response(response) {
-    False -> response
-    True ->
-      case response.status {
-        404 ->
-          "<h1>Not Found</h1>"
-          |> wisp.html_body(response, _)
-
-        405 ->
-          "<h1>Method Not Allowed</h1>"
-          |> wisp.html_body(response, _)
-
-        400 | 422 ->
-          "<h1>Bad Request</h1>"
-          |> wisp.html_body(response, _)
-
-        413 ->
-          "<h1>Request Entity Too Large</h1>"
-          |> wisp.html_body(response, _)
-
-        500 ->
-          "<h1>Internal Server Error</h1>"
-          |> wisp.html_body(response, _)
-
-        _ -> response
-      }
+  case response.status {
+    404 -> view.error_response(404, "Page Not Found")
+    405 -> view.error_response(405, "Method Not Allowed")
+    400 -> view.error_response(400, "Bad Request")
+    413 -> view.error_response(413, "Request Entity Too Large")
+    500 -> view.error_response(500, "Internal Server Error")
+    _ -> response
   }
 }
 
@@ -83,57 +60,32 @@ pub fn default_json_responses(handle_request: fn() -> Response) -> Response {
     return: response,
   )
 
-  // TODO: instead of returning default when there is no body
-  // we should have a nice page for responses and use the 
-  // contents of the response in the body if there is any
+  case response.status {
+    404 ->
+      json.object([#("error", json.string("Not Found"))])
+      |> json.to_string
+      |> wisp.json_body(response, _)
 
-  case is_empty_response(response) {
-    False -> response
-    True ->
-      case response.status {
-        404 ->
-          json.object([#("error", json.string("Not Found"))])
-          |> json.to_string
-          |> wisp.json_body(response, _)
+    405 ->
+      json.object([#("error", json.string("Method Not Allowed"))])
+      |> json.to_string
+      |> wisp.json_body(response, _)
 
-        405 ->
-          json.object([#("error", json.string("Method Not Allowed"))])
-          |> json.to_string
-          |> wisp.json_body(response, _)
+    400 | 422 ->
+      json.object([#("error", json.string("Bad Request"))])
+      |> json.to_string
+      |> wisp.json_body(response, _)
 
-        400 | 422 ->
-          json.object([#("error", json.string("Bad Request"))])
-          |> json.to_string
-          |> wisp.json_body(response, _)
+    413 ->
+      json.object([#("error", json.string("Request Entity Too Large"))])
+      |> json.to_string
+      |> wisp.json_body(response, _)
 
-        413 ->
-          json.object([#("error", json.string("Request Entity Too Large"))])
-          |> json.to_string
-          |> wisp.json_body(response, _)
+    500 ->
+      json.object([#("error", json.string("Internal Server Error"))])
+      |> json.to_string
+      |> wisp.json_body(response, _)
 
-        500 ->
-          json.object([#("error", json.string("Internal Server Error"))])
-          |> json.to_string
-          |> wisp.json_body(response, _)
-
-        _ -> response
-      }
-  }
-}
-
-// ------------------------------------------------------------- Private Functions
-
-/// ------------------------------------------------------------
-/// Response Body is Empty
-/// ------------------------------------------------------------
-///
-/// This Checks if a response body is empty and returns a bool
-/// so that empty responses can fallback to our defaults
-///
-fn is_empty_response(response: Response) -> Bool {
-  case response.body {
-    wisp.Text(content) -> string.is_empty(content)
-    wisp.Bytes(_) -> False
-    wisp.File(_, _, _) -> False
+    _ -> response
   }
 }

@@ -66,24 +66,6 @@ pub fn html_400_test() {
   }
 }
 
-pub fn html_422_test() {
-  let response = wisp.response(422)
-
-  let result = error_handler.default_html_responses(fn() { response })
-
-  result.status
-  |> should.equal(422)
-
-  case result.body {
-    wisp.Text(body) -> {
-      body
-      |> string.contains("Bad Request")
-      |> should.be_true()
-    }
-    _ -> should.fail()
-  }
-}
-
 pub fn html_413_test() {
   let response = wisp.response(413)
 

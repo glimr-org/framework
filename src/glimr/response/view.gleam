@@ -8,6 +8,7 @@
 ////
 
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/string
 import lustre/element.{type Element}
 import simplifile
@@ -33,7 +34,7 @@ pub type View {
 /// Build View
 /// ------------------------------------------------------------
 ///
-/// Creates a new view with empty content, default layout, and
+/// Creates a new view with empty content, empty layout, and
 /// empty template data. Used internally to initialize views.
 ///
 /// ------------------------------------------------------------
@@ -48,7 +49,7 @@ pub type View {
 /// ```
 ///
 pub fn build() -> View {
-  View(content: "", layout: get_default_layout(), data: dict.from_list([]))
+  View(content: "", layout: "", data: dict.from_list([]))
 }
 
 /// ------------------------------------------------------------
@@ -71,8 +72,31 @@ pub fn build() -> View {
 ///
 pub fn html(view: View, file_path: String) -> View {
   let path = strip_leading_slashes(file_path)
-  let assert Ok(content) = simplifile.read("src/resources/views/" <> path)
+  let assert Ok(content) = simplifile.read(views_path() <> path)
 
+  View(..view, content: content)
+}
+
+/// ------------------------------------------------------------
+/// Load Raw HTML Content
+/// ------------------------------------------------------------
+///
+/// Sets the view content directly from a string without reading
+/// from a file. Useful for rendering complete HTML documents
+/// or when the HTML is already loaded in memory.
+///
+/// ------------------------------------------------------------
+///
+/// *Example:*
+///
+/// ```gleam
+/// let html = "<h1>Hello World</h1>"
+/// view.build()
+/// |> view.html_raw(html)
+/// |> view.render()
+/// ```
+///
+pub fn html_raw(view: View, content: String) -> View {
   View(..view, content: content)
 }
 
@@ -121,8 +145,7 @@ pub fn lustre(view: View, content: Element(msg)) -> View {
 ///
 pub fn layout(view: View, layout_path: String) -> View {
   let path = strip_leading_slashes(layout_path)
-  let assert Ok(layout) =
-    simplifile.read("src/resources/views/layouts/" <> path)
+  let assert Ok(layout) = simplifile.read(layouts_path() <> path)
 
   View(..view, layout: layout)
 }
@@ -173,16 +196,107 @@ pub fn data(view: View, data: List(#(String, String))) -> View {
 /// ```
 ///
 pub fn render(view: View) -> Response {
-  let html =
-    view.layout
-    |> string.replace("{{_content_}}", view.content)
+  render_with_status(view, 200)
+}
+
+/// ------------------------------------------------------------
+/// Render View With Status
+/// ------------------------------------------------------------
+///
+/// Converts the view builder into an HTTP response. Replaces
+/// {{_content_}} with the content, substitutes all template
+/// variables, and removes any unused {{variables}}, while also
+/// allowing you to set a custom status code like 404/405
+///
+/// ------------------------------------------------------------
+///
+/// *Example:*
+/// 
+/// ```gleam
+/// view.build()
+/// |> view.html("contact/form.html")
+/// |> view.render()
+/// ```
+///
+pub fn render_with_status(view: View, status: Int) -> Response {
+  let html = case view.layout {
+    "" -> view.content
+    _ -> view.layout |> string.replace("{{_content_}}", view.content)
+  }
 
   let html = replace_variables(view.data, html)
 
-  wisp.html_response(html, 200)
+  wisp.html_response(html, status)
+}
+
+/// ------------------------------------------------------------
+/// Error Response
+/// ------------------------------------------------------------
+///
+/// Generates an error response with the given HTTP status code.
+/// Attempts to load a custom error page from the application's
+/// src/resources/views/errors/{status}.html. If no custom page
+/// exists, falls back to the framework's default error page 
+/// from the framework's priv directory with the error.html 
+/// layout.
+///
+/// This allows applications to override default error pages 
+/// while maintaining consistent fallback behavior.
+///
+/// ------------------------------------------------------------
+///
+/// *Example:*
+///
+/// ```gleam
+/// // Returns 404 response with custom or default error page
+/// view.error_response(404, "Page Not Found")
+///
+/// // Returns 500 response with custom or default error page
+/// view.error_response(500, "Internal Server Error")
+/// ```
+///
+pub fn error_response(status: Int, message: String) -> Response {
+  let custom_error_page =
+    simplifile.read(
+      views_path() <> "errors/" <> int.to_string(status) <> ".html",
+    )
+
+  case custom_error_page {
+    Ok(content) -> {
+      build()
+      |> html_raw(content)
+      |> render_with_status(status)
+    }
+    Error(_) -> {
+      build()
+      |> framework_html("error.html")
+      |> data([
+        #("status", int.to_string(status)),
+        #("message", message),
+      ])
+      |> render_with_status(status)
+    }
+  }
 }
 
 // ------------------------------------------------------------- Private Functions
+
+/// ------------------------------------------------------------
+/// Load Framework HTML File
+/// ------------------------------------------------------------
+///
+/// Creates a view from an HTML file in the framework's priv
+/// directory. Used internally by the framework for error pages
+/// and other built-in views. The file path is relative to
+/// priv/views/ and leading slashes are stripped.
+///
+fn framework_html(view: View, file_path: String) -> View {
+  let path = strip_leading_slashes(file_path)
+  let assert Ok(priv_dir) = wisp.priv_directory("glimr")
+  let assert Ok(content) = simplifile.read(priv_dir <> "/views/" <> path)
+
+  View(..view, content: content)
+}
 
 /// ------------------------------------------------------------
 /// Strip Leading Slashes
@@ -203,13 +317,18 @@ fn strip_leading_slashes(value: String) -> String {
 /// ------------------------------------------------------------
 ///
 /// Replaces all {{key}} patterns in the HTML with their values
-/// from the data dictionary, then strips any unused variables
+/// from the data dictionary. Supports both {{key}} and {{ key }}
+/// syntax (with or without spaces). Strips any unused variables
 /// that weren't provided.
 ///
 fn replace_variables(data: Dict(String, String), html: String) -> String {
   let html =
     dict.fold(data, html, fn(acc, key, value) {
-      string.replace(acc, "{{" <> key <> "}}", value)
+      acc
+      |> string.replace("{{" <> key <> "}}", value)
+      |> string.replace("{{ " <> key <> " }}", value)
+      |> string.replace("{{ " <> key <> "}}", value)
+      |> string.replace("{{" <> key <> " }}", value)
     })
 
   strip_unused_variables(html)
@@ -236,21 +355,24 @@ fn strip_unused_variables(html: String) -> String {
 }
 
 /// ------------------------------------------------------------
-/// Get Default Layout
+/// Views Path
 /// ------------------------------------------------------------
 ///
-/// Loads default layout in src/resources/views/layouts/app.html
-/// Falls back to a minimal HTML template if the file doesn't
-/// exist in your codebase
+/// Returns the base path for application view files. All view
+/// files should be located within this directory or its
+/// subdirectories.
 ///
-fn get_default_layout() -> String {
-  let layout_path = "src/resources/views/layouts/app.html"
+fn views_path() -> String {
+  "src/resources/views/"
+}
 
-  case simplifile.read(layout_path) {
-    Ok(html) -> {
-      html
-    }
-    Error(_) ->
-      "<!DOCTYPE html><html><head><title>{{title}}</title></head><body>{{_content_}}</body></html>"
-  }
+/// ------------------------------------------------------------
+/// Layouts Path
+/// ------------------------------------------------------------
+///
+/// Returns the base path for application layout files. Layout
+/// templates should be stored in this directory.
+///
+fn layouts_path() -> String {
+  "src/resources/views/layouts/"
 }

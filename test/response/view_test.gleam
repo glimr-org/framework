@@ -14,9 +14,7 @@ pub fn build_test() {
   |> dict.to_list()
   |> should.equal([])
 
-  // Layout should have default content
-  v.layout
-  |> should.not_equal("")
+  v.layout |> should.equal("")
 }
 
 pub fn lustre_test() {
