@@ -60,6 +60,26 @@ pub fn has(form: FormData, field: String) -> Bool {
 }
 
 /// ------------------------------------------------------------
+/// Get Uploaded File or Fail
+/// ------------------------------------------------------------
+///
+/// Extracts an uploaded file from the form data by field name.
+/// Returns UploadedFile if found, or panics if not found
+///
+/// ------------------------------------------------------------
+///
+/// *Example:*
+/// 
+/// ```gleam
+/// form.get_file("avatar")
+/// ```
+///
+pub fn get_file(form: FormData, field: String) -> UploadedFile {
+  let assert Ok(file) = list.key_find(form.files, field)
+  file
+}
+
+/// ------------------------------------------------------------
 /// Get Uploaded File
 /// ------------------------------------------------------------
 ///
@@ -78,7 +98,10 @@ pub fn has(form: FormData, field: String) -> Bool {
 /// }
 /// ```
 ///
-pub fn get_file(form: FormData, field: String) -> Result(UploadedFile, Nil) {
+pub fn get_file_result(
+  form: FormData,
+  field: String,
+) -> Result(UploadedFile, Nil) {
   list.key_find(form.files, field)
 }
 
@@ -102,7 +125,7 @@ pub fn get_file(form: FormData, field: String) -> Result(UploadedFile, Nil) {
 /// ```
 ///
 pub fn has_file(form: FormData, field: String) -> Bool {
-  case get_file(form, field) {
+  case get_file_result(form, field) {
     Ok(_) -> True
     Error(_) -> False
   }

@@ -1,7 +1,7 @@
 name = "glimr"
-version = "0.2.1"
+version = "0.2.2"
 
-description = "The Glimr Framework"
+description = "A batteries-included web framework for Gleam"
 licences = ["MIT"]
 repository = { type = "github", user = "glimr-org", repo = "framework" }
 # links = [{ title = "Website", href = "" }]

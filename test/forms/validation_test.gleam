@@ -2,7 +2,7 @@ import gleam/bit_array
 import gleam/list
 import gleam/string
 import gleeunit/should
-import glimr/forms/validation
+import glimr/forms/validator
 import simplifile
 import wisp
 
@@ -10,15 +10,15 @@ pub fn for_required_pass_test() {
   let form_data = wisp.FormData(values: [#("name", "John")], files: [])
 
   form_data
-  |> validation.for("name", [validation.Required])
+  |> validator.for("name", [validator.Required])
   |> should.be_ok()
 }
 
 pub fn for_required_fail_test() {
   let form_data = wisp.FormData(values: [#("name", "")], files: [])
 
-  case form_data |> validation.for("name", [validation.Required]) {
-    Error(validation.ValidationError(name: field_name, messages: msgs)) -> {
+  case form_data |> validator.for("name", [validator.Required]) {
+    Error(validator.ValidationError(name: field_name, messages: msgs)) -> {
       field_name
       |> should.equal("name")
 
@@ -34,15 +34,15 @@ pub fn for_email_pass_test() {
     wisp.FormData(values: [#("email", "test@example.com")], files: [])
 
   form_data
-  |> validation.for("email", [validation.Email])
+  |> validator.for("email", [validator.Email])
   |> should.be_ok()
 }
 
 pub fn for_email_fail_test() {
   let form_data = wisp.FormData(values: [#("email", "invalid")], files: [])
 
-  case form_data |> validation.for("email", [validation.Email]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for("email", [validator.Email]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["email must be a valid email address"])
     }
@@ -54,15 +54,15 @@ pub fn for_min_length_pass_test() {
   let form_data = wisp.FormData(values: [#("name", "John")], files: [])
 
   form_data
-  |> validation.for("name", [validation.MinLength(3)])
+  |> validator.for("name", [validator.MinLength(3)])
   |> should.be_ok()
 }
 
 pub fn for_min_length_fail_test() {
   let form_data = wisp.FormData(values: [#("name", "Jo")], files: [])
 
-  case form_data |> validation.for("name", [validation.MinLength(3)]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for("name", [validator.MinLength(3)]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["name must be at least 3 characters long"])
     }
@@ -74,15 +74,15 @@ pub fn for_max_length_pass_test() {
   let form_data = wisp.FormData(values: [#("name", "John")], files: [])
 
   form_data
-  |> validation.for("name", [validation.MaxLength(10)])
+  |> validator.for("name", [validator.MaxLength(10)])
   |> should.be_ok()
 }
 
 pub fn for_max_length_fail_test() {
   let form_data = wisp.FormData(values: [#("name", "VeryLongName")], files: [])
 
-  case form_data |> validation.for("name", [validation.MaxLength(5)]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for("name", [validator.MaxLength(5)]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["name must be no more than 5 characters long"])
     }
@@ -94,15 +94,15 @@ pub fn for_numeric_pass_test() {
   let form_data = wisp.FormData(values: [#("age", "25")], files: [])
 
   form_data
-  |> validation.for("age", [validation.Numeric])
+  |> validator.for("age", [validator.Numeric])
   |> should.be_ok()
 }
 
 pub fn for_numeric_fail_test() {
   let form_data = wisp.FormData(values: [#("age", "abc")], files: [])
 
-  case form_data |> validation.for("age", [validation.Numeric]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for("age", [validator.Numeric]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["age must be a valid number"])
     }
@@ -114,15 +114,15 @@ pub fn for_min_pass_test() {
   let form_data = wisp.FormData(values: [#("age", "25")], files: [])
 
   form_data
-  |> validation.for("age", [validation.Min(18)])
+  |> validator.for("age", [validator.Min(18)])
   |> should.be_ok()
 }
 
 pub fn for_min_fail_test() {
   let form_data = wisp.FormData(values: [#("age", "16")], files: [])
 
-  case form_data |> validation.for("age", [validation.Min(18)]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for("age", [validator.Min(18)]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["age must be at least 18"])
     }
@@ -134,15 +134,15 @@ pub fn for_max_pass_test() {
   let form_data = wisp.FormData(values: [#("age", "30")], files: [])
 
   form_data
-  |> validation.for("age", [validation.Max(100)])
+  |> validator.for("age", [validator.Max(100)])
   |> should.be_ok()
 }
 
 pub fn for_max_fail_test() {
   let form_data = wisp.FormData(values: [#("age", "150")], files: [])
 
-  case form_data |> validation.for("age", [validation.Max(100)]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for("age", [validator.Max(100)]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["age must be no more than 100"])
     }
@@ -155,15 +155,15 @@ pub fn for_url_pass_test() {
     wisp.FormData(values: [#("website", "https://example.com")], files: [])
 
   form_data
-  |> validation.for("website", [validation.Url])
+  |> validator.for("website", [validator.Url])
   |> should.be_ok()
 }
 
 pub fn for_url_fail_test() {
   let form_data = wisp.FormData(values: [#("website", "not-a-url")], files: [])
 
-  case form_data |> validation.for("website", [validation.Url]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for("website", [validator.Url]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["website must be a valid URL"])
     }
@@ -175,15 +175,15 @@ pub fn for_digits_pass_test() {
   let form_data = wisp.FormData(values: [#("code", "12")], files: [])
 
   form_data
-  |> validation.for("code", [validation.Digits(2)])
+  |> validator.for("code", [validator.Digits(2)])
   |> should.be_ok()
 }
 
 pub fn for_digits_fail_test() {
   let form_data = wisp.FormData(values: [#("code", "123")], files: [])
 
-  case form_data |> validation.for("code", [validation.Digits(2)]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for("code", [validator.Digits(2)]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["code must have exactly 2 digits"])
     }
@@ -195,15 +195,15 @@ pub fn for_min_digits_pass_test() {
   let form_data = wisp.FormData(values: [#("code", "123")], files: [])
 
   form_data
-  |> validation.for("code", [validation.MinDigits(2)])
+  |> validator.for("code", [validator.MinDigits(2)])
   |> should.be_ok()
 }
 
 pub fn for_min_digits_fail_test() {
   let form_data = wisp.FormData(values: [#("code", "1")], files: [])
 
-  case form_data |> validation.for("code", [validation.MinDigits(2)]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for("code", [validator.MinDigits(2)]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["code must have at least 2 digits"])
     }
@@ -215,15 +215,15 @@ pub fn for_max_digits_pass_test() {
   let form_data = wisp.FormData(values: [#("code", "12")], files: [])
 
   form_data
-  |> validation.for("code", [validation.MaxDigits(3)])
+  |> validator.for("code", [validator.MaxDigits(3)])
   |> should.be_ok()
 }
 
 pub fn for_max_digits_fail_test() {
   let form_data = wisp.FormData(values: [#("code", "1234")], files: [])
 
-  case form_data |> validation.for("code", [validation.MaxDigits(3)]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for("code", [validator.MaxDigits(3)]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["code must have no more than 3 digits"])
     }
@@ -236,10 +236,10 @@ pub fn for_multiple_rules_all_pass_test() {
     wisp.FormData(values: [#("email", "test@example.com")], files: [])
 
   form_data
-  |> validation.for("email", [
-    validation.Required,
-    validation.Email,
-    validation.MinLength(5),
+  |> validator.for("email", [
+    validator.Required,
+    validator.Email,
+    validator.MinLength(5),
   ])
   |> should.be_ok()
 }
@@ -249,13 +249,13 @@ pub fn for_multiple_rules_some_fail_test() {
 
   case
     form_data
-    |> validation.for("name", [
-      validation.Required,
-      validation.MinLength(3),
-      validation.MaxLength(10),
+    |> validator.for("name", [
+      validator.Required,
+      validator.MinLength(3),
+      validator.MaxLength(10),
     ])
   {
-    Error(validation.ValidationError(name: field_name, messages: msgs)) -> {
+    Error(validator.ValidationError(name: field_name, messages: msgs)) -> {
       field_name
       |> should.equal("name")
 
@@ -273,10 +273,10 @@ pub fn start_all_pass_test() {
       files: [],
     )
 
-  validation.start([
-    form_data |> validation.for("name", [validation.Required]),
+  validator.start([
+    form_data |> validator.for("name", [validator.Required]),
     form_data
-      |> validation.for("email", [validation.Required, validation.Email]),
+      |> validator.for("email", [validator.Required, validator.Email]),
   ])
   |> should.be_ok()
 }
@@ -286,9 +286,9 @@ pub fn start_some_fail_test() {
     wisp.FormData(values: [#("name", ""), #("email", "invalid")], files: [])
 
   case
-    validation.start([
-      form_data |> validation.for("name", [validation.Required]),
-      form_data |> validation.for("email", [validation.Email]),
+    validator.start([
+      form_data |> validator.for("name", [validator.Required]),
+      form_data |> validator.for("email", [validator.Email]),
     ])
   {
     Error(errors) -> {
@@ -306,7 +306,7 @@ pub fn for_file_required_pass_test() {
   let form_data = wisp.FormData(values: [], files: [#("avatar", uploaded_file)])
 
   form_data
-  |> validation.for_file("avatar", [validation.FileRequired])
+  |> validator.for_file("avatar", [validator.FileRequired])
   |> should.be_ok()
 }
 
@@ -314,8 +314,8 @@ pub fn for_file_required_fail_empty_filename_test() {
   let uploaded_file = wisp.UploadedFile(file_name: "", path: "/tmp/test")
   let form_data = wisp.FormData(values: [], files: [#("avatar", uploaded_file)])
 
-  case form_data |> validation.for_file("avatar", [validation.FileRequired]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for_file("avatar", [validator.FileRequired]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["avatar is required"])
     }
@@ -326,8 +326,8 @@ pub fn for_file_required_fail_empty_filename_test() {
 pub fn for_file_required_fail_missing_test() {
   let form_data = wisp.FormData(values: [], files: [])
 
-  case form_data |> validation.for_file("avatar", [validation.FileRequired]) {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+  case form_data |> validator.for_file("avatar", [validator.FileRequired]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["avatar is required"])
     }
@@ -341,7 +341,7 @@ pub fn for_file_extension_pass_test() {
   let form_data = wisp.FormData(values: [], files: [#("avatar", uploaded_file)])
 
   form_data
-  |> validation.for_file("avatar", [validation.FileExtension(["jpg", "png"])])
+  |> validator.for_file("avatar", [validator.FileExtension(["jpg", "png"])])
   |> should.be_ok()
 }
 
@@ -352,9 +352,9 @@ pub fn for_file_extension_fail_test() {
 
   case
     form_data
-    |> validation.for_file("avatar", [validation.FileExtension(["jpg", "png"])])
+    |> validator.for_file("avatar", [validator.FileExtension(["jpg", "png"])])
   {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal([
         "avatar must have one of the following extensions: jpg, png",
@@ -370,7 +370,7 @@ pub fn for_file_extension_case_insensitive_test() {
   let form_data = wisp.FormData(values: [], files: [#("avatar", uploaded_file)])
 
   form_data
-  |> validation.for_file("avatar", [validation.FileExtension(["jpg", "png"])])
+  |> validator.for_file("avatar", [validator.FileExtension(["jpg", "png"])])
   |> should.be_ok()
 }
 
@@ -384,7 +384,7 @@ pub fn for_file_min_size_pass_test() {
 
   let result =
     form_data
-    |> validation.for_file("file", [validation.FileMinSize(2)])
+    |> validator.for_file("file", [validator.FileMinSize(2)])
 
   let assert Ok(_) = simplifile.delete(test_path)
 
@@ -402,12 +402,12 @@ pub fn for_file_min_size_fail_test() {
 
   let result =
     form_data
-    |> validation.for_file("file", [validation.FileMinSize(10)])
+    |> validator.for_file("file", [validator.FileMinSize(10)])
 
   let assert Ok(_) = simplifile.delete(test_path)
 
   case result {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["file must be at least 10 KB in size"])
     }
@@ -425,7 +425,7 @@ pub fn for_file_max_size_pass_test() {
 
   let result =
     form_data
-    |> validation.for_file("file", [validation.FileMaxSize(10)])
+    |> validator.for_file("file", [validator.FileMaxSize(10)])
 
   let assert Ok(_) = simplifile.delete(test_path)
 
@@ -443,12 +443,12 @@ pub fn for_file_max_size_fail_test() {
 
   let result =
     form_data
-    |> validation.for_file("file", [validation.FileMaxSize(2)])
+    |> validator.for_file("file", [validator.FileMaxSize(2)])
 
   let assert Ok(_) = simplifile.delete(test_path)
 
   case result {
-    Error(validation.ValidationError(messages: msgs, ..)) -> {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal(["file must be no more than 2 KB in size"])
     }

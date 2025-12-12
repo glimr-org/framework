@@ -73,20 +73,65 @@ pub type FileRule {
 /// Handle Form Validation
 /// ------------------------------------------------------------
 ///
-/// Validates form data and executes a callback on success.
-/// Automatically extracts form data from the request, runs
-/// validation rules, and returns a 422 error response on
-/// failure with formatted error messages.
+/// Validates form data, transforms it using an extractor 
+/// function, and executes a callback on success. Automatically 
+/// extracts form data from the request, runs validation rules, 
+/// transforms the validated data to a typed structure, and 
+/// returns a 422 error response on failure with formatted error 
+/// messages.
 ///
-pub fn handle(
-  rules: fn(FormData) -> Result(Nil, List(ValidationError)),
+/// ------------------------------------------------------------
+///
+/// *Example:*
+///
+/// In your request module (e.g., `app/http/requests/contact_store.gleam`):
+///
+/// ```gleam
+/// pub type Data {
+///   Data(name: String, email: String, avatar: UploadedFile)
+/// }
+///
+/// pub fn rules(form) {
+///   validator.start([
+///     form |> validator.for("name", [Required, MinLength(2)]),
+///     form |> validator.for("email", [Required, Email]),
+///   ])
+/// }
+///
+/// pub fn data(form) -> Data {
+///   Data(
+///     name: form.get(form, "name"),
+///     email: form.get(form, "email"),
+///     avatar: form.get_file(form, "avatar"),
+///   )
+/// }
+/// ```
+///
+/// In your controller:
+///
+/// ```gleam
+/// pub fn store(req: Request, ctx: Context) -> Response {
+///   use validated <- validator.run(req, contact_store.rules, contact_store.data)
+///
+///   // validated is now your Data with typed fields!
+///   // validated.name: String
+///   // validated.email: String
+///   // validated.avatar: UploadedFile
+///
+///   redirect.to("/success")
+/// }
+/// ```
+///
+pub fn run(
   req: Request,
-  on_valid: fn(FormData) -> Response,
+  rules: fn(FormData) -> Result(Nil, List(ValidationError)),
+  data: fn(FormData) -> typed_form,
+  on_valid: fn(typed_form) -> Response,
 ) -> Response {
   use form <- wisp.require_form(req)
 
   case rules(form) {
-    Ok(_) -> on_valid(form)
+    Ok(_) -> on_valid(data(form))
     Error(errors) -> {
       let error_html =
         "<h1>Validation Errors:</h1><ul>"
@@ -196,7 +241,7 @@ pub fn for_file(
   field_name: String,
   rules: List(FileRule),
 ) -> Result(Nil, ValidationError) {
-  let file = form |> form.get_file(field_name)
+  let file = form |> form.get_file_result(field_name)
 
   let messages =
     rules

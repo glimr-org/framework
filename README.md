@@ -10,7 +10,7 @@ If you'd like to stay updated on Glimr's development, Follow [@migueljarias](htt
 
 ## Features
 
-- **Type Safe Routing** - Pattern matching routes with compile-time type safety and automatic 404/405 handling
+- **Type Safe Routing** - Pattern matching routes with compile-time type safety
 - **View Builder** - Fluent API for rendering HTML and Lustre components with layouts
 - **Template Engine** - Simple `{{variable}}` syntax for dynamic content
 - **Redirect Builder** - Clean redirect API with flash message support
