@@ -12,15 +12,31 @@ import wisp.{type Request, type Response}
 // ------------------------------------------------------------- Public Types
 
 /// ------------------------------------------------------------
+/// Next Type
+/// ------------------------------------------------------------
+///
+/// A type alias for request handler functions that accept a
+/// request and context, and return a response. This is the
+/// signature used by controllers and the 'next' callback in
+/// middleware.
+///
+/// This type is commonly used when defining middleware, as the
+/// 'next' parameter has this signature.
+///
+pub type Next(context) =
+  fn(Request, context) -> Response
+
+/// ------------------------------------------------------------
 /// Middleware Type
 /// ------------------------------------------------------------
 ///
 /// A function that intercepts requests before they reach the
-/// handler. Can modify the request, execute logic, and modify
-/// the response. Uses the 'next' callback to continue the chain.
+/// handler. Can modify both the request and context, execute
+/// logic, and modify the response. Uses the 'next' callback
+/// to continue the chain with updated request and context.
 ///
 pub type Middleware(context) =
-  fn(Request, context, fn(Request) -> Response) -> Response
+  fn(Request, context, Next(context)) -> Response
 
 /// ------------------------------------------------------------
 /// MiddlewareGroup Type
