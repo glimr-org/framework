@@ -1,4 +1,5 @@
 import gleam/bit_array
+import gleam/int
 import gleam/list
 import gleam/string
 import gleeunit/should
@@ -23,7 +24,7 @@ pub fn for_required_fail_test() {
       |> should.equal("name")
 
       msgs
-      |> should.equal(["name is required"])
+      |> should.equal(["Name is required"])
     }
     Ok(_) -> should.fail()
   }
@@ -44,7 +45,7 @@ pub fn for_email_fail_test() {
   case form_data |> validator.for("email", [validator.Email]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["email must be a valid email address"])
+      |> should.equal(["Email must be a valid email address"])
     }
     Ok(_) -> should.fail()
   }
@@ -64,7 +65,7 @@ pub fn for_min_length_fail_test() {
   case form_data |> validator.for("name", [validator.MinLength(3)]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["name must be at least 3 characters long"])
+      |> should.equal(["Name must be at least 3 characters long"])
     }
     Ok(_) -> should.fail()
   }
@@ -84,7 +85,7 @@ pub fn for_max_length_fail_test() {
   case form_data |> validator.for("name", [validator.MaxLength(5)]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["name must be no more than 5 characters long"])
+      |> should.equal(["Name must be no more than 5 characters long"])
     }
     Ok(_) -> should.fail()
   }
@@ -104,7 +105,7 @@ pub fn for_numeric_fail_test() {
   case form_data |> validator.for("age", [validator.Numeric]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["age must be a valid number"])
+      |> should.equal(["Age must be a valid number"])
     }
     Ok(_) -> should.fail()
   }
@@ -124,7 +125,7 @@ pub fn for_min_fail_test() {
   case form_data |> validator.for("age", [validator.Min(18)]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["age must be at least 18"])
+      |> should.equal(["Age must be at least 18"])
     }
     Ok(_) -> should.fail()
   }
@@ -144,7 +145,7 @@ pub fn for_max_fail_test() {
   case form_data |> validator.for("age", [validator.Max(100)]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["age must be no more than 100"])
+      |> should.equal(["Age must be no more than 100"])
     }
     Ok(_) -> should.fail()
   }
@@ -165,7 +166,7 @@ pub fn for_url_fail_test() {
   case form_data |> validator.for("website", [validator.Url]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["website must be a valid URL"])
+      |> should.equal(["Website must be a valid URL"])
     }
     Ok(_) -> should.fail()
   }
@@ -185,7 +186,7 @@ pub fn for_digits_fail_test() {
   case form_data |> validator.for("code", [validator.Digits(2)]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["code must have exactly 2 digits"])
+      |> should.equal(["Code must have exactly 2 digits"])
     }
     Ok(_) -> should.fail()
   }
@@ -205,7 +206,7 @@ pub fn for_min_digits_fail_test() {
   case form_data |> validator.for("code", [validator.MinDigits(2)]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["code must have at least 2 digits"])
+      |> should.equal(["Code must have at least 2 digits"])
     }
     Ok(_) -> should.fail()
   }
@@ -225,7 +226,7 @@ pub fn for_max_digits_fail_test() {
   case form_data |> validator.for("code", [validator.MaxDigits(3)]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["code must have no more than 3 digits"])
+      |> should.equal(["Code must have no more than 3 digits"])
     }
     Ok(_) -> should.fail()
   }
@@ -260,7 +261,7 @@ pub fn for_multiple_rules_some_fail_test() {
       |> should.equal("name")
 
       msgs
-      |> should.equal(["name must be at least 3 characters long"])
+      |> should.equal(["Name must be at least 3 characters long"])
     }
     Ok(_) -> should.fail()
   }
@@ -317,7 +318,7 @@ pub fn for_file_required_fail_empty_filename_test() {
   case form_data |> validator.for_file("avatar", [validator.FileRequired]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["avatar is required"])
+      |> should.equal(["Avatar is required"])
     }
     Ok(_) -> should.fail()
   }
@@ -329,7 +330,7 @@ pub fn for_file_required_fail_missing_test() {
   case form_data |> validator.for_file("avatar", [validator.FileRequired]) {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["avatar is required"])
+      |> should.equal(["Avatar is required"])
     }
     Ok(_) -> should.fail()
   }
@@ -357,7 +358,7 @@ pub fn for_file_extension_fail_test() {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
       |> should.equal([
-        "avatar must have one of the following extensions: jpg, png",
+        "Avatar must have one of the following extensions: jpg, png",
       ])
     }
     Ok(_) -> should.fail()
@@ -409,7 +410,7 @@ pub fn for_file_min_size_fail_test() {
   case result {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["file must be at least 10 KB in size"])
+      |> should.equal(["File must be at least 10 KB in size"])
     }
     Ok(_) -> should.fail()
   }
@@ -450,8 +451,153 @@ pub fn for_file_max_size_fail_test() {
   case result {
     Error(validator.ValidationError(messages: msgs, ..)) -> {
       msgs
-      |> should.equal(["file must be no more than 2 KB in size"])
+      |> should.equal(["File must be no more than 2 KB in size"])
     }
     Ok(_) -> should.fail()
   }
+}
+
+pub fn for_custom_pass_test() {
+  let form_data = wisp.FormData(values: [#("username", "alice123")], files: [])
+
+  let custom_rule = fn(value: String) -> Result(Nil, String) {
+    case string.contains(value, "alice") {
+      True -> Ok(Nil)
+      False -> Error("must contain 'alice'")
+    }
+  }
+
+  form_data
+  |> validator.for("username", [validator.Custom(custom_rule)])
+  |> should.be_ok()
+}
+
+pub fn for_custom_fail_test() {
+  let form_data = wisp.FormData(values: [#("username", "bob123")], files: [])
+
+  let custom_rule = fn(value: String) -> Result(Nil, String) {
+    case string.contains(value, "alice") {
+      True -> Ok(Nil)
+      False -> Error("must contain 'alice'")
+    }
+  }
+
+  case form_data |> validator.for("username", [validator.Custom(custom_rule)]) {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
+      msgs
+      |> should.equal(["Username must contain 'alice'"])
+    }
+    Ok(_) -> should.fail()
+  }
+}
+
+pub fn for_custom_with_other_rules_test() {
+  let form_data = wisp.FormData(values: [#("password", "Test123")], files: [])
+
+  let has_number = fn(value: String) -> Result(Nil, String) {
+    case
+      string.to_graphemes(value)
+      |> list.any(fn(c) {
+        case int.parse(c) {
+          Ok(_) -> True
+          Error(_) -> False
+        }
+      })
+    {
+      True -> Ok(Nil)
+      False -> Error("must contain at least one number")
+    }
+  }
+
+  form_data
+  |> validator.for("password", [
+    validator.Required,
+    validator.MinLength(6),
+    validator.Custom(has_number),
+  ])
+  |> should.be_ok()
+}
+
+pub fn for_file_custom_pass_test() {
+  let test_path = "/tmp/glimr_test_custom_pass.txt"
+  let content = bit_array.from_string("valid content")
+  let assert Ok(_) = simplifile.write_bits(test_path, content)
+
+  let uploaded_file = wisp.UploadedFile(file_name: "test.txt", path: test_path)
+  let form_data = wisp.FormData(values: [], files: [#("file", uploaded_file)])
+
+  let custom_file_rule = fn(file: wisp.UploadedFile) -> Result(Nil, String) {
+    case string.ends_with(file.file_name, ".txt") {
+      True -> Ok(Nil)
+      False -> Error("must be a text file")
+    }
+  }
+
+  let result =
+    form_data
+    |> validator.for_file("file", [validator.FileCustom(custom_file_rule)])
+
+  let assert Ok(_) = simplifile.delete(test_path)
+
+  result
+  |> should.be_ok()
+}
+
+pub fn for_file_custom_fail_test() {
+  let test_path = "/tmp/glimr_test_custom_fail.jpg"
+  let content = bit_array.from_string("image content")
+  let assert Ok(_) = simplifile.write_bits(test_path, content)
+
+  let uploaded_file = wisp.UploadedFile(file_name: "test.jpg", path: test_path)
+  let form_data = wisp.FormData(values: [], files: [#("file", uploaded_file)])
+
+  let custom_file_rule = fn(file: wisp.UploadedFile) -> Result(Nil, String) {
+    case string.ends_with(file.file_name, ".txt") {
+      True -> Ok(Nil)
+      False -> Error("must be a text file")
+    }
+  }
+
+  let result =
+    form_data
+    |> validator.for_file("file", [validator.FileCustom(custom_file_rule)])
+
+  let assert Ok(_) = simplifile.delete(test_path)
+
+  case result {
+    Error(validator.ValidationError(messages: msgs, ..)) -> {
+      msgs
+      |> should.equal(["File must be a text file"])
+    }
+    Ok(_) -> should.fail()
+  }
+}
+
+pub fn for_file_custom_with_other_rules_test() {
+  let test_path = "/tmp/glimr_test_custom_combined.txt"
+  let content = bit_array.from_string("test content")
+  let assert Ok(_) = simplifile.write_bits(test_path, content)
+
+  let uploaded_file = wisp.UploadedFile(file_name: "test.txt", path: test_path)
+  let form_data = wisp.FormData(values: [], files: [#("file", uploaded_file)])
+
+  let custom_file_rule = fn(file: wisp.UploadedFile) -> Result(Nil, String) {
+    case string.contains(file.file_name, "test") {
+      True -> Ok(Nil)
+      False -> Error("filename must contain 'test'")
+    }
+  }
+
+  let result =
+    form_data
+    |> validator.for_file("file", [
+      validator.FileRequired,
+      validator.FileExtension(["txt", "md"]),
+      validator.FileCustom(custom_file_rule),
+    ])
+
+  let assert Ok(_) = simplifile.delete(test_path)
+
+  result
+  |> should.be_ok()
 }
