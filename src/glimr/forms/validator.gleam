@@ -50,6 +50,7 @@ pub type Rule {
   Digits(Int)
   MinDigits(Int)
   MaxDigits(Int)
+  Custom(CustomValidation)
 }
 
 /// ------------------------------------------------------------
@@ -65,7 +66,32 @@ pub type FileRule {
   FileMinSize(Int)
   FileMaxSize(Int)
   FileExtension(List(String))
+  FileCustom(CustomFileValidation)
 }
+
+// ------------------------------------------------------------- Private Types
+
+/// ------------------------------------------------------------
+/// CustomValidation Type
+/// ------------------------------------------------------------
+///
+/// A function type for custom text field validation. Takes a
+/// string value and returns Ok(Nil) if valid, or Error with
+/// an error message if validation fails.
+///
+type CustomValidation =
+  fn(String) -> Result(Nil, String)
+
+/// ------------------------------------------------------------
+/// CustomFileValidation Type
+/// ------------------------------------------------------------
+///
+/// A function type for custom file upload validation. Takes
+/// an UploadedFile and returns Ok(Nil) if valid, or Error
+/// with an error message if validation fails.
+///
+type CustomFileValidation =
+  fn(UploadedFile) -> Result(Nil, String)
 
 // ------------------------------------------------------------- Public Functions
 
@@ -92,10 +118,11 @@ pub type FileRule {
 /// }
 ///
 /// pub fn rules(form) {
-///   validator.start([
+///   [
 ///     form |> validator.for("name", [Required, MinLength(2)]),
 ///     form |> validator.for("email", [Required, Email]),
-///   ])
+///     form |> validator.for_file("avatar", [RequiredFile, FileMaxSize(5000)]),
+///   ]
 /// }
 ///
 /// pub fn data(form) -> Data {
@@ -124,13 +151,13 @@ pub type FileRule {
 ///
 pub fn run(
   req: Request,
-  rules: fn(FormData) -> Result(Nil, List(ValidationError)),
+  rules: fn(FormData) -> List(Result(a, ValidationError)),
   data: fn(FormData) -> typed_form,
   on_valid: fn(typed_form) -> Response,
 ) -> Response {
   use form <- wisp.require_form(req)
 
-  case rules(form) {
+  case start(rules(form)) {
     Ok(_) -> on_valid(data(form))
     Error(errors) -> {
       let error_html =
@@ -158,18 +185,9 @@ pub fn run(
 /// and returns a combined result. Returns Ok(Nil) if all rules
 /// pass, or Error with all validation errors if any fail.
 ///
-/// ------------------------------------------------------------
-///
-/// *Example:*
-/// 
-/// ```gleam
-/// validation.start([
-///   form |> validation.for("email", [Required, Email]),
-///   form |> validation.for("name", [Required, Min(2)]),
-/// ])
-/// ```
-///
-pub fn start(rules) -> Result(Nil, List(ValidationError)) {
+pub fn start(
+  rules: List(Result(a, ValidationError)),
+) -> Result(Nil, List(ValidationError)) {
   let errors =
     rules
     |> list.filter_map(fn(result) {
@@ -210,7 +228,7 @@ pub fn for(
     |> list.filter_map(fn(rule) {
       case apply_rule(value, rule) {
         Ok(_) -> Error(Nil)
-        Error(message) -> Ok(field_name <> " " <> message)
+        Error(message) -> Ok(format_error_message(field_name, message))
       }
     })
 
@@ -248,7 +266,7 @@ pub fn for_file(
     |> list.filter_map(fn(rule) {
       case apply_file_rule(file, rule) {
         Ok(_) -> Error(Nil)
-        Error(message) -> Ok(field_name <> " " <> message)
+        Error(message) -> Ok(format_error_message(field_name, message))
       }
     })
 
@@ -298,6 +316,7 @@ fn apply_rule(value: String, rule: Rule) -> Result(Nil, String) {
     Digits(count) -> validate_digits(value, count)
     MinDigits(min) -> validate_min_digits(value, min)
     MaxDigits(max) -> validate_max_digits(value, max)
+    Custom(custom_validation) -> validate_custom(custom_validation, value)
   }
 }
 
@@ -507,6 +526,21 @@ fn validate_max_digits(value: String, max: Int) -> Result(Nil, String) {
 }
 
 /// ------------------------------------------------------------
+/// Validate Custom Rule
+/// ------------------------------------------------------------
+///
+/// Applies a custom validation function to a field value.
+/// Returns Ok(Nil) if the custom validation passes, or Error
+/// with the custom error message if validation fails.
+///
+fn validate_custom(
+  custom_validation: CustomValidation,
+  value: String,
+) -> Result(Nil, String) {
+  custom_validation(value)
+}
+
+/// ------------------------------------------------------------
 /// Apply File Rule
 /// ------------------------------------------------------------
 ///
@@ -523,6 +557,8 @@ fn apply_file_rule(
     FileMinSize(min) -> validate_file_min_size(file, min)
     FileMaxSize(max) -> validate_file_max_size(file, max)
     FileExtension(extensions) -> validate_file_extension(file, extensions)
+    FileCustom(custom_validation) ->
+      validate_file_custom(custom_validation, file)
   }
 }
 
@@ -642,4 +678,45 @@ fn validate_file_extension(
       }
     }
   }
+}
+
+/// ------------------------------------------------------------
+/// Validate Custom File Rule
+/// ------------------------------------------------------------
+///
+/// Applies a custom validation function to an uploaded file.
+/// Returns Ok(Nil) if the custom validation passes, or Error
+/// with the custom error message if validation fails. Returns
+/// Ok(Nil) if no file is present.
+///
+fn validate_file_custom(
+  custom_validation: CustomFileValidation,
+  file: Result(UploadedFile, Nil),
+) -> Result(Nil, String) {
+  case file {
+    Error(_) -> Ok(Nil)
+    Ok(uploaded_file) -> custom_validation(uploaded_file)
+  }
+}
+
+/// ------------------------------------------------------------
+/// Format Error Message
+/// ------------------------------------------------------------
+///
+/// Formats a validation error message by normalizing the field
+/// name and combining it with the error message. Converts
+/// underscores and dashes to spaces, capitalizes the result.
+/// For example: "user_name" becomes "User name is required".
+///
+fn format_error_message(field_name: String, message: String) -> String {
+  let normalized_name =
+    field_name
+    |> string.split("_")
+    |> list.intersperse(" ")
+    |> string.concat
+    |> string.split("-")
+    |> list.intersperse(" ")
+    |> string.concat
+
+  string.capitalise(normalized_name) <> " " <> message
 }
