@@ -1,0 +1,8 @@
+import gleam/string
+import wisp.{type UploadedFile}
+
+// https://github.com/glimr-org/glimr?tab=readme-ov-file#custom-file-validation-rules
+
+pub fn run(file: UploadedFile) -> Result(Nil, String) {
+  todo
+}

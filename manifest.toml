@@ -36,3 +36,4 @@ gleeunit = { version = ">= 1.0.0 and < 2.0.0" }
 lustre = { version = ">= 5.4.0 and < 6.0.0" }
 simplifile = { version = ">= 2.3.1 and < 3.0.0" }
 wisp = { version = ">= 2.1.0 and < 3.0.0" }
+gleam_erlang = { version = ">= 1.3.0 and < 2.0.0" }
