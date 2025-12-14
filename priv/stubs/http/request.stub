@@ -1,0 +1,22 @@
+import glimr/forms/form
+import glimr/forms/validator
+import wisp.{type FormData}
+
+// https://github.com/glimr-org/glimr?tab=readme-ov-file#form-validation
+
+pub type Data {
+  // Define the shape of the data returned after validation
+  Data(todo)
+}
+
+pub fn rules(form: FormData) {
+  [
+    // Define your form's validation rules
+    todo
+  ]
+}
+
+pub fn data(form: FormData) -> Data {
+  // Set the form data returned after validation
+  Data(todo)
+}
