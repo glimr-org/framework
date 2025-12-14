@@ -1,0 +1,11 @@
+import app/http/context/ctx.{type Context}
+import glimr/http/kernel.{type Next}
+import wisp.{type Request, type Response}
+
+// https://github.com/glimr-org/glimr?tab=readme-ov-file#middleware
+
+pub fn handle(req: Request, ctx: Context, next: Next(Context)) -> Response {
+  todo
+
+  next(req, ctx)
+}
