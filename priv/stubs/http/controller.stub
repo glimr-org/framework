@@ -1,0 +1,12 @@
+import app/http/context/ctx.{type Context}
+import wisp.{type Request, type Response}
+
+// https://github.com/glimr-org/glimr?tab=readme-ov-file#creating-controllers
+// https://github.com/glimr-org/glimr?tab=readme-ov-file#views--responses
+// https://github.com/glimr-org/glimr?tab=readme-ov-file#redirects
+
+pub fn index(_req: Request, _ctx: Context) -> Response {
+  todo
+}
+
+// show, store, edit, update, delete
