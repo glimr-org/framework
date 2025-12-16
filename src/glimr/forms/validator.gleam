@@ -21,9 +21,9 @@ import wisp.{type FormData, type Request, type Response, type UploadedFile}
 /// ValidationError Type
 /// ------------------------------------------------------------
 ///
-/// Represents a validation error for a specific field, that 
-/// contains the field name and a list of error messages. 
-/// Multiple rules can fail for a single field, generating 
+/// Represents a validation error for a specific field, that
+/// contains the field name and a list of error messages.
+/// Multiple rules can fail for a single field, generating
 /// multiple messages.
 ///
 pub type ValidationError {
@@ -35,10 +35,12 @@ pub type ValidationError {
 /// ------------------------------------------------------------
 ///
 /// Defines validation rules that can be applied to form fields.
-/// Rules include required field checks, format validation, 
-/// length constraints, and numeric range validation.
+/// Rules include required field checks, format validation,
+/// length constraints, and numeric range validation. The type
+/// parameter `ctx` allows custom rules to access application
+/// context for database lookups, configuration, etc.
 ///
-pub type Rule {
+pub type Rule(ctx) {
   Required
   Email
   MinLength(Int)
@@ -50,7 +52,7 @@ pub type Rule {
   Digits(Int)
   MinDigits(Int)
   MaxDigits(Int)
-  Custom(CustomValidation)
+  Custom(CustomValidation(ctx))
 }
 
 /// ------------------------------------------------------------
@@ -60,13 +62,38 @@ pub type Rule {
 /// Defines validation rules that can be applied to file upload
 /// fields. Rules include required file checks, file size
 /// constraints (in KB), and allowed file extension validation.
+/// The type parameter `ctx` allows custom rules to access
+/// application context for database lookups, configuration, etc.
 ///
-pub type FileRule {
+pub type FileRule(ctx) {
   FileRequired
   FileMinSize(Int)
   FileMaxSize(Int)
   FileExtension(List(String))
-  FileCustom(CustomFileValidation)
+  FileCustom(CustomFileValidation(ctx))
+}
+
+/// ------------------------------------------------------------
+/// PendingValidation Type
+/// ------------------------------------------------------------
+///
+/// Represents a validation that has been defined but not yet
+/// executed. Captures the field name, value/file, and rules
+/// to be applied. Validation is deferred until start() is
+/// called with context, allowing rules functions to be defined
+/// without needing access to context.
+///
+pub opaque type PendingValidation(ctx) {
+  PendingFieldValidation(
+    field_name: String,
+    value: String,
+    rules: List(Rule(ctx)),
+  )
+  PendingFileValidation(
+    field_name: String,
+    file: Result(UploadedFile, Nil),
+    rules: List(FileRule(ctx)),
+  )
 }
 
 // ------------------------------------------------------------- Private Types
@@ -76,22 +103,26 @@ pub type FileRule {
 /// ------------------------------------------------------------
 ///
 /// A function type for custom text field validation. Takes a
-/// string value and returns Ok(Nil) if valid, or Error with
-/// an error message if validation fails.
+/// string value and context, returns Ok(Nil) if valid, or
+/// Error with an error message if validation fails. The context
+/// parameter allows access to application state like database
+/// connections, configuration, or user session data.
 ///
-type CustomValidation =
-  fn(String) -> Result(Nil, String)
+type CustomValidation(ctx) =
+  fn(String, ctx) -> Result(Nil, String)
 
 /// ------------------------------------------------------------
 /// CustomFileValidation Type
 /// ------------------------------------------------------------
 ///
 /// A function type for custom file upload validation. Takes
-/// an UploadedFile and returns Ok(Nil) if valid, or Error
-/// with an error message if validation fails.
+/// an UploadedFile and context, returns Ok(Nil) if valid, or
+/// Error with an error message if validation fails. The context
+/// parameter allows access to application state like database
+/// connections, configuration, or user session data.
 ///
-type CustomFileValidation =
-  fn(UploadedFile) -> Result(Nil, String)
+type CustomFileValidation(ctx) =
+  fn(UploadedFile, ctx) -> Result(Nil, String)
 
 // ------------------------------------------------------------- Public Functions
 
@@ -99,11 +130,11 @@ type CustomFileValidation =
 /// Handle Form Validation
 /// ------------------------------------------------------------
 ///
-/// Validates form data, transforms it using an extractor 
-/// function, and executes a callback on success. Automatically 
-/// extracts form data from the request, runs validation rules, 
-/// transforms the validated data to a typed structure, and 
-/// returns a 422 error response on failure with formatted error 
+/// Validates form data, transforms it using an extractor
+/// function, and executes a callback on success. Automatically
+/// extracts form data from the request, runs validation rules,
+/// transforms the validated data to a typed structure, and
+/// returns a 422 error response on failure with formatted error
 /// messages.
 ///
 /// ------------------------------------------------------------
@@ -119,9 +150,9 @@ type CustomFileValidation =
 ///
 /// pub fn rules(form) {
 ///   [
-///     form |> validator.for("name", [Required, MinLength(2)]),
-///     form |> validator.for("email", [Required, Email]),
-///     form |> validator.for_file("avatar", [RequiredFile, FileMaxSize(5000)]),
+///     validator.for(form, "name", [Required, MinLength(2)]),
+///     validator.for(form, "email", [Required, Email]),
+///     validator.for_file(form, "avatar", [RequiredFile, FileMaxSize(5000)]),
 ///   ]
 /// }
 ///
@@ -138,7 +169,7 @@ type CustomFileValidation =
 ///
 /// ```gleam
 /// pub fn store(req: Request, ctx: Context) -> Response {
-///   use validated <- validator.run(req, contact_store.rules, contact_store.data)
+///   use validated <- validator.run(req, ctx, contact_store.rules, contact_store.data)
 ///
 ///   // validated is now your Data with typed fields!
 ///   // validated.name: String
@@ -151,13 +182,14 @@ type CustomFileValidation =
 ///
 pub fn run(
   req: Request,
-  rules: fn(FormData) -> List(Result(a, ValidationError)),
+  ctx: ctx,
+  rules: fn(FormData) -> List(PendingValidation(ctx)),
   data: fn(FormData) -> typed_form,
   on_valid: fn(typed_form) -> Response,
 ) -> Response {
   use form <- wisp.require_form(req)
 
-  case start(rules(form)) {
+  case start(rules(form), ctx) {
     Ok(_) -> on_valid(data(form))
     Error(errors) -> {
       let error_html =
@@ -181,17 +213,18 @@ pub fn run(
 /// Start Validation
 /// ------------------------------------------------------------
 ///
-/// Collects validation results from multiple field validations
+/// Executes all pending validations with the provided context
 /// and returns a combined result. Returns Ok(Nil) if all rules
 /// pass, or Error with all validation errors if any fail.
 ///
 pub fn start(
-  rules: List(Result(a, ValidationError)),
+  pending: List(PendingValidation(ctx)),
+  ctx: ctx,
 ) -> Result(Nil, List(ValidationError)) {
   let errors =
-    rules
-    |> list.filter_map(fn(result) {
-      case result {
+    pending
+    |> list.filter_map(fn(p) {
+      case execute(p, ctx) {
         Ok(_) -> Error(Nil)
         Error(err) -> Ok(err)
       }
@@ -204,76 +237,52 @@ pub fn start(
 /// Validate Field
 /// ------------------------------------------------------------
 ///
-/// Validates a single form field against a list of rules.
-/// Returns Ok(Nil) if all rules pass, or Error with the
-/// validation error containing all failed rule messages.
+/// Creates a pending validation for a form field against a list
+/// of rules. The validation is not executed until start() is
+/// called with context. Returns a PendingValidation that captures
+/// the field name, value, and rules.
 ///
 /// ------------------------------------------------------------
 ///
 /// *Example:*
-/// 
+///
 /// ```gleam
-/// form |> validation.for("email", [Required, Email])
+/// validator.for(form, "email", [Required, Email])
 /// ```
 ///
 pub fn for(
   form: FormData,
   field_name: String,
-  rules: List(Rule),
-) -> Result(Nil, ValidationError) {
+  rules: List(Rule(ctx)),
+) -> PendingValidation(ctx) {
   let value = form |> form.get(field_name)
-
-  let messages =
-    rules
-    |> list.filter_map(fn(rule) {
-      case apply_rule(value, rule) {
-        Ok(_) -> Error(Nil)
-        Error(message) -> Ok(format_error_message(field_name, message))
-      }
-    })
-
-  case messages {
-    [] -> Ok(Nil)
-    msgs -> Error(ValidationError(name: field_name, messages: msgs))
-  }
+  PendingFieldValidation(field_name:, value:, rules:)
 }
 
 /// ------------------------------------------------------------
 /// Validate File Field
 /// ------------------------------------------------------------
 ///
-/// Validates a single file upload field against a list of rules.
-/// Returns Ok(Nil) if all rules pass, or Error with the
-/// validation error containing all failed rule messages.
+/// Creates a pending validation for a file upload field against
+/// a list of rules. The validation is not executed until start()
+/// is called with context. Returns a PendingValidation that
+/// captures the field name, file, and rules.
 ///
 /// ------------------------------------------------------------
 ///
 /// *Example:*
-/// 
+///
 /// ```gleam
-/// form |> validation.for_file("avatar", [FileRequired, FileMaxSize(2048)])
+/// validator.for_file(form, "avatar", [FileRequired, FileMaxSize(2048)])
 /// ```
 ///
 pub fn for_file(
   form: FormData,
   field_name: String,
-  rules: List(FileRule),
-) -> Result(Nil, ValidationError) {
+  rules: List(FileRule(ctx)),
+) -> PendingValidation(ctx) {
   let file = form |> form.get_file_result(field_name)
-
-  let messages =
-    rules
-    |> list.filter_map(fn(rule) {
-      case apply_file_rule(file, rule) {
-        Ok(_) -> Error(Nil)
-        Error(message) -> Ok(format_error_message(field_name, message))
-      }
-    })
-
-  case messages {
-    [] -> Ok(Nil)
-    msgs -> Error(ValidationError(name: field_name, messages: msgs))
-  }
+  PendingFileValidation(field_name:, file:, rules:)
 }
 
 /// ------------------------------------------------------------
@@ -296,14 +305,61 @@ pub fn response(
 // ------------------------------------------------------------- Private Functions
 
 /// ------------------------------------------------------------
+/// Execute Pending Validation
+/// ------------------------------------------------------------
+///
+/// Executes a pending validation with the provided context.
+/// Returns Ok(Nil) if all rules pass, or Error with the
+/// validation error containing all failed rule messages.
+///
+fn execute(
+  pending: PendingValidation(ctx),
+  ctx: ctx,
+) -> Result(Nil, ValidationError) {
+  case pending {
+    PendingFieldValidation(field_name:, value:, rules:) -> {
+      let messages =
+        rules
+        |> list.filter_map(fn(rule) {
+          case apply_rule(value, ctx, rule) {
+            Ok(_) -> Error(Nil)
+            Error(message) -> Ok(format_error_message(field_name, message))
+          }
+        })
+
+      case messages {
+        [] -> Ok(Nil)
+        msgs -> Error(ValidationError(name: field_name, messages: msgs))
+      }
+    }
+    PendingFileValidation(field_name:, file:, rules:) -> {
+      let messages =
+        rules
+        |> list.filter_map(fn(rule) {
+          case apply_file_rule(file, ctx, rule) {
+            Ok(_) -> Error(Nil)
+            Error(message) -> Ok(format_error_message(field_name, message))
+          }
+        })
+
+      case messages {
+        [] -> Ok(Nil)
+        msgs -> Error(ValidationError(name: field_name, messages: msgs))
+      }
+    }
+  }
+}
+
+/// ------------------------------------------------------------
 /// Apply Rule
 /// ------------------------------------------------------------
 ///
 /// Applies a single validation rule to a field value. Returns
 /// Ok(Nil) if the rule passes, or Error with an error message
 /// if validation fails. Used internally by the for function.
+/// Context is passed to custom validation rules.
 ///
-fn apply_rule(value: String, rule: Rule) -> Result(Nil, String) {
+fn apply_rule(value: String, ctx: ctx, rule: Rule(ctx)) -> Result(Nil, String) {
   case rule {
     Required -> validate_required(value)
     Email -> validate_email(value)
@@ -316,7 +372,7 @@ fn apply_rule(value: String, rule: Rule) -> Result(Nil, String) {
     Digits(count) -> validate_digits(value, count)
     MinDigits(min) -> validate_min_digits(value, min)
     MaxDigits(max) -> validate_max_digits(value, max)
-    Custom(custom_validation) -> validate_custom(custom_validation, value)
+    Custom(custom_validation) -> validate_custom(custom_validation, value, ctx)
   }
 }
 
@@ -531,13 +587,15 @@ fn validate_max_digits(value: String, max: Int) -> Result(Nil, String) {
 ///
 /// Applies a custom validation function to a field value.
 /// Returns Ok(Nil) if the custom validation passes, or Error
-/// with the custom error message if validation fails.
+/// with the custom error message if validation fails. Context
+/// is passed to the custom validation function.
 ///
 fn validate_custom(
-  custom_validation: CustomValidation,
+  custom_validation: CustomValidation(ctx),
   value: String,
+  ctx: ctx,
 ) -> Result(Nil, String) {
-  custom_validation(value)
+  custom_validation(value, ctx)
 }
 
 /// ------------------------------------------------------------
@@ -547,10 +605,12 @@ fn validate_custom(
 /// Applies a single validation rule to an uploaded file. Returns
 /// Ok(Nil) if the rule passes, or Error with an error message
 /// if validation fails. Used internally by the for_file function.
+/// Context is passed to custom validation rules.
 ///
 fn apply_file_rule(
   file: Result(UploadedFile, Nil),
-  rule: FileRule,
+  ctx: ctx,
+  rule: FileRule(ctx),
 ) -> Result(Nil, String) {
   case rule {
     FileRequired -> validate_file_required(file)
@@ -558,7 +618,7 @@ fn apply_file_rule(
     FileMaxSize(max) -> validate_file_max_size(file, max)
     FileExtension(extensions) -> validate_file_extension(file, extensions)
     FileCustom(custom_validation) ->
-      validate_file_custom(custom_validation, file)
+      validate_file_custom(custom_validation, file, ctx)
   }
 }
 
@@ -687,15 +747,17 @@ fn validate_file_extension(
 /// Applies a custom validation function to an uploaded file.
 /// Returns Ok(Nil) if the custom validation passes, or Error
 /// with the custom error message if validation fails. Returns
-/// Ok(Nil) if no file is present.
+/// Ok(Nil) if no file is present. Context is passed to the
+/// custom validation function.
 ///
 fn validate_file_custom(
-  custom_validation: CustomFileValidation,
+  custom_validation: CustomFileValidation(ctx),
   file: Result(UploadedFile, Nil),
+  ctx: ctx,
 ) -> Result(Nil, String) {
   case file {
     Error(_) -> Ok(Nil)
-    Ok(uploaded_file) -> custom_validation(uploaded_file)
+    Ok(uploaded_file) -> custom_validation(uploaded_file, ctx)
   }
 }
 
