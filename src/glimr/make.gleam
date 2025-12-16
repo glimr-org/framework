@@ -31,32 +31,35 @@ pub fn main() {
   let args = get_args()
 
   case args {
-    ["controller", name] -> make_controller(name, resource: False)
-    ["controller", name, "--resource"] -> make_controller(name, resource: True)
-    ["middleware", name] -> make_middleware(name)
-    ["request", name] -> make_request(name)
-    ["rule", name] -> make_rule(name, file: False)
-    ["rule", name, "--file"] -> make_rule(name, file: True)
+    ["make:controller", name] -> make_controller(name, resource: False)
+    ["make:controller", name, "--resource"] ->
+      make_controller(name, resource: True)
+    ["make:middleware", name] -> make_middleware(name)
+    ["make:request", name] -> make_request(name)
+    ["make:rule", name] -> make_rule(name, file: False)
+    ["make:rule", name, "--file"] -> make_rule(name, file: True)
     _ -> {
-      io.println("Glimr Make Commands:")
+      io.println("Glimr Framework")
+      io.println("")
+      io.println("Usage: ./glimr <command> [arguments]")
+      io.println("")
+      io.println("Available Commands:")
       io.println("")
       io.println(
-        "  ./glimr make:controller <name>              Create a new controller",
+        "  make:controller <name>              Create a new controller",
       )
       io.println(
-        "  ./glimr make:controller <name> --resource   Create a resource controller",
+        "  make:controller <name> --resource   Create a resource controller",
       )
       io.println(
-        "  ./glimr make:middleware <name>              Create a new middleware",
+        "  make:middleware <name>              Create a new middleware",
+      )
+      io.println("  make:request <name>                 Create a form request")
+      io.println(
+        "  make:rule <name>                    Create a validation rule",
       )
       io.println(
-        "  ./glimr make:request <name>                 Create a form request",
-      )
-      io.println(
-        "  ./glimr make:rule <name>                    Create a validation rule",
-      )
-      io.println(
-        "  ./glimr make:rule <name> --file             Create a file validation rule",
+        "  make:rule <name> --file             Create a file validation rule",
       )
       io.println("")
       io.println("Examples:")

@@ -7,13 +7,15 @@ import glimr/forms/validator
 import simplifile
 import wisp
 
-// Test context - using Nil since built-in rules don't need context
 const ctx = Nil
 
 pub fn for_required_pass_test() {
   let form_data = wisp.FormData(values: [#("name", "John")], files: [])
 
-  validator.start([form_data |> validator.for("name", [validator.Required])], ctx)
+  validator.start(
+    [form_data |> validator.for("name", [validator.Required])],
+    ctx,
+  )
   |> should.be_ok()
 }
 
@@ -119,10 +121,7 @@ pub fn for_max_length_fail_test() {
 pub fn for_numeric_pass_test() {
   let form_data = wisp.FormData(values: [#("age", "25")], files: [])
 
-  validator.start(
-    [form_data |> validator.for("age", [validator.Numeric])],
-    ctx,
-  )
+  validator.start([form_data |> validator.for("age", [validator.Numeric])], ctx)
   |> should.be_ok()
 }
 
@@ -198,10 +197,7 @@ pub fn for_url_pass_test() {
   let form_data =
     wisp.FormData(values: [#("website", "https://example.com")], files: [])
 
-  validator.start(
-    [form_data |> validator.for("website", [validator.Url])],
-    ctx,
-  )
+  validator.start([form_data |> validator.for("website", [validator.Url])], ctx)
   |> should.be_ok()
 }
 
@@ -359,7 +355,7 @@ pub fn start_all_pass_test() {
     [
       form_data |> validator.for("name", [validator.Required]),
       form_data
-      |> validator.for("email", [validator.Required, validator.Email]),
+        |> validator.for("email", [validator.Required, validator.Email]),
     ],
     ctx,
   )
@@ -662,10 +658,10 @@ pub fn for_file_custom_pass_test() {
   let uploaded_file = wisp.UploadedFile(file_name: "test.txt", path: test_path)
   let form_data = wisp.FormData(values: [], files: [#("file", uploaded_file)])
 
-  let custom_file_rule = fn(
-    file: wisp.UploadedFile,
-    _ctx: Nil,
-  ) -> Result(Nil, String) {
+  let custom_file_rule = fn(file: wisp.UploadedFile, _ctx: Nil) -> Result(
+    Nil,
+    String,
+  ) {
     case string.ends_with(file.file_name, ".txt") {
       True -> Ok(Nil)
       False -> Error("must be a text file")
@@ -695,10 +691,10 @@ pub fn for_file_custom_fail_test() {
   let uploaded_file = wisp.UploadedFile(file_name: "test.jpg", path: test_path)
   let form_data = wisp.FormData(values: [], files: [#("file", uploaded_file)])
 
-  let custom_file_rule = fn(
-    file: wisp.UploadedFile,
-    _ctx: Nil,
-  ) -> Result(Nil, String) {
+  let custom_file_rule = fn(file: wisp.UploadedFile, _ctx: Nil) -> Result(
+    Nil,
+    String,
+  ) {
     case string.ends_with(file.file_name, ".txt") {
       True -> Ok(Nil)
       False -> Error("must be a text file")
@@ -733,10 +729,10 @@ pub fn for_file_custom_with_other_rules_test() {
   let uploaded_file = wisp.UploadedFile(file_name: "test.txt", path: test_path)
   let form_data = wisp.FormData(values: [], files: [#("file", uploaded_file)])
 
-  let custom_file_rule = fn(
-    file: wisp.UploadedFile,
-    _ctx: Nil,
-  ) -> Result(Nil, String) {
+  let custom_file_rule = fn(file: wisp.UploadedFile, _ctx: Nil) -> Result(
+    Nil,
+    String,
+  ) {
     case string.contains(file.file_name, "test") {
       True -> Ok(Nil)
       False -> Error("filename must contain 'test'")
