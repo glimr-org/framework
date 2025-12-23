@@ -1,0 +1,7 @@
+-- TODO: Add the columns you'd like to update and update 
+-- the placeholders
+
+UPDATE {{ table_name }}
+SET updated_at = $1
+WHERE id = $2
+RETURNING *

@@ -1,0 +1,4 @@
+-- TODO: Add the columns you'd like selected
+
+SELECT * FROM {{ table_name }}
+WHERE id = $1

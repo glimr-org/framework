@@ -1,0 +1,81 @@
+//// ------------------------------------------------------------
+//// Migration Validation
+//// ------------------------------------------------------------
+////
+//// Validation helpers for schema definitions. Ensures schemas
+//// are valid before generating migrations.
+////
+
+import gleam/list
+import gleam/string
+import glimr/db/gen/schema_parser.{type Table}
+
+// ------------------------------------------------------------- Public Functions
+
+/// ------------------------------------------------------------
+/// Validate No Duplicate Columns
+/// ------------------------------------------------------------
+///
+/// Validate that no table has duplicate column names. Panics
+/// with an error message if duplicates are found.
+///
+pub fn validate_no_duplicate_columns(tables: List(Table)) -> Nil {
+  list.each(tables, fn(table) {
+    let col_names = list.map(table.columns, fn(c) { c.name })
+    let duplicates = find_duplicates(col_names)
+    case duplicates {
+      [] -> Nil
+      dupes -> {
+        let red = "\u{001b}[31m"
+        let reset = "\u{001b}[0m"
+        let error_msg =
+          red
+          <> "Error: Duplicate column names in table '"
+          <> table.name
+          <> "': "
+          <> string.join(dupes, ", ")
+          <> reset
+        panic as error_msg
+      }
+    }
+  })
+}
+
+// ------------------------------------------------------------- Private Functions
+
+/// ------------------------------------------------------------
+/// Find Duplicates
+/// ------------------------------------------------------------
+///
+/// Find duplicate strings in a list.
+///
+fn find_duplicates(items: List(String)) -> List(String) {
+  find_duplicates_helper(items, [], [])
+}
+
+/// ------------------------------------------------------------
+/// Find Duplicates Helper
+/// ------------------------------------------------------------
+///
+/// Recursive helper for find_duplicates.
+///
+fn find_duplicates_helper(
+  items: List(String),
+  seen: List(String),
+  duplicates: List(String),
+) -> List(String) {
+  case items {
+    [] -> duplicates
+    [item, ..rest] -> {
+      case list.contains(seen, item) {
+        True -> {
+          case list.contains(duplicates, item) {
+            True -> find_duplicates_helper(rest, seen, duplicates)
+            False -> find_duplicates_helper(rest, seen, [item, ..duplicates])
+          }
+        }
+        False -> find_duplicates_helper(rest, [item, ..seen], duplicates)
+      }
+    }
+  }
+}

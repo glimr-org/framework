@@ -1,6 +1,7 @@
+import app/http/context/ctx.{type Context}
 import glimr/forms/form
 import glimr/forms/validator
-import wisp.{type FormData}
+import wisp.{type FormData, type Request, type, Response}
 
 // https://github.com/glimr-org/glimr?tab=readme-ov-file#form-validation
 
@@ -19,4 +20,10 @@ pub fn rules(form: FormData) {
 pub fn data(form: FormData) -> Data {
   // Set the form data returned after validation
   Data(todo)
+}
+
+pub fn validate(req: Request, ctx: Context, next: fn(Data) -> Response) {
+  use validated <- validator.run(req, ctx, rules, data)
+
+  next(validated)
 }

@@ -2,7 +2,7 @@
  
 A batteries-included web framework for Gleam that brings functional programming elegance and developer productivity to web development.
 
-If you'd like to stay updated on Glimr's development, Follow [@migueljarias](https://x.com/migueljarias) on X (that's me) for updates, behind-the-scenes stuff and overall nonsense.
+If you'd like to stay updated on Glimr's development, Follow [@migueljarias](https://x.com/migueljarias) on X (that's me) for updates.
 
 ## About Glimr
 
@@ -12,13 +12,16 @@ If you'd like to stay updated on Glimr's development, Follow [@migueljarias](htt
 
 - **Type Safe Routing** - Pattern matching routes with compile-time type safety
 - **View Builder** - Fluent API for rendering HTML and Lustre components with layouts
-- **Template Engine** - Simple `{{variable}}` syntax for dynamic content
+- **Template Engine** - Simple `{{ variable }}` syntax for dynamic content
 - **Redirect Builder** - Clean redirect API with flash message support
 - **Middleware System** - Composable middleware at route and group levels
 - **Middleware Groups** - Pre-configured middleware stacks for different route types (Web, API, Custom)
+- **Form Validation** - Elegant form validation layer to easily validate requests
 - **Lustre Integration** - Server-side rendering of Lustre components
-- **Context/Singleton System** - Type-safe use of singletons throughout your application
-- **Form Validation** - Built-in validation rules for validating form requests
+- **Automatic Migrations** - Schema-based migration generation with snapshot diffing
+- **SQL Queries** - Write raw SQL files with full editor LSP support, compiled to typed Gleam functions
+- **Connection Pooling** - Efficient database connection management for PostgreSQL and SQLite
+- **Transaction Support** - Atomic operations with automatic retry on deadlock
 
 ## Installation
 
@@ -46,6 +49,7 @@ Glimr is built on top of these excellent Gleam libraries:
 - [**gleam_http**](https://hexdocs.pm/gleam_http/) - HTTP types and utilities
 - [**gleam_json**](https://hexdocs.pm/gleam_json/) - JSON encoding and decoding
 - [**gleam_stdlib**](https://hexdocs.pm/gleam_stdlib/) - Gleam's standard library
+- [**gleam_time**](https://github.com/gleam-lang/time) - Work with time in Gleam!
 
 Special thanks to the Gleam community for building such an awesome ecosystem!
 
