@@ -2,6 +2,6 @@
 -- the placeholders
 
 UPDATE {{ table_name }}
-SET updated_at = $1
-WHERE id = $2
+SET updated_at = $2
+WHERE id = $1
 RETURNING *

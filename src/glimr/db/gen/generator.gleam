@@ -3,12 +3,12 @@
 //// ------------------------------------------------------------
 ////
 //// Generates typed Gleam repository modules from parsed schema
-//// definitions and SQL query files. Produces complete, 
+//// definitions and SQL query files. Produces complete,
 //// formatted Gleam code including:
 ////
 //// - Model type definitions matching the schema
 //// - Decoder functions for database rows
-//// - Query functions for each SQL file (with _or variants)
+//// - Query functions for each SQL file (returning Results)
 //// - Row types for queries with custom SELECT columns
 ////
 
@@ -90,8 +90,8 @@ fn generate_imports(table: Table) -> String {
   <> option_import
   <> "\nimport glimr/db/connection.{type Connection, type DbError, NotFound}"
   <> glimr_decode_import
-  <> "\nimport glimr/db/query
-import wisp.{type Response}"
+  <> "\nimport glimr/db/pool.{type Pool}
+import glimr/db/query"
 }
 
 /// ------------------------------------------------------------
@@ -430,10 +430,10 @@ fn generate_row_decoder(
 /// Generate Query Function
 /// ------------------------------------------------------------
 ///
-/// Generates the main query function and its _or variant. The
-/// main function uses callbacks and returns Response, while _or
-/// returns Result. Handles both single-row and list queries
-/// based on function name prefix.
+/// Generates two query functions: the main function accepts a
+/// Pool and auto-manages connections, while the _wc (with
+/// connection) variant accepts a Connection for use in
+/// transactions. Handles both single-row and list queries.
 ///
 fn generate_query_function(
   fn_name: String,
@@ -490,7 +490,7 @@ fn generate_query_function(
       <> "]"
   }
 
-  // Generate param names for passing to inner function (with labels)
+  // Generate param names for passing to _wc function (with labels)
   let param_names = case param_count {
     0 -> ""
     _ ->
@@ -513,12 +513,12 @@ fn generate_query_function(
   let escaped_sql = escape_string(strip_sql_comments(sql))
   let decoder_fn = snake_case(row_type_name) <> "_decoder()"
 
-  // 1. Generate _or - connection-based, returns Result
-  let or_fn = case is_single_row {
+  // Generate _wc (with connection) variant
+  let wc_fn = case is_single_row {
     True ->
       "pub fn "
       <> fn_name
-      <> "_or(conn conn: Connection"
+      <> "_wc(conn conn: Connection"
       <> param_list
       <> ") -> Result("
       <> row_type_name
@@ -538,7 +538,7 @@ fn generate_query_function(
     False ->
       "pub fn "
       <> fn_name
-      <> "_or(conn conn: Connection"
+      <> "_wc(conn conn: Connection"
       <> param_list
       <> ") -> Result(List("
       <> row_type_name
@@ -557,53 +557,61 @@ fn generate_query_function(
       <> "  )\n}"
   }
 
-  // 2. Generate main function - connection-based, callback, returns Response
+  // Generate main function that accepts Pool
   let main_fn = case is_single_row {
     True ->
       "pub fn "
       <> fn_name
-      <> "(conn conn: Connection"
+      <> "(pool pool: Pool"
       <> param_list
-      <> ", handler handler: fn("
+      <> ") -> Result("
       <> row_type_name
-      <> ") -> Response) -> Response {\n"
-      <> "  case "
+      <> ", DbError) {\n"
+      <> "  case pool.checkout(pool) {\n"
+      <> "    Ok(conn) -> {\n"
+      <> "      let result = "
       <> fn_name
-      <> "_or(conn: conn"
+      <> "_wc(conn: conn"
       <> param_names
-      <> ") {\n"
-      <> "    Ok(row) -> handler(row)\n"
-      <> "    Error(NotFound) -> wisp.not_found()\n"
-      <> "    Error(_) -> wisp.internal_server_error()\n"
+      <> ")\n"
+      <> "      pool.release(pool, conn)\n"
+      <> "      result\n"
+      <> "    }\n"
+      <> "    Error(e) -> Error(e)\n"
       <> "  }\n}"
     False ->
       "pub fn "
       <> fn_name
-      <> "(conn conn: Connection"
+      <> "(pool pool: Pool"
       <> param_list
-      <> ", handler handler: fn(List("
+      <> ") -> Result(List("
       <> row_type_name
-      <> ")) -> Response) -> Response {\n"
-      <> "  case "
+      <> "), DbError) {\n"
+      <> "  case pool.checkout(pool) {\n"
+      <> "    Ok(conn) -> {\n"
+      <> "      let result = "
       <> fn_name
-      <> "_or(conn: conn"
+      <> "_wc(conn: conn"
       <> param_names
-      <> ") {\n"
-      <> "    Ok(rows) -> handler(rows)\n"
-      <> "    Error(_) -> wisp.internal_server_error()\n"
+      <> ")\n"
+      <> "      pool.release(pool, conn)\n"
+      <> "      result\n"
+      <> "    }\n"
+      <> "    Error(e) -> Error(e)\n"
       <> "  }\n}"
   }
 
-  string.join([main_fn, or_fn], "\n\n")
+  string.join([main_fn, wc_fn], "\n\n")
 }
 
 /// ------------------------------------------------------------
 /// Generate Execute Function
 /// ------------------------------------------------------------
 ///
-/// Generates an execute-style function for queries without 
-/// SELECT columns (INSERT, UPDATE, DELETE). Returns the 
-/// affected row count instead of decoded rows.
+/// Generates two execute-style functions for queries without
+/// SELECT columns (INSERT, UPDATE, DELETE). The main function
+/// accepts Pool, the _wc variant accepts Connection. Returns
+/// Result with the affected row count.
 ///
 fn generate_execute_function(
   fn_name: String,
@@ -655,7 +663,7 @@ fn generate_execute_function(
       <> "]"
   }
 
-  // Generate param names for passing to inner function (with labels)
+  // Generate param names for passing to _wc function (with labels)
   let param_names = case param_count {
     0 -> ""
     _ ->
@@ -677,11 +685,11 @@ fn generate_execute_function(
   // Strip comments and escape the SQL for Gleam string
   let escaped_sql = escape_string(strip_sql_comments(sql))
 
-  // Generate _or - connection-based, returns Result(Int, DbError) for affected rows
-  let or_fn =
+  // Generate _wc (with connection) variant
+  let wc_fn =
     "pub fn "
     <> fn_name
-    <> "_or(conn conn: Connection"
+    <> "_wc(conn conn: Connection"
     <> param_list
     <> ") -> Result(Int, DbError) {\n"
     <> "  query.execute(conn, \""
@@ -690,23 +698,27 @@ fn generate_execute_function(
     <> param_values
     <> ")\n}"
 
-  // Generate main function - connection-based, callback with affected row count
+  // Generate main function that accepts Pool
   let main_fn =
     "pub fn "
     <> fn_name
-    <> "(conn conn: Connection"
+    <> "(pool pool: Pool"
     <> param_list
-    <> ", handler handler: fn(Int) -> Response) -> Response {\n"
-    <> "  case "
+    <> ") -> Result(Int, DbError) {\n"
+    <> "  case pool.checkout(pool) {\n"
+    <> "    Ok(conn) -> {\n"
+    <> "      let result = "
     <> fn_name
-    <> "_or(conn: conn"
+    <> "_wc(conn: conn"
     <> param_names
-    <> ") {\n"
-    <> "    Ok(count) -> handler(count)\n"
-    <> "    Error(_) -> wisp.internal_server_error()\n"
+    <> ")\n"
+    <> "      pool.release(pool, conn)\n"
+    <> "      result\n"
+    <> "    }\n"
+    <> "    Error(e) -> Error(e)\n"
     <> "  }\n}"
 
-  string.join([main_fn, or_fn], "\n\n")
+  string.join([main_fn, wc_fn], "\n\n")
 }
 
 /// ------------------------------------------------------------

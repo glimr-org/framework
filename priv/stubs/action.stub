@@ -1,10 +1,7 @@
 import app/http/context/ctx.{type Context}
-import wisp.{type Response}
 
 // https://github.com/glimr-org/glimr?tab=readme-ov-file#creating-actions
 
-pub fn run(ctx: Context, next: fn(CreateRow) -> Response) -> Response {
+pub fn run(ctx: Context) -> Result(a, e) {
   todo
-
-  next(submitter)
 }

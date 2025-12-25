@@ -17,14 +17,14 @@ pub fn store(req: Request, ctx: Context) -> Response {
   todo
 }
 
-pub fn edit(id: String, req: Request, ctx: Context) -> Response {
+pub fn edit(req: Request, ctx: Context, id: String) -> Response {
   todo
 }
 
-pub fn update(id: String, req: Request, ctx: Context) -> Response {
+pub fn update(req: Request, ctx: Context, id: String) -> Response {
   todo
 }
 
-pub fn delete(id: String, req: Request, ctx: Context) -> Response {
+pub fn delete(req: Request, ctx: Context, id: String) -> Response {
   todo
 }
