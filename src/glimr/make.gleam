@@ -364,11 +364,11 @@ fn make_rule(name: String, file file: Bool) {
 /// exist.
 ///
 fn make_action(name: String) {
-  let module_name = to_snake_case(name) <> "_action"
-  let file_path = "src/app/http/actions/" <> module_name <> ".gleam"
+  let module_name = to_snake_case(name)
+  let file_path = "src/app/actions/" <> module_name <> ".gleam"
   let stub_name = "action.stub"
 
-  case read_stub("http/" <> stub_name) {
+  case read_stub(stub_name) {
     Ok(content) -> {
       let _ = ensure_directory_exists(file_path)
       case simplifile.write(file_path, content) {

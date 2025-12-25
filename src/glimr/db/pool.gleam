@@ -10,13 +10,13 @@
 import gleam/erlang/process.{type Subject}
 import gleam/list
 import gleam/otp/actor
+import gleam/string
 import glimr/db/connection.{
   type Config, type Connection, type DbError, ConnectionError, PostgresConfig,
   SqliteConfig,
 }
 import pog
 import sqlight
-import wisp.{type Response}
 
 // ------------------------------------------------------------- Public Types
 
@@ -80,7 +80,7 @@ type PoolState {
 /// *Example:*
 ///
 /// ```gleam
-/// let config = connection.sqlite_config("data.db", pool_size: 5)
+/// let config = connection.sqlite_config("data.db", pool_size: 15)
 /// let assert Ok(pool) = pool.start(config)
 /// ```
 ///
@@ -116,10 +116,8 @@ pub fn stop(pool: Pool) -> Nil {
 /// ------------------------------------------------------------
 ///
 /// Borrows a connection from the pool, executes a function,
-/// and returns the connection to the pool. Returns a Response,
-/// making it ideal for use in controller functions.
-///
-/// On pool error, returns `wisp.internal_server_error()`.
+/// and returns the connection to the pool. Can be used
+/// in controllers, actions, etc.
 ///
 /// ------------------------------------------------------------
 ///
@@ -133,16 +131,14 @@ pub fn stop(pool: Pool) -> Nil {
 /// }
 /// ```
 ///
-pub fn get_connection(
-  pool: Pool,
-  handler: fn(Connection) -> Response,
-) -> Response {
+pub fn get_connection(pool: Pool, next: fn(Connection) -> next) -> next {
   case checkout(pool) {
-    Error(_) -> wisp.internal_server_error()
+    Error(e) -> panic as { "Connection pool failure: " <> string.inspect(e) }
     Ok(conn) -> {
-      let response = handler(conn)
+      let next = next(conn)
       release(pool, conn)
-      response
+
+      next
     }
   }
 }
@@ -154,7 +150,7 @@ pub fn get_connection(
 /// Borrows a connection from the pool, executes a function,
 /// and returns the connection to the pool. Returns a Result,
 /// useful for operations that need error handling like
-/// transactions.
+/// console commands that may need a connection.
 ///
 /// ------------------------------------------------------------
 ///

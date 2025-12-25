@@ -28,7 +28,7 @@ import glimr/db/query
 /// 
 pub fn load_config() -> connection.Config {
   let assert Ok(driver) = env.get_string("DB_DRIVER")
-  let pool_size = env.get_int("DB_POOL_SIZE") |> result.unwrap(5)
+  let pool_size = env.get_int("DB_POOL_SIZE") |> result.unwrap(15)
 
   case driver {
     "postgres" -> {
