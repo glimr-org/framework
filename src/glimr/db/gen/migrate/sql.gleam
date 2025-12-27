@@ -103,13 +103,131 @@ pub fn compute_diff(
 }
 
 /// ------------------------------------------------------------
+/// Sort Changes By Dependency
+/// ------------------------------------------------------------
+///
+/// Topologically sort CreateTable changes so tables are created
+/// after their foreign key dependencies. Other changes are
+/// preserved in their original order at the end.
+///
+fn sort_changes_by_dependency(changes: List(Change)) -> List(Change) {
+  // Separate CreateTable from other changes
+  let #(create_tables, other_changes) =
+    list.partition(changes, fn(c) {
+      case c {
+        CreateTable(_) -> True
+        _ -> False
+      }
+    })
+
+  // Extract tables from CreateTable changes
+  let tables =
+    list.filter_map(create_tables, fn(c) {
+      case c {
+        CreateTable(t) -> Ok(t)
+        _ -> Error(Nil)
+      }
+    })
+
+  // Get all table names being created
+  let table_names = list.map(tables, fn(t) { t.name })
+
+  // Sort tables by dependencies (topological sort)
+  let sorted_tables = topological_sort(tables, table_names)
+
+  // Convert back to CreateTable changes
+  let sorted_creates = list.map(sorted_tables, CreateTable)
+
+  // CreateTables first (in dependency order), then other changes
+  list.append(sorted_creates, other_changes)
+}
+
+/// ------------------------------------------------------------
+/// Topological Sort
+/// ------------------------------------------------------------
+///
+/// Sort tables so that tables with foreign key dependencies
+/// come after the tables they reference. Uses Kahn's algorithm.
+///
+fn topological_sort(tables: List(Table), all_names: List(String)) -> List(Table) {
+  // Get dependencies for each table (only count deps on tables being created)
+  let get_deps = fn(table: Table) -> List(String) {
+    table.columns
+    |> list.filter_map(fn(col) {
+      case col.column_type {
+        schema_parser.Foreign(ref) -> {
+          // Extract table name from "table(id)" format
+          let ref_table =
+            string.split(ref, "(")
+            |> list.first
+            |> option.from_result
+            |> option.unwrap("")
+          case list.contains(all_names, ref_table) {
+            True -> Ok(ref_table)
+            False -> Error(Nil)
+          }
+        }
+        _ -> Error(Nil)
+      }
+    })
+  }
+
+  // Kahn's algorithm
+  do_topological_sort(tables, get_deps, [])
+}
+
+/// ------------------------------------------------------------
+/// Do Topological Sort
+/// ------------------------------------------------------------
+///
+/// Recursive helper for topological sort using Kahn's algorithm.
+/// Each iteration finds tables whose dependencies are already 
+/// in the sorted list, adds them, and recurses with the 
+/// remainder. If no tables are ready (circular dependency), 
+/// returns remaining tables in original order to avoid infinite 
+/// recursion.
+///
+fn do_topological_sort(
+  remaining: List(Table),
+  get_deps: fn(Table) -> List(String),
+  sorted: List(Table),
+) -> List(Table) {
+  case remaining {
+    [] -> list.reverse(sorted)
+    _ -> {
+      // Find tables whose dependencies are all already sorted
+      let sorted_names = list.map(sorted, fn(t) { t.name })
+
+      let #(ready, not_ready) =
+        list.partition(remaining, fn(table) {
+          let deps = get_deps(table)
+          list.all(deps, fn(dep) { list.contains(sorted_names, dep) })
+        })
+
+      case ready {
+        [] -> {
+          // Circular dependency or bug - just return remaining in original order
+          list.append(list.reverse(sorted), remaining)
+        }
+        _ -> {
+          do_topological_sort(not_ready, get_deps, list.append(ready, sorted))
+        }
+      }
+    }
+  }
+}
+
+/// ------------------------------------------------------------
 /// Generate SQL
 /// ------------------------------------------------------------
 ///
-/// Generate SQL for all changes in a diff.
+/// Generate SQL for all changes in a diff. CreateTable changes
+/// are sorted by dependency order so tables referencing other
+/// tables are created after their dependencies.
 ///
 pub fn generate_sql(diff: SchemaDiff, driver: Driver) -> String {
   diff.changes
+  |> sort_changes_by_dependency
   |> list.map(fn(change) { change_to_sql(change, driver) })
   |> string.join("\n\n")
 }

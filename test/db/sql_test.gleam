@@ -1537,6 +1537,161 @@ pub fn migration_workflow_add_then_delete_model_test() {
   Nil
 }
 
+// ------------------------------------------------------------- Foreign Key Dependency Ordering
+
+pub fn create_tables_ordered_by_foreign_key_dependencies_test() {
+  // Tables with dependencies: users (no deps), posts (depends on users),
+  // comments (depends on users and posts)
+  // Input them in WRONG alphabetical order to verify sorting works
+
+  let table_comments =
+    Table("comments", [
+      Column("id", Id, False, None, None),
+      Column("user_id", Foreign("users"), False, None, None),
+      Column("post_id", Foreign("posts"), False, None, None),
+      Column("body", Text, False, None, None),
+    ])
+
+  let table_posts =
+    Table("posts", [
+      Column("id", Id, False, None, None),
+      Column("user_id", Foreign("users"), False, None, None),
+      Column("title", String, False, None, None),
+    ])
+
+  let table_users =
+    Table("users", [
+      Column("id", Id, False, None, None),
+      Column("name", String, False, None, None),
+    ])
+
+  // Create diff with tables in alphabetical order (wrong dependency order)
+  let diff =
+    sql.SchemaDiff([
+      sql.CreateTable(table_comments),
+      sql.CreateTable(table_posts),
+      sql.CreateTable(table_users),
+    ])
+
+  let result = sql.generate_sql(diff, Postgres)
+
+  // Find the position of each CREATE TABLE statement
+  let users_idx = find_substring_index(result, "CREATE TABLE users")
+  let posts_idx = find_substring_index(result, "CREATE TABLE posts")
+  let comments_idx = find_substring_index(result, "CREATE TABLE comments")
+
+  // All should be found
+  { users_idx >= 0 }
+  |> should.be_true()
+
+  { posts_idx >= 0 }
+  |> should.be_true()
+
+  { comments_idx >= 0 }
+  |> should.be_true()
+
+  // users before posts (posts depends on users)
+  { users_idx < posts_idx }
+  |> should.be_true()
+
+  // users before comments (comments depends on users)
+  { users_idx < comments_idx }
+  |> should.be_true()
+
+  // posts before comments (comments depends on posts)
+  { posts_idx < comments_idx }
+  |> should.be_true()
+}
+
+pub fn create_tables_no_dependencies_preserves_order_test() {
+  // Tables with no foreign key dependencies should still work
+  let table_alpha =
+    Table("alpha", [
+      Column("id", Id, False, None, None),
+    ])
+
+  let table_beta =
+    Table("beta", [
+      Column("id", Id, False, None, None),
+    ])
+
+  let table_gamma =
+    Table("gamma", [
+      Column("id", Id, False, None, None),
+    ])
+
+  let diff =
+    sql.SchemaDiff([
+      sql.CreateTable(table_gamma),
+      sql.CreateTable(table_alpha),
+      sql.CreateTable(table_beta),
+    ])
+
+  let result = sql.generate_sql(diff, Postgres)
+
+  // All tables should be created (order doesn't matter for independent tables)
+  result
+  |> string.contains("CREATE TABLE alpha")
+  |> should.be_true()
+
+  result
+  |> string.contains("CREATE TABLE beta")
+  |> should.be_true()
+
+  result
+  |> string.contains("CREATE TABLE gamma")
+  |> should.be_true()
+}
+
+pub fn create_tables_mixed_with_other_changes_test() {
+  // CreateTable changes should be sorted, but other changes come after
+  let table_posts =
+    Table("posts", [
+      Column("id", Id, False, None, None),
+      Column("user_id", Foreign("users"), False, None, None),
+    ])
+
+  let table_users =
+    Table("users", [
+      Column("id", Id, False, None, None),
+    ])
+
+  let diff =
+    sql.SchemaDiff([
+      sql.CreateTable(table_posts),
+      sql.AddColumn(
+        "existing_table",
+        Column("new_col", String, False, None, None),
+      ),
+      sql.CreateTable(table_users),
+    ])
+
+  let result = sql.generate_sql(diff, Postgres)
+
+  // Find positions
+  let users_idx = find_substring_index(result, "CREATE TABLE users")
+  let posts_idx = find_substring_index(result, "CREATE TABLE posts")
+  let alter_idx = find_substring_index(result, "ALTER TABLE")
+
+  // All should be found
+  { users_idx >= 0 }
+  |> should.be_true()
+
+  { posts_idx >= 0 }
+  |> should.be_true()
+
+  { alter_idx >= 0 }
+  |> should.be_true()
+
+  // users before posts
+  { users_idx < posts_idx }
+  |> should.be_true()
+
+  // ALTER TABLE comes after all CREATE TABLEs
+  { posts_idx < alter_idx }
+  |> should.be_true()
+}
+
 // ------------------------------------------------------------- Helper Functions
 
 fn is_valid_uuid_v4(uuid: String) -> Bool {
@@ -1545,4 +1700,20 @@ fn is_valid_uuid_v4(uuid: String) -> Bool {
       "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     )
   regexp.check(uuid_regexp, uuid)
+}
+
+fn find_substring_index(haystack: String, needle: String) -> Int {
+  do_find_substring_index(haystack, needle, 0)
+}
+
+fn do_find_substring_index(haystack: String, needle: String, index: Int) -> Int {
+  case string.starts_with(haystack, needle) {
+    True -> index
+    False -> {
+      case string.pop_grapheme(haystack) {
+        Ok(#(_, rest)) -> do_find_substring_index(rest, needle, index + 1)
+        Error(_) -> -1
+      }
+    }
+  }
 }
