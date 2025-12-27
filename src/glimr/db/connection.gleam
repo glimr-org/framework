@@ -8,6 +8,7 @@
 //// changes.
 ////
 
+import gleam/dynamic.{type Dynamic}
 import gleam/int
 import gleam/option.{type Option}
 import gleam/result
@@ -49,7 +50,7 @@ pub type Config {
 ///
 pub opaque type Connection {
   PostgresConnection(inner: pog.Connection)
-  SqliteConnection(inner: sqlight.Connection)
+  SqliteConnection(inner: sqlight.Connection, pool_ref: Dynamic)
 }
 
 /// ------------------------------------------------------------
@@ -158,7 +159,7 @@ pub fn sqlite_config(path: String, pool_size pool_size: Int) -> Config {
 pub fn driver(conn: Connection) -> Driver {
   case conn {
     PostgresConnection(_) -> Postgres
-    SqliteConnection(_) -> Sqlite
+    SqliteConnection(_, _) -> Sqlite
   }
 }
 
@@ -176,24 +177,25 @@ pub fn from_pog(conn: pog.Connection) -> Connection {
 /// Wrap SQLite Connection
 /// ------------------------------------------------------------
 ///
-/// Wraps a raw sqlight connection for use with the glimr db 
-/// module.
+/// Wraps a sqlight connection with its pool reference for use
+/// with the glimr db module. The pool_ref is needed for proper
+/// checkin when releasing the connection.
 ///
-pub fn from_sqlight(conn: sqlight.Connection) -> Connection {
-  SqliteConnection(conn)
+pub fn from_sqlight(conn: sqlight.Connection, pool_ref: Dynamic) -> Connection {
+  SqliteConnection(conn, pool_ref)
 }
 
 /// ------------------------------------------------------------
 /// Get Raw Postgres Connection
 /// ------------------------------------------------------------
 ///
-/// Extracts the underlying pog connection. Panics if not 
+/// Extracts the underlying pog connection. Panics if not
 /// Postgres.
 ///
 pub fn to_pog(conn: Connection) -> pog.Connection {
   case conn {
     PostgresConnection(inner) -> inner
-    SqliteConnection(_) -> panic as "Cannot convert SQLite connection to pog"
+    SqliteConnection(_, _) -> panic as "Cannot convert SQLite connection to pog"
   }
 }
 
@@ -201,14 +203,28 @@ pub fn to_pog(conn: Connection) -> pog.Connection {
 /// Get Raw SQLite Connection
 /// ------------------------------------------------------------
 ///
-/// Extracts the underlying sqlight connection. Panics if not 
+/// Extracts the underlying sqlight connection. Panics if not
 /// SQLite.
 ///
 pub fn to_sqlight(conn: Connection) -> sqlight.Connection {
   case conn {
-    SqliteConnection(inner) -> inner
+    SqliteConnection(inner, _) -> inner
     PostgresConnection(_) ->
       panic as "Cannot convert Postgres connection to sqlight"
+  }
+}
+
+/// ------------------------------------------------------------
+/// Get Pool Reference
+/// ------------------------------------------------------------
+///
+/// Extracts the pool reference from a SQLite connection.
+/// Returns Error for Postgres connections.
+///
+pub fn get_pool_ref(conn: Connection) -> Result(Dynamic, Nil) {
+  case conn {
+    SqliteConnection(_, pool_ref) -> Ok(pool_ref)
+    PostgresConnection(_) -> Error(Nil)
   }
 }
 

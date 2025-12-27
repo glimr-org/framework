@@ -3,12 +3,13 @@
 //// ------------------------------------------------------------
 ////
 //// Provides connection pooling for both PostgreSQL and SQLite.
-//// PostgreSQL uses pog's built-in pooling. SQLite uses a simple
-//// pool implementation based on Erlang processes.
+//// PostgreSQL uses pog's built-in pooling. SQLite uses an ETS
+//// heir-based pool (ported from pgo) for crash-safe connection
+//// management.
 ////
 
-import gleam/erlang/process.{type Subject}
-import gleam/list
+import gleam/dynamic.{type Dynamic}
+import gleam/erlang/process.{type Pid}
 import gleam/otp/actor
 import gleam/string
 import glimr/db/connection.{
@@ -24,44 +25,13 @@ import sqlight
 /// Pool Type
 /// ------------------------------------------------------------
 ///
-/// A connection pool that manages database connections. Use 
-/// `start` to create a pool and `with_connection` to borrow 
+/// A connection pool that manages database connections. Use
+/// `start` to create a pool and `with_connection` to borrow
 /// connections.
 ///
 pub opaque type Pool {
   PostgresPool(connection: pog.Connection)
-  SqlitePool(subject: Subject(PoolMessage), path: String)
-}
-
-// ------------------------------------------------------------- Private Types
-
-/// ------------------------------------------------------------
-/// Pool Message
-/// ------------------------------------------------------------
-///
-/// Messages sent to the SQLite pool actor for managing
-/// connection checkout, checkin, and shutdown operations.
-///
-type PoolMessage {
-  Checkout(reply_to: Subject(Result(sqlight.Connection, Nil)))
-  Checkin(conn: sqlight.Connection)
-  Shutdown
-}
-
-/// ------------------------------------------------------------
-/// Pool State
-/// ------------------------------------------------------------
-///
-/// Internal state of the SQLite connection pool actor.
-/// Tracks available connections, in-use count, and pool limits.
-///
-type PoolState {
-  PoolState(
-    available: List(sqlight.Connection),
-    in_use: Int,
-    max_size: Int,
-    path: String,
-  )
+  SqlitePool(pid: Pid, path: String)
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -101,12 +71,13 @@ pub fn start(config: Config) -> Result(Pool, DbError) {
 pub fn stop(pool: Pool) -> Nil {
   case pool {
     PostgresPool(_) -> {
-      // pog pools are managed by OTP supervisor, 
+      // pog pools are managed by OTP supervisor,
       // no manual shutdown needed
       Nil
     }
-    SqlitePool(subject, _) -> {
-      process.send(subject, Shutdown)
+    SqlitePool(pid, _) -> {
+      let _ = sqlite_pool_stop(pid)
+      Nil
     }
   }
 }
@@ -165,28 +136,13 @@ pub fn get_connection_or(
   pool: Pool,
   f: fn(Connection) -> Result(a, DbError),
 ) -> Result(a, DbError) {
-  case pool {
-    PostgresPool(conn) -> {
-      // pog handles connection management internally
-      f(connection.from_pog(conn))
+  case checkout(pool) {
+    Ok(conn) -> {
+      let result = f(conn)
+      release(pool, conn)
+      result
     }
-    SqlitePool(subject, _path) -> {
-      // Checkout a connection
-      let reply_subject = process.new_subject()
-      process.send(subject, Checkout(reply_subject))
-
-      case process.receive(reply_subject, 5000) {
-        Ok(Ok(conn)) -> {
-          let result = f(connection.from_sqlight(conn))
-          // Always return the connection
-          process.send(subject, Checkin(conn))
-          result
-        }
-        Ok(Error(Nil)) ->
-          Error(ConnectionError("No connections available in pool"))
-        Error(Nil) -> Error(ConnectionError("Pool checkout timed out"))
-      }
-    }
+    Error(e) -> Error(e)
   }
 }
 
@@ -195,21 +151,18 @@ pub fn get_connection_or(
 /// ------------------------------------------------------------
 ///
 /// Gets a connection from the pool without automatic return.
-/// You MUST call `release` when done, or connections will leak.
-/// Prefer `with_connection` for safety.
+/// You MUST call `release` when done. However, if your process
+/// crashes without calling release, the connection will be
+/// automatically reclaimed by the pool (crash-safe).
 ///
 pub fn checkout(pool: Pool) -> Result(Connection, DbError) {
   case pool {
     PostgresPool(conn) -> Ok(connection.from_pog(conn))
-    SqlitePool(subject, _path) -> {
-      let reply_subject = process.new_subject()
-      process.send(subject, Checkout(reply_subject))
-
-      case process.receive(reply_subject, 5000) {
-        Ok(Ok(conn)) -> Ok(connection.from_sqlight(conn))
-        Ok(Error(Nil)) ->
-          Error(ConnectionError("No connections available in pool"))
-        Error(Nil) -> Error(ConnectionError("Pool checkout timed out"))
+    SqlitePool(pid, _path) -> {
+      case sqlite_pool_checkout(pid, []) {
+        Ok(#(pool_ref, sqlight_conn)) ->
+          Ok(connection.from_sqlight(sqlight_conn, pool_ref))
+        Error(_) -> Error(ConnectionError("No connections available in pool"))
       }
     }
   }
@@ -228,8 +181,10 @@ pub fn release(pool: Pool, conn: Connection) -> Nil {
       // pog manages its own connections
       Nil
     }
-    SqlitePool(subject, _) -> {
-      process.send(subject, Checkin(connection.to_sqlight(conn)))
+    SqlitePool(_, _) -> {
+      let assert Ok(pool_ref) = connection.get_pool_ref(conn)
+      let _ = sqlite_pool_checkin(pool_ref, connection.to_sqlight(conn))
+      Nil
     }
   }
 }
@@ -269,127 +224,75 @@ fn start_postgres_pool(url: String, pool_size: Int) -> Result(Pool, DbError) {
 /// Start SQLite Pool
 /// ------------------------------------------------------------
 ///
-/// Creates a SQLite connection pool managed by an OTP actor.
-/// Pre-creates connections and starts the pool actor to handle
-/// checkout/checkin operations.
+/// Creates a SQLite connection pool using an ETS heir-based
+/// implementation (ported from pgo). Connections are
+/// automatically reclaimed if the borrowing process crashes.
 ///
 fn start_sqlite_pool(path: String, pool_size: Int) -> Result(Pool, DbError) {
-  // Pre-create connections
-  case create_sqlite_connections(path, pool_size, []) {
-    Ok(connections) -> {
-      let initial_state =
-        PoolState(
-          available: connections,
-          in_use: 0,
-          max_size: pool_size,
-          path: path,
-        )
-
-      let start_result =
-        actor.new(initial_state)
-        |> actor.on_message(handle_pool_message)
-        |> actor.start
-
-      case start_result {
-        Ok(actor.Started(_, subject)) -> Ok(SqlitePool(subject, path))
-        Error(_) -> Error(ConnectionError("Failed to start SQLite pool actor"))
-      }
-    }
-    Error(err) -> Error(err)
+  let config = sqlite_pool_config(pool_size)
+  case sqlite_pool_start_link(path, config) {
+    Ok(pid) -> Ok(SqlitePool(pid, path))
+    Error(_) -> Error(ConnectionError("Failed to start SQLite pool"))
   }
 }
 
 /// ------------------------------------------------------------
-/// Create SQLite Connections
+/// SQLite Pool Config
 /// ------------------------------------------------------------
 ///
-/// Recursively creates the specified number of SQLite 
-/// connections. Returns an error if any connection fails to 
-/// open.
+/// Creates the configuration map for the SQLite pool.
 ///
-fn create_sqlite_connections(
-  path: String,
-  count: Int,
-  acc: List(sqlight.Connection),
-) -> Result(List(sqlight.Connection), DbError) {
-  case count <= 0 {
-    True -> Ok(acc)
-    False -> {
-      case sqlight.open(path) {
-        Ok(conn) -> create_sqlite_connections(path, count - 1, [conn, ..acc])
-        Error(err) ->
-          Error(ConnectionError(
-            "Failed to open SQLite connection: " <> err.message,
-          ))
-      }
-    }
-  }
+fn sqlite_pool_config(pool_size: Int) -> Dynamic {
+  make_pool_config(pool_size)
 }
 
+// ------------------------------------------------------------- FFI Bindings
+
 /// ------------------------------------------------------------
-/// Handle Pool Message
+/// Make Pool Config
 /// ------------------------------------------------------------
 ///
-/// Actor message handler for the SQLite pool. Processes 
-/// checkout requests by returning available connections or 
-/// creating new ones, handles checkin by returning connections 
-/// to the pool, and closes all connections on shutdown.
+/// Creates the configuration map for the SQLite pool in Erlang.
 ///
-fn handle_pool_message(
-  state: PoolState,
-  msg: PoolMessage,
-) -> actor.Next(PoolState, PoolMessage) {
-  case msg {
-    Checkout(reply_to) -> {
-      case state.available {
-        [conn, ..rest] -> {
-          process.send(reply_to, Ok(conn))
-          actor.continue(
-            PoolState(..state, available: rest, in_use: state.in_use + 1),
-          )
-        }
-        [] -> {
-          // No connections available - could create more or return error
-          case state.in_use < state.max_size {
-            True -> {
-              // Try to create a new connection
-              case sqlight.open(state.path) {
-                Ok(conn) -> {
-                  process.send(reply_to, Ok(conn))
-                  actor.continue(PoolState(..state, in_use: state.in_use + 1))
-                }
-                Error(_) -> {
-                  process.send(reply_to, Error(Nil))
-                  actor.continue(state)
-                }
-              }
-            }
-            False -> {
-              process.send(reply_to, Error(Nil))
-              actor.continue(state)
-            }
-          }
-        }
-      }
-    }
+@external(erlang, "sqlite_pool_ffi", "make_config")
+fn make_pool_config(pool_size: Int) -> Dynamic
 
-    Checkin(conn) -> {
-      actor.continue(
-        PoolState(
-          ..state,
-          available: [conn, ..state.available],
-          in_use: state.in_use - 1,
-        ),
-      )
-    }
+/// ------------------------------------------------------------
+/// SQLite Pool Start Link
+/// ------------------------------------------------------------
+///
+/// Starts a SQLite connection pool as a linked process.
+///
+@external(erlang, "sqlite_pool", "start_link")
+fn sqlite_pool_start_link(path: String, config: Dynamic) -> Result(Pid, Dynamic)
 
-    Shutdown -> {
-      // Close all available connections
-      list.each(state.available, fn(conn) {
-        let _ = sqlight.close(conn)
-        Nil
-      })
-      actor.stop()
-    }
-  }
-}
+/// ------------------------------------------------------------
+/// SQLite Pool Checkout
+/// ------------------------------------------------------------
+///
+/// Checks out a connection from the SQLite pool. Returns the
+/// pool reference and the sqlight connection.
+///
+@external(erlang, "sqlite_pool", "checkout")
+fn sqlite_pool_checkout(
+  pool: Pid,
+  opts: List(#(String, Dynamic)),
+) -> Result(#(Dynamic, sqlight.Connection), Dynamic)
+
+/// ------------------------------------------------------------
+/// SQLite Pool Checkin
+/// ------------------------------------------------------------
+///
+/// Returns a connection to the SQLite pool.
+///
+@external(erlang, "sqlite_pool", "checkin")
+fn sqlite_pool_checkin(pool_ref: Dynamic, conn: sqlight.Connection) -> Dynamic
+
+/// ------------------------------------------------------------
+/// SQLite Pool Stop
+/// ------------------------------------------------------------
+///
+/// Stops the SQLite pool and closes all connections.
+///
+@external(erlang, "sqlite_pool", "stop")
+fn sqlite_pool_stop(pool: Pid) -> Dynamic
