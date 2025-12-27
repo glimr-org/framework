@@ -137,9 +137,9 @@ pub fn generate_main_function_uses_checkout_and_release_test() {
   |> string.contains("pool.checkout(pool)")
   |> should.be_true()
 
-  // Main function should use pool.release
+  // Main function should use pool.checkin
   result
-  |> string.contains("pool.release(pool, conn)")
+  |> string.contains("pool.checkin(pool, conn)")
   |> should.be_true()
 
   // Main function should call the _wc variant

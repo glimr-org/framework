@@ -20,11 +20,11 @@ pub fn basic_checkout_checkin_test() {
   let assert Ok(_) = sqlight.exec("SELECT 1", raw_conn)
 
   // Release the connection
-  pool.release(p, conn)
+  pool.checkin(p, conn)
 
   // Should be able to checkout again
   let assert Ok(conn2) = pool.checkout(p)
-  pool.release(p, conn2)
+  pool.checkin(p, conn2)
 
   pool.stop(p)
 }
@@ -48,7 +48,7 @@ pub fn get_connection_returns_connection_to_pool_test() {
 
   // Connection should be back in pool - can checkout again
   let assert Ok(conn) = pool.checkout(p)
-  pool.release(p, conn)
+  pool.checkin(p, conn)
 
   pool.stop(p)
 }
@@ -72,7 +72,7 @@ pub fn get_connection_or_returns_connection_to_pool_test() {
 
   // Connection should be back in pool - can checkout again
   let assert Ok(conn) = pool.checkout(p)
-  pool.release(p, conn)
+  pool.checkin(p, conn)
 
   pool.stop(p)
 }
@@ -114,7 +114,7 @@ pub fn connection_reclaimed_when_process_crashes_test() {
   let raw_conn = connection.to_sqlight(conn)
   let assert Ok(_) = sqlight.exec("SELECT 1", raw_conn)
 
-  pool.release(p, conn)
+  pool.checkin(p, conn)
   pool.stop(p)
 }
 
@@ -142,7 +142,7 @@ pub fn connection_reclaimed_when_process_exits_normally_without_checkin_test() {
 
   // Connection should be reclaimed
   let assert Ok(conn) = pool.checkout(p)
-  pool.release(p, conn)
+  pool.checkin(p, conn)
 
   pool.stop(p)
 }
@@ -166,11 +166,11 @@ pub fn pool_exhaustion_returns_error_test() {
   }
 
   // Release the first connection
-  pool.release(p, conn1)
+  pool.checkin(p, conn1)
 
   // Now checkout should work again
   let assert Ok(conn2) = pool.checkout(p)
-  pool.release(p, conn2)
+  pool.checkin(p, conn2)
 
   pool.stop(p)
 }
@@ -192,9 +192,9 @@ pub fn multiple_concurrent_checkouts_test() {
   let assert Ok(_) = sqlight.exec("SELECT 3", connection.to_sqlight(conn3))
 
   // Release all
-  pool.release(p, conn1)
-  pool.release(p, conn2)
-  pool.release(p, conn3)
+  pool.checkin(p, conn1)
+  pool.checkin(p, conn2)
+  pool.checkin(p, conn3)
 
   pool.stop(p)
 }
@@ -228,9 +228,9 @@ pub fn concurrent_processes_can_use_pool_test() {
   let assert Ok(conn2) = pool.checkout(p)
   let assert Ok(conn3) = pool.checkout(p)
 
-  pool.release(p, conn1)
-  pool.release(p, conn2)
-  pool.release(p, conn3)
+  pool.checkin(p, conn1)
+  pool.checkin(p, conn2)
+  pool.checkin(p, conn3)
 
   pool.stop(p)
 }

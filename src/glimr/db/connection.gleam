@@ -49,7 +49,7 @@ pub type Config {
 /// driver. Use with the `query` module functions.
 ///
 pub opaque type Connection {
-  PostgresConnection(inner: pog.Connection)
+  PostgresConnection(inner: pog.Connection, pool_ref: Dynamic)
   SqliteConnection(inner: sqlight.Connection, pool_ref: Dynamic)
 }
 
@@ -158,7 +158,7 @@ pub fn sqlite_config(path: String, pool_size pool_size: Int) -> Config {
 ///
 pub fn driver(conn: Connection) -> Driver {
   case conn {
-    PostgresConnection(_) -> Postgres
+    PostgresConnection(_, _) -> Postgres
     SqliteConnection(_, _) -> Sqlite
   }
 }
@@ -167,10 +167,12 @@ pub fn driver(conn: Connection) -> Driver {
 /// Wrap Postgres Connection
 /// ------------------------------------------------------------
 ///
-/// Wraps a raw pog connection for use with the glimr db module.
+/// Wraps a raw pog connection with its pool reference for use
+/// with the glimr db module. The pool_ref is needed for proper
+/// checkin when releasing the connection.
 ///
-pub fn from_pog(conn: pog.Connection) -> Connection {
-  PostgresConnection(conn)
+pub fn from_pog(conn: pog.Connection, pool_ref: Dynamic) -> Connection {
+  PostgresConnection(conn, pool_ref)
 }
 
 /// ------------------------------------------------------------
@@ -194,7 +196,7 @@ pub fn from_sqlight(conn: sqlight.Connection, pool_ref: Dynamic) -> Connection {
 ///
 pub fn to_pog(conn: Connection) -> pog.Connection {
   case conn {
-    PostgresConnection(inner) -> inner
+    PostgresConnection(inner, _) -> inner
     SqliteConnection(_, _) -> panic as "Cannot convert SQLite connection to pog"
   }
 }
@@ -209,7 +211,7 @@ pub fn to_pog(conn: Connection) -> pog.Connection {
 pub fn to_sqlight(conn: Connection) -> sqlight.Connection {
   case conn {
     SqliteConnection(inner, _) -> inner
-    PostgresConnection(_) ->
+    PostgresConnection(_, _) ->
       panic as "Cannot convert Postgres connection to sqlight"
   }
 }
@@ -218,13 +220,13 @@ pub fn to_sqlight(conn: Connection) -> sqlight.Connection {
 /// Get Pool Reference
 /// ------------------------------------------------------------
 ///
-/// Extracts the pool reference from a SQLite connection.
-/// Returns Error for Postgres connections.
+/// Extracts the pool reference from a connection. This is the
+/// reference returned by checkout that must be passed to checkin.
 ///
 pub fn get_pool_ref(conn: Connection) -> Result(Dynamic, Nil) {
   case conn {
     SqliteConnection(_, pool_ref) -> Ok(pool_ref)
-    PostgresConnection(_) -> Error(Nil)
+    PostgresConnection(_, pool_ref) -> Ok(pool_ref)
   }
 }
 

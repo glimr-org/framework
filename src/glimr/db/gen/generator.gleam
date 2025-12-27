@@ -574,7 +574,7 @@ fn generate_query_function(
       <> "_wc(conn: conn"
       <> param_names
       <> ")\n"
-      <> "      pool.release(pool, conn)\n"
+      <> "      pool.checkin(pool, conn)\n"
       <> "      result\n"
       <> "    }\n"
       <> "    Error(e) -> Error(e)\n"
@@ -594,7 +594,7 @@ fn generate_query_function(
       <> "_wc(conn: conn"
       <> param_names
       <> ")\n"
-      <> "      pool.release(pool, conn)\n"
+      <> "      pool.checkin(pool, conn)\n"
       <> "      result\n"
       <> "    }\n"
       <> "    Error(e) -> Error(e)\n"
@@ -712,7 +712,7 @@ fn generate_execute_function(
     <> "_wc(conn: conn"
     <> param_names
     <> ")\n"
-    <> "      pool.release(pool, conn)\n"
+    <> "      pool.checkin(pool, conn)\n"
     <> "      result\n"
     <> "    }\n"
     <> "    Error(e) -> Error(e)\n"

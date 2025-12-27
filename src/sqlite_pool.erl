@@ -3,7 +3,7 @@
 %% Uses ETS heir mechanism for automatic connection reclamation on process death.
 -module(sqlite_pool).
 
--export([start_link/2,
+-export([start_link/3,
          checkout/2,
          checkin/2,
          disconnect/2,
@@ -27,12 +27,13 @@
                 TimerRef :: reference() | undefined,
                 Holder :: ets:tid()}.
 
-%% Start a new SQLite connection pool
+%% Start a new SQLite connection pool with a registered name
+%% Name: atom to register the pool under
 %% Path: path to SQLite database file
 %% PoolConfig: map with pool_size, queue_target, queue_interval, idle_interval
-start_link(Path, PoolConfig) ->
+start_link(Name, Path, PoolConfig) when is_atom(Name) ->
     PoolConfig1 = normalize_pool_config(PoolConfig),
-    gen_server:start_link(?MODULE, {Path, PoolConfig1}, []).
+    gen_server:start_link({local, Name}, ?MODULE, {Path, PoolConfig1}, []).
 
 -spec checkout(pid(), list()) -> {ok, ref(), any()} | {error, any()}.
 checkout(Pool, Opts) ->

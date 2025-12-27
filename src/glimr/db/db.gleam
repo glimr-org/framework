@@ -104,7 +104,7 @@ fn do_transaction(
       let begin_sql = begin_statement(conn)
       case query.execute(conn, begin_sql, []) {
         Error(e) -> {
-          pool.release(pool, conn)
+          pool.checkin(pool, conn)
           Error(e)
         }
         Ok(_) -> {
@@ -113,13 +113,13 @@ fn do_transaction(
               // Commit on success
               case query.execute(conn, "COMMIT", []) {
                 Ok(_) -> {
-                  pool.release(pool, conn)
+                  pool.checkin(pool, conn)
                   Ok(value)
                 }
                 Error(e) -> {
                   // Try to rollback if commit fails
                   let _ = query.execute(conn, "ROLLBACK", [])
-                  pool.release(pool, conn)
+                  pool.checkin(pool, conn)
                   maybe_retry(pool, retries_remaining, callback, e)
                 }
               }
@@ -127,7 +127,7 @@ fn do_transaction(
             Error(e) -> {
               // Rollback on error
               let _ = query.execute(conn, "ROLLBACK", [])
-              pool.release(pool, conn)
+              pool.checkin(pool, conn)
               maybe_retry(pool, retries_remaining, callback, e)
             }
           }
