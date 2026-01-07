@@ -3,14 +3,16 @@
 //// Registers Glimr's console commands and is the entry point
 //// to run your app's custom console commands as well as
 //// Glimr's default console commands.
+////
+//// NOTE: Database commands (migrate, gen) are now in driver packages:
+//// - glimr_sqlite/console/kernel for sqlite:migrate, sqlite:gen
+//// - glimr_postgres/console/kernel for postgres:migrate, postgres:gen
 
 import gleam/io
 import gleam/list
 import glimr/console/command.{type Command}
 import glimr/console/console
 import glimr/db/driver.{type Connection}
-import glimr/internal/console/commands/db_migrate
-import glimr/internal/console/commands/gen_db
 import glimr/internal/console/commands/greet
 import glimr/internal/console/commands/make_action
 import glimr/internal/console/commands/make_command
@@ -27,10 +29,11 @@ import glimr/internal/console/commands/setup_database
 /// Commands are generic over ctx so they can be merged
 /// with user commands into a single unified list.
 ///
+/// NOTE: Database commands (migrate, gen) are now in driver packages.
+/// Add them via glimr_sqlite/console/kernel or glimr_postgres/console/kernel.
+///
 pub fn commands(connections: List(Connection)) -> List(Command) {
   [
-    db_migrate.command(),
-    gen_db.command(),
     greet.command(),
     make_action.command(),
     make_controller.command(),

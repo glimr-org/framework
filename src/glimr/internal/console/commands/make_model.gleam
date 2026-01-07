@@ -2,7 +2,6 @@ import gleam/list
 import gleam/string
 import glimr/console/command.{type Command, type ParsedArgs, Argument}
 import glimr/console/console
-import glimr/db/pool.{type Pool}
 import glimr/filesystem/filesystem
 import glimr/utils/string as glimr_string
 
@@ -20,17 +19,14 @@ pub fn command() -> Command {
   |> command.description(description)
   |> command.args([
     Argument(name: "name", description: "The name of the model"),
+    command.db_option(),
   ])
-  |> command.handler_with_db(run)
+  |> command.handler(run)
 }
 
 /// Execute the console command.
 ///
-fn run(args: ParsedArgs, _pool: Pool) -> Nil {
-  // We use handler_with_db (even though we don't need the pool) 
-  // because run_with_db validates that the --database connection 
-  // exists behind the scenes.
-
+fn run(args: ParsedArgs) -> Nil {
   let model_name_input = command.get_arg(args, "name")
   let connection = command.get_option(args, "database")
 

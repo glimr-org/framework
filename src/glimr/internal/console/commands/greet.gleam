@@ -20,6 +20,6 @@ pub fn command() -> Command {
 ///
 fn run(_args: ParsedArgs) -> Nil {
   console.output()
-  |> console.line("Hello! We hope you're enjoying Glimr ✨")
+  |> console.line("Hello! We hope you're enjoying Glimr")
   |> console.print()
 }

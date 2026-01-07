@@ -22,8 +22,6 @@ pub fn run(name: String, create_sqlite: Bool) -> Nil {
   }
 }
 
-/// Performs the actual setup of the database directory structure.
-///
 fn do_setup(base_path: String, create_sqlite: Bool) -> Nil {
   io.println("")
 

@@ -141,13 +141,15 @@ pub fn line(output: Output, message: String) -> Output {
 /// ```gleam
 /// console.output()
 /// |> console.line("Section 1")
-/// |> console.blank_line()
+/// |> console.blank_line(1)
 /// |> console.line("Section 2")
 /// |> console.print()
 /// ```
 ///
-pub fn blank_line(output: Output) -> Output {
-  Output(..output, lines: list.append(output.lines, [""]))
+pub fn blank_line(output: Output, amount: Int) -> Output {
+  let empty_lines = list.repeat("", amount)
+
+  Output(..output, lines: list.append(output.lines, empty_lines))
 }
 
 /// Adds a line colored green (success) to the output.

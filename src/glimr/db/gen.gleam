@@ -34,6 +34,7 @@ pub fn run(
   driver_type: String,
   model_filter: Option(List(String)),
 ) {
+  io.println("")
   io.println(console.warning("Glimr Query Generator"))
   io.println("  Connection: " <> name)
   io.println("  Driver: " <> driver_type)
@@ -44,14 +45,18 @@ pub fn run(
   }
 
   let models_path = "src/data/" <> name <> "/models"
-  generate_models(models_path, model_filter)
+  generate_models(models_path, model_filter, driver_type)
 }
 
 // ------------------------------------------------------------- Private Functions
 
 /// Internal implementation for code generation.
 ///
-fn generate_models(models_path: String, model_filter: Option(List(String))) {
+fn generate_models(
+  models_path: String,
+  model_filter: Option(List(String)),
+  driver_type: String,
+) {
   case simplifile.read_directory(models_path) {
     Ok(entries) -> {
       let model_dirs =
@@ -74,11 +79,12 @@ fn generate_models(models_path: String, model_filter: Option(List(String))) {
       list.each(model_dirs, fn(model_name) {
         io.println("")
         io.println("  Processing: " <> model_name)
-        process_model(models_path, model_name)
+        process_model(models_path, model_name, driver_type)
       })
 
       io.println("")
       io.println(console.success("  Successfully generated queries!"))
+      io.println("")
     }
     Error(_) -> {
       io.println("  Error: Could not read " <> models_path)
@@ -91,7 +97,11 @@ fn generate_models(models_path: String, model_filter: Option(List(String))) {
 /// parses all SQL query files, generates the repository module,
 /// writes it to the gen/ directory, and formats it.
 ///
-fn process_model(models_path: String, model_name: String) -> Nil {
+fn process_model(
+  models_path: String,
+  model_name: String,
+  driver_type: String,
+) -> Nil {
   let model_path = models_path <> "/" <> model_name
   let schema_path = model_path <> "/" <> model_name <> "_schema.gleam"
   let queries_path = model_path <> "/queries"
@@ -138,7 +148,8 @@ fn process_model(models_path: String, model_name: String) -> Nil {
 
           io.println("    Queries: " <> int.to_string(list.length(queries)))
 
-          let generated = generator.generate(model_name, table, queries)
+          let generated =
+            generator.generate(model_name, table, queries, driver_type)
 
           let _ = simplifile.create_directory_all(gen_path)
 

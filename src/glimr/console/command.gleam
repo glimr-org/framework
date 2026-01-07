@@ -3,6 +3,10 @@
 //// Provides a fluent API for defining console commands.
 //// Commands capture their context at construction time via
 //// closures, allowing framework and user commands to coexist.
+////
+//// For database commands, use driver-specific command modules:
+//// - glimr_sqlite/command.handler() for SQLite
+//// - glimr_postgres/command.handler() for PostgreSQL
 
 import gleam/dict.{type Dict}
 import gleam/erlang/charlist
@@ -11,20 +15,14 @@ import gleam/io
 import gleam/list
 import gleam/string
 import glimr/console/console
-import glimr/db/db
-import glimr/db/driver.{type Connection}
-import glimr/db/pool.{type Pool}
-import glimr/db/pool_connection.{ConfigError}
+import glimr/db/driver.{type Connection, type DriverType}
 import glimr/glimr
 
 // ------------------------------------------------------------- Public types
 
-/// Represents a console command. All commands have a name,
-/// description, optional arguments, and a handler function.
-/// Commands without arguments simply have an empty args list.
-///
-/// Use `Command` for standard commands and `CommandWithDb` for
-/// commands that require a database connection.
+/// Represents a console command. Regular commands have a simple
+/// handler function. Database commands use CommandWithDb which
+/// includes a closure that manages pool lifecycle.
 ///
 pub type Command {
   Command(
@@ -37,7 +35,8 @@ pub type Command {
     name: String,
     description: String,
     args: List(CommandArg),
-    handler: fn(ParsedArgs, Pool) -> Nil,
+    driver_type: DriverType,
+    run_with_pool: fn(ParsedArgs, Connection) -> Nil,
   )
 }
 
@@ -68,9 +67,7 @@ pub type ParsedArgs {
 // ------------------------------------------------------------- Public Functions
 
 /// Creates a new command. Use the fluent API to set the
-/// name, description, args, and handler. Use `handler` for
-/// standard commands or `handler_with_db` for commands that
-/// need database access.
+/// name, description, args, and handler.
 ///
 /// *Example*
 ///
@@ -78,7 +75,7 @@ pub type ParsedArgs {
 /// command.new()
 /// |> command.name("greet")
 /// |> command.description("Greet the user")
-/// |> command.handler(run)
+/// |> command.handler(fn(args) { ... })
 /// ```
 ///
 pub fn new() -> Command {
@@ -90,10 +87,10 @@ pub fn new() -> Command {
 /// command names like "make:controller" or "glimr:greet"
 /// but it's not required.
 ///
-pub fn name(command: Command, name: String) -> Command {
-  case command {
-    Command(_, desc, a, h) -> Command(name, desc, a, h)
-    CommandWithDb(_, desc, a, h) -> CommandWithDb(name, desc, a, h)
+pub fn name(cmd: Command, name: String) -> Command {
+  case cmd {
+    Command(..) -> Command(..cmd, name: name)
+    CommandWithDb(..) -> CommandWithDb(..cmd, name: name)
   }
 }
 
@@ -101,40 +98,29 @@ pub fn name(command: Command, name: String) -> Command {
 /// should be a one-liner, nice and simple. This text appears
 /// next to the command name when users run the help command.
 ///
-pub fn description(command: Command, description: String) -> Command {
-  case command {
-    Command(n, _, a, h) -> Command(n, description, a, h)
-    CommandWithDb(n, _, a, h) -> CommandWithDb(n, description, a, h)
+pub fn description(cmd: Command, description: String) -> Command {
+  case cmd {
+    Command(..) -> Command(..cmd, description: description)
+    CommandWithDb(..) -> CommandWithDb(..cmd, description: description)
   }
 }
 
 /// Sets the handler function for the command. The handler
-/// receives ParsedArgs containing any arguments and options.
-/// For commands without args, ParsedArgs will be empty.
+/// receives ParsedArgs only. For database commands, use
+/// driver-specific handlers (glimr_sqlite/command.handler or
+/// glimr_postgres/command.handler) instead.
 ///
-pub fn handler(command: Command, handler: fn(ParsedArgs) -> Nil) -> Command {
-  case command {
-    Command(n, desc, a, _) -> Command(n, desc, a, handler)
-    CommandWithDb(_, _, _, _) ->
-      panic as "Use handler_with_db for CommandWithDb"
+pub fn handler(cmd: Command, handler: fn(ParsedArgs) -> Nil) -> Command {
+  case cmd {
+    Command(..) -> Command(..cmd, handler: handler)
+    CommandWithDb(name:, description:, args:, ..) ->
+      Command(
+        name: name,
+        description: description,
+        args: args,
+        handler: handler,
+      )
   }
-}
-
-/// Sets the handler function for a database command. Converts
-/// a Command to CommandWithDb. The handler receives ParsedArgs
-/// and a Pool that is automatically started and stopped by
-/// the framework. Automatically adds --database option.
-///
-pub fn handler_with_db(
-  command: Command,
-  handler: fn(ParsedArgs, Pool) -> Nil,
-) -> Command {
-  let db_option = Option("database", "Database connection to use", "default")
-  let #(n, desc, a) = case command {
-    Command(n, desc, a, _) -> #(n, desc, a)
-    CommandWithDb(n, desc, a, _) -> #(n, desc, a)
-  }
-  CommandWithDb(n, desc, list.append(a, [db_option]), handler)
 }
 
 /// Sets the arguments, flags, and options for a command. Use
@@ -154,11 +140,20 @@ pub fn handler_with_db(
 /// |> command.handler(fn(args) { ... })
 /// ```
 ///
-pub fn args(command: Command, arguments: List(CommandArg)) -> Command {
-  case command {
-    Command(n, desc, _, h) -> Command(n, desc, arguments, h)
-    CommandWithDb(n, desc, _, h) -> CommandWithDb(n, desc, arguments, h)
+pub fn args(cmd: Command, arguments: List(CommandArg)) -> Command {
+  case cmd {
+    Command(..) -> Command(..cmd, args: arguments)
+    CommandWithDb(..) -> CommandWithDb(..cmd, args: arguments)
   }
+}
+
+/// Returns the standard --database option for commands that
+/// need database access. Add this to your command args when
+/// using driver-specific handlers. Uses "_default" as the
+/// default value to find the connection with is_default: True.
+///
+pub fn db_option() -> CommandArg {
+  Option("database", "Database connection to use", "_default")
 }
 
 /// Gets a positional argument value from ParsedArgs by name.
@@ -199,9 +194,7 @@ pub fn get_args() -> List(String) {
 }
 
 /// Finds a command by name and executes it with the given
-/// arguments. For CommandWithDb, starts a pool, provides
-/// the connection, and cleans up after. Returns False if
-/// the command is not found.
+/// arguments. Returns False if the command is not found.
 ///
 @internal
 pub fn find_and_run(
@@ -235,11 +228,7 @@ pub fn print_help(commands: List(Command)) {
   // Find the longest command name for alignment
   let max_length =
     list.fold(commands, string.length("-h, --help"), fn(acc, cmd) {
-      let cmd_name = case cmd {
-        Command(n, _, _, _) -> n
-        CommandWithDb(n, _, _, _) -> n
-      }
-      int.max(acc, string.length(cmd_name))
+      int.max(acc, string.length(cmd.name))
     })
 
   io.println(console.warning("Options:"))
@@ -251,27 +240,11 @@ pub fn print_help(commands: List(Command)) {
 
   // Split commands into non-namespaced and namespaced
   let #(non_namespaced, namespaced) =
-    list.partition(commands, fn(cmd) {
-      let cmd_name = case cmd {
-        Command(n, _, _, _) -> n
-        CommandWithDb(n, _, _, _) -> n
-      }
-      !string.contains(cmd_name, ":")
-    })
+    list.partition(commands, fn(cmd) { !string.contains(cmd.name, ":") })
 
   // Sort non-namespaced commands alphabetically
   let sorted_non_namespaced =
-    list.sort(non_namespaced, fn(a, b) {
-      let name_a = case a {
-        Command(n, _, _, _) -> n
-        CommandWithDb(n, _, _, _) -> n
-      }
-      let name_b = case b {
-        Command(n, _, _, _) -> n
-        CommandWithDb(n, _, _, _) -> n
-      }
-      string.compare(name_a, name_b)
-    })
+    list.sort(non_namespaced, fn(a, b) { string.compare(a.name, b.name) })
 
   // Group namespaced commands by namespace
   let grouped = group_by_namespace(namespaced)
@@ -282,12 +255,8 @@ pub fn print_help(commands: List(Command)) {
   // Print non-namespaced commands
   io.println(console.warning("Available commands:"))
   list.each(sorted_non_namespaced, fn(cmd) {
-    let #(cmd_name, cmd_desc) = case cmd {
-      Command(n, d, _, _) -> #(n, d)
-      CommandWithDb(n, d, _, _) -> #(n, d)
-    }
-    let padded_name = string.pad_end(cmd_name, max_length + 2, " ")
-    io.println("  " <> console.success(padded_name) <> cmd_desc)
+    let padded_name = string.pad_end(cmd.name, max_length + 2, " ")
+    io.println("  " <> console.success(padded_name) <> cmd.description)
   })
 
   // Print namespaced commands grouped by namespace
@@ -295,12 +264,8 @@ pub fn print_help(commands: List(Command)) {
     let #(namespace, cmds) = group
     io.println(" " <> console.warning(namespace))
     list.each(cmds, fn(cmd) {
-      let #(cmd_name, cmd_desc) = case cmd {
-        Command(n, d, _, _) -> #(n, d)
-        CommandWithDb(n, d, _, _) -> #(n, d)
-      }
-      let padded_name = string.pad_end(cmd_name, max_length + 2, " ")
-      io.println("  " <> console.success(padded_name) <> cmd_desc)
+      let padded_name = string.pad_end(cmd.name, max_length + 2, " ")
+      io.println("  " <> console.success(padded_name) <> cmd.description)
     })
   })
 
@@ -323,18 +288,12 @@ pub fn print_glimr_version() -> Nil {
 /// if found, or Error(Nil) if no command matches.
 ///
 fn find(commands: List(Command), name: String) -> Result(Command, Nil) {
-  list.find(commands, fn(cmd) {
-    case cmd {
-      Command(cmd_name, _, _, _) -> cmd_name == name
-      CommandWithDb(cmd_name, _, _, _) -> cmd_name == name
-    }
-  })
+  list.find(commands, fn(cmd) { cmd.name == name })
 }
 
 /// Executes a command by calling its handler function.
 /// Checks for help flag first, then parses and validates
-/// arguments before calling the handler. For CommandWithDb,
-/// starts pool, provides connection, and cleans up.
+/// arguments before calling the appropriate handler.
 ///
 fn run(
   cmd: Command,
@@ -345,15 +304,33 @@ fn run(
     True -> print_command_help(cmd)
     False -> {
       case cmd {
-        Command(name, _, args, handler) -> {
-          case parse_and_validate(name, args, raw_args) {
+        Command(handler:, ..) -> {
+          case parse_and_validate(cmd.name, cmd.args, raw_args) {
             Ok(parsed) -> handler(parsed)
             Error(_) -> Nil
           }
         }
-        CommandWithDb(name, _, args, handler) -> {
-          case parse_and_validate(name, args, raw_args) {
-            Ok(parsed) -> run_with_db(handler, parsed, connections)
+        CommandWithDb(run_with_pool:, driver_type:, ..) -> {
+          case parse_and_validate(cmd.name, cmd.args, raw_args) {
+            Ok(parsed) -> {
+              let db_name = get_option(parsed, "database")
+              case find_connection(connections, db_name, driver_type) {
+                Ok(conn) -> {
+                  // Replace _default with actual connection name
+                  let actual_name = driver.connection_name(conn)
+                  let updated_options =
+                    dict.insert(parsed.options, "database", actual_name)
+                  let updated_parsed =
+                    ParsedArgs(..parsed, options: updated_options)
+                  run_with_pool(updated_parsed, conn)
+                }
+                Error(_) -> {
+                  console.output()
+                  |> console.line_error("Connection not found: " <> db_name)
+                  |> console.print()
+                }
+              }
+            }
             Error(_) -> Nil
           }
         }
@@ -362,50 +339,21 @@ fn run(
   }
 }
 
-/// Runs a database command handler with a managed pool.
-/// Looks up connection by --database option (defaults to "default"),
-/// starts pool, runs handler, stops pool.
+/// Finds a connection by name from the list of configured
+/// connections, filtered by driver type. If name is "_default",
+/// finds the connection with is_default: True for that driver.
 ///
-fn run_with_db(
-  handler: fn(ParsedArgs, Pool) -> Nil,
-  parsed: ParsedArgs,
+fn find_connection(
   connections: List(Connection),
-) -> Nil {
-  let db_name = get_option(parsed, "database")
+  name: String,
+  driver_type: DriverType,
+) -> Result(Connection, Nil) {
+  let typed =
+    list.filter(connections, fn(c) { driver.connection_type(c) == driver_type })
 
-  case db.get_connection_safe(connections, db_name) {
-    Error(_) -> {
-      console.output()
-      |> console.line_error(
-        "Database connection \""
-        <> db_name
-        <> "\" does not exist in your config.",
-      )
-      |> console.print()
-    }
-    Ok(connection_config) -> {
-      // Use pool size of 1 for console commands
-      let connection_config = driver.with_pool_size(connection_config, 1)
-      case db.start_pool(connection_config) {
-        Error(ConfigError(message)) -> {
-          console.output()
-          |> console.line_error("There's an issue with your config_db:")
-          |> console.line(message)
-          |> console.print()
-        }
-        Error(err) -> {
-          console.output()
-          |> console.line_error("Failed to start database pool.")
-          |> console.blank_line()
-          |> console.line(string.inspect(err))
-          |> console.print()
-        }
-        Ok(db_pool) -> {
-          handler(parsed, db_pool)
-          pool.stop(db_pool)
-        }
-      }
-    }
+  case name {
+    "_default" -> list.find(typed, driver.is_default)
+    _ -> list.find(typed, fn(c) { driver.connection_name(c) == name })
   }
 }
 
@@ -423,26 +371,11 @@ fn has_help_flag(raw_args: List(String)) -> Bool {
 ///
 fn group_by_namespace(commands: List(Command)) -> List(#(String, List(Command))) {
   // Sort all commands first
-  let sorted =
-    list.sort(commands, fn(a, b) {
-      let name_a = case a {
-        Command(n, _, _, _) -> n
-        CommandWithDb(n, _, _, _) -> n
-      }
-      let name_b = case b {
-        Command(n, _, _, _) -> n
-        CommandWithDb(n, _, _, _) -> n
-      }
-      string.compare(name_a, name_b)
-    })
+  let sorted = list.sort(commands, fn(a, b) { string.compare(a.name, b.name) })
 
   // Group by namespace
   list.fold(sorted, [], fn(acc, cmd) {
-    let cmd_name = case cmd {
-      Command(n, _, _, _) -> n
-      CommandWithDb(n, _, _, _) -> n
-    }
-    let namespace = case string.split(cmd_name, ":") {
+    let namespace = case string.split(cmd.name, ":") {
       [ns, ..] -> ns
       _ -> ""
     }
@@ -458,25 +391,20 @@ fn group_by_namespace(commands: List(Command)) -> List(#(String, List(Command)))
 /// when a command is invoked with -h or --help flag.
 ///
 fn print_command_help(cmd: Command) -> Nil {
-  let #(name, description, args) = case cmd {
-    Command(n, d, a, _) -> #(n, d, a)
-    CommandWithDb(n, d, a, _) -> #(n, d, a)
-  }
-
   // Description
   io.println(console.warning("Description:"))
-  io.println("  " <> description)
+  io.println("  " <> cmd.description)
   io.println("")
 
   // Usage
   io.println(console.warning("Usage:"))
-  let usage_line = build_usage_line(name, args)
+  let usage_line = build_usage_line(cmd.name, cmd.args)
   io.println("  " <> usage_line)
   io.println("")
 
   // Arguments section
   let arguments =
-    list.filter_map(args, fn(arg) {
+    list.filter_map(cmd.args, fn(arg) {
       case arg {
         Argument(arg_name, arg_desc) -> Ok(#(arg_name, arg_desc))
         Flag(_, _, _) -> Error(Nil)
@@ -502,7 +430,7 @@ fn print_command_help(cmd: Command) -> Nil {
 
   // Extract flags and options
   let flags =
-    list.filter_map(args, fn(arg) {
+    list.filter_map(cmd.args, fn(arg) {
       case arg {
         Flag(flag_name, short, flag_desc) -> Ok(#(flag_name, short, flag_desc))
         Argument(_, _) -> Error(Nil)
@@ -511,7 +439,7 @@ fn print_command_help(cmd: Command) -> Nil {
     })
 
   let options =
-    list.filter_map(args, fn(arg) {
+    list.filter_map(cmd.args, fn(arg) {
       case arg {
         Option(opt_name, opt_desc, opt_default) ->
           Ok(#(opt_name, opt_desc, opt_default))

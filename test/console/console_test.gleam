@@ -68,7 +68,7 @@ pub fn blank_line_adds_empty_string_test() {
   let output =
     console.output()
     |> console.line("Before")
-    |> console.blank_line()
+    |> console.blank_line(1)
     |> console.line("After")
 
   output.lines

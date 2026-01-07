@@ -22,11 +22,13 @@ import glimr/db/pool_connection.{type Config}
 pub type Connection {
   PostgresUriConnection(
     name: String,
+    is_default: Bool,
     url: Result(String, String),
     pool_size: Result(Int, String),
   )
   PostgresConnection(
     name: String,
+    is_default: Bool,
     host: Result(String, String),
     port: Result(Int, String),
     database: Result(String, String),
@@ -36,6 +38,7 @@ pub type Connection {
   )
   SqliteConnection(
     name: String,
+    is_default: Bool,
     database: Result(String, String),
     pool_size: Result(Int, String),
   )
@@ -54,9 +57,9 @@ pub type DriverType {
 ///
 pub fn connection_type(connection: Connection) -> DriverType {
   case connection {
-    PostgresUriConnection(_, _, _) -> Postgres
-    PostgresConnection(_, _, _, _, _, _, _) -> Postgres
-    SqliteConnection(_, _, _) -> Sqlite
+    PostgresUriConnection(_, _, _, _) -> Postgres
+    PostgresConnection(_, _, _, _, _, _, _, _) -> Postgres
+    SqliteConnection(_, _, _, _) -> Sqlite
   }
 }
 
@@ -64,9 +67,21 @@ pub fn connection_type(connection: Connection) -> DriverType {
 ///
 pub fn connection_name(connection: Connection) -> String {
   case connection {
-    PostgresUriConnection(name, _, _) -> name
-    PostgresConnection(name, _, _, _, _, _, _) -> name
-    SqliteConnection(name, _, _) -> name
+    PostgresUriConnection(name, _, _, _) -> name
+    PostgresConnection(name, _, _, _, _, _, _, _) -> name
+    SqliteConnection(name, _, _, _) -> name
+  }
+}
+
+/// Returns whether this connection is marked as the default for
+/// its driver type. Only one connection per driver should have
+/// is_default set to True.
+///
+pub fn is_default(connection: Connection) -> Bool {
+  case connection {
+    PostgresUriConnection(_, default, _, _) -> default
+    PostgresConnection(_, default, _, _, _, _, _, _) -> default
+    SqliteConnection(_, default, _, _) -> default
   }
 }
 
@@ -76,11 +91,21 @@ pub fn connection_name(connection: Connection) -> String {
 ///
 pub fn with_pool_size(connection: Connection, size: Int) -> Connection {
   case connection {
-    PostgresUriConnection(name, url, _) ->
-      PostgresUriConnection(name, url, Ok(size))
-    PostgresConnection(name, host, port, database, username, password, _) ->
+    PostgresUriConnection(name, default, url, _) ->
+      PostgresUriConnection(name, default, url, Ok(size))
+    PostgresConnection(
+      name,
+      default,
+      host,
+      port,
+      database,
+      username,
+      password,
+      _,
+    ) ->
       PostgresConnection(
         name,
+        default,
         host,
         port,
         database,
@@ -88,8 +113,8 @@ pub fn with_pool_size(connection: Connection, size: Int) -> Connection {
         password,
         Ok(size),
       )
-    SqliteConnection(name, database, _) ->
-      SqliteConnection(name, database, Ok(size))
+    SqliteConnection(name, default, database, _) ->
+      SqliteConnection(name, default, database, Ok(size))
   }
 }
 
@@ -99,7 +124,7 @@ pub fn with_pool_size(connection: Connection, size: Int) -> Connection {
 ///
 pub fn to_config(connection: Connection) -> Config {
   case connection {
-    PostgresUriConnection(name, url_result, pool_size_r) -> {
+    PostgresUriConnection(name, _, url_result, pool_size_r) -> {
       let url = unwrap_or_panic(url_result, name, "url")
       let pool_size = unwrap_or_panic(pool_size_r, name, "pool_size")
       pool_connection.postgres_config(url, pool_size: pool_size)
@@ -107,6 +132,7 @@ pub fn to_config(connection: Connection) -> Config {
 
     PostgresConnection(
       name,
+      _,
       host_r,
       port_r,
       database_r,
@@ -133,7 +159,7 @@ pub fn to_config(connection: Connection) -> Config {
       )
     }
 
-    SqliteConnection(name, database_r, pool_size_r) -> {
+    SqliteConnection(name, _, database_r, pool_size_r) -> {
       let database = unwrap_or_panic(database_r, name, "database")
       let pool_size = unwrap_or_panic(pool_size_r, name, "pool_size")
       pool_connection.sqlite_config(database, pool_size: pool_size)
@@ -146,7 +172,7 @@ pub fn to_config(connection: Connection) -> Config {
 ///
 pub fn validate(connection: Connection) -> List(String) {
   case connection {
-    PostgresUriConnection(_, url_r, pool_size_r) -> {
+    PostgresUriConnection(_, _, url_r, pool_size_r) -> {
       let missing = []
       let missing = case url_r {
         Ok(_) -> missing
@@ -160,6 +186,7 @@ pub fn validate(connection: Connection) -> List(String) {
     }
 
     PostgresConnection(
+      _,
       _,
       host_r,
       _port_r,
@@ -188,7 +215,7 @@ pub fn validate(connection: Connection) -> List(String) {
       missing
     }
 
-    SqliteConnection(_, database_r, pool_size_r) -> {
+    SqliteConnection(_, _, database_r, pool_size_r) -> {
       let missing = []
       let missing = case database_r {
         Ok(_) -> missing

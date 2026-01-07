@@ -1,0 +1,26 @@
+import glimr/console/command.{type Command, type ParsedArgs}
+import glimr_sqlite/console/command as command_sqlite
+import glimr_sqlite/db/pool.{type Pool}
+
+// docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#console-commands
+
+/// The name of the console command.
+const name = "app:{{ command_name }}"
+
+/// The console command description.
+const description = "Command description"
+
+/// Define the console command and its properties.
+///
+pub fn command() -> Command {
+  command.new()
+  |> command.name(name)
+  |> command.description(description)
+  |> command_sqlite.handler(run)
+}
+
+/// Execute the console command.
+///
+pub fn run(args: ParsedArgs, pool: Pool) -> Nil {
+  todo
+}
