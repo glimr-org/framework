@@ -1,64 +1,34 @@
 //// Database Utilities
 ////
-//// High-level database utilities for provider-based configuration
-//// and multi-database support.
+//// High-level database utilities for multi-database support.
 ////
 //// NOTE: Pool management and transactions are now in driver packages:
 //// - glimr_sqlite.start_pool(), glimr_sqlite.transaction()
 //// - glimr_postgres.start_pool(), glimr_postgres.transaction()
 
-import dot_env/env
 import gleam/list
-import gleam/option.{None, Some}
-import gleam/result
 import gleam/string
 import glimr/db/driver.{type Connection}
-import glimr/db/pool_connection
 
 // ------------------------------------------------------------- Public Functions
 
-/// Builds database configuration from environment variables.
-/// Reads DB_DRIVER and DB_POOL_SIZE from the environment.
+/// Validates that all connection names are unique. Panics with
+/// a helpful message listing duplicate names if any are found.
+/// Call this when setting up database connections to catch
+/// configuration errors early.
 ///
-/// For PostgreSQL, uses DB_URL if set, otherwise uses individual
-/// parameters: DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME,
-/// DB_PASSWORD.
-///
-/// For SQLite, DB_DATABASE is preferred but DB_PATH is supported
-/// for backward compatibility.
-///
-pub fn load_config() -> pool_connection.Config {
-  let assert Ok(driver) = env.get_string("DB_DRIVER")
-  let pool_size = env.get_int("DB_POOL_SIZE") |> result.unwrap(15)
+pub fn validate_connections(connections: List(Connection)) -> Nil {
+  let names = list.map(connections, driver.connection_name)
+  let duplicates = find_duplicates(names)
 
-  case driver {
-    "postgres" -> load_postgres_config(pool_size)
-    "sqlite" -> load_sqlite_config(pool_size)
-    _ -> panic as "Please specify a valid DB_DRIVER in your .env file."
-  }
-}
-
-/// Loads the database provider configuration by calling the
-/// `database_provider.register()` function from the user's
-/// application. Returns a list of Connection configurations.
-///
-/// Panics if the database_provider module is not found or
-/// doesn't have a register() function.
-///
-pub fn load_provider() -> List(Connection) {
-  case do_load_provider() {
-    Ok(connections) -> connections
-    Error(reason) -> {
-      let msg = case reason {
-        "module_not_found" ->
-          "database_provider module not found. "
-          <> "Please create src/database_provider.gleam with a register() function."
-        "no_register_function" ->
-          "database_provider module exists but doesn't have a register() function."
-        _ -> "Failed to load database provider: " <> reason
+  case duplicates {
+    [] -> Nil
+    _ ->
+      panic as {
+        "Duplicate database connection names: "
+        <> string.join(duplicates, ", ")
+        <> ". Each connection must have a unique name in your config_db.gleam file."
       }
-      panic as msg
-    }
   }
 }
 
@@ -70,10 +40,9 @@ pub fn get_connection(connections: List(Connection), name: String) -> Connection
     Ok(c) -> c
     Error(_) ->
       panic as {
-        "Connection '"
+        "Database connection '"
         <> name
-        <> "' not found in database_provider. "
-        <> "Available connections: "
+        <> "' not found. Available connections: "
         <> string.join(list.map(connections, driver.connection_name), ", ")
       }
   }
@@ -91,53 +60,22 @@ pub fn get_connection_safe(
 
 // ------------------------------------------------------------- Private Functions
 
-/// Loads PostgreSQL configuration from environment variables.
-/// Tries DB_URL first, falls back to individual parameters.
+/// Finds duplicate strings in a list. Returns a list of strings
+/// that appear more than once, with each duplicate listed only once.
 ///
-fn load_postgres_config(pool_size: Int) -> pool_connection.Config {
-  case env.get_string("DB_URL") {
-    Ok(url) -> pool_connection.postgres_config(url, pool_size: pool_size)
-    Error(_) -> {
-      // Use individual parameters
-      let assert Ok(host) = env.get_string("DB_HOST")
-      let port = env.get_int("DB_PORT") |> result.unwrap(5432)
-      let assert Ok(database) = env.get_string("DB_DATABASE")
-      let assert Ok(username) = env.get_string("DB_USERNAME")
-      let password = case env.get_string("DB_PASSWORD") {
-        Ok(pw) -> Some(pw)
-        Error(_) -> None
-      }
-      pool_connection.postgres_params_config(
-        host: host,
-        port: port,
-        database: database,
-        username: username,
-        password: password,
-        pool_size: pool_size,
-      )
+fn find_duplicates(items: List(String)) -> List(String) {
+  items
+  |> list.fold(#([], []), fn(acc, item) {
+    let #(seen, dups) = acc
+    case list.contains(seen, item) {
+      True ->
+        case list.contains(dups, item) {
+          True -> #(seen, dups)
+          False -> #(seen, [item, ..dups])
+        }
+      False -> #([item, ..seen], dups)
     }
-  }
+  })
+  |> fn(result) { result.1 }
+  |> list.reverse
 }
-
-/// Load SQLite Config
-///
-/// Loads SQLite configuration from environment variables.
-/// Tries DB_DATABASE first, falls back to DB_PATH.
-///
-fn load_sqlite_config(pool_size: Int) -> pool_connection.Config {
-  let path = case env.get_string("DB_DATABASE") {
-    Ok(p) -> p
-    Error(_) -> {
-      let assert Ok(p) = env.get_string("DB_PATH")
-      p
-    }
-  }
-  pool_connection.sqlite_config(path, pool_size: pool_size)
-}
-
-// ------------------------------------------------------------- FFI Bindings
-
-/// Calls database_provider:register() via FFI.
-///
-@external(erlang, "db_provider_ffi", "load_provider")
-fn do_load_provider() -> Result(List(Connection), String)

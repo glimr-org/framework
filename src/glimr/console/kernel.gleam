@@ -12,6 +12,7 @@ import gleam/io
 import gleam/list
 import glimr/console/command.{type Command}
 import glimr/console/console
+import glimr/db/db
 import glimr/db/driver.{type Connection}
 import glimr/internal/console/commands/greet
 import glimr/internal/console/commands/make_action
@@ -55,6 +56,8 @@ pub fn run(
   commands app_commands: List(Command),
   db_connections db_connections: List(Connection),
 ) {
+  db.validate_connections(db_connections)
+
   let commands = list.append(commands(db_connections), app_commands)
   let args = command.get_args()
 
