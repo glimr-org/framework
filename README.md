@@ -33,23 +33,25 @@ gleam add glimr
 
 ## Getting Started
 
-For a complete application structure with controllers, middleware, and configuration, check out the [Glimr](https://github.com/glimr-org/glimr) starter project.
+For a complete application structure with controllers, middleware, database support, etc. check out the main [Glimr](https://github.com/glimr-org/glimr) repository.
 
 ## Learn More
 
-- [Framework Repository](https://github.com/glimr-org/framework) - Core framework code
+- [Glimr Repository](https://github.com/glimr-org/glimr) - Main Glimr repository
 - [Gleam Documentation](https://gleam.run/documentation/) - Learn Gleam
 - [Wisp Documentation](https://hexdocs.pm/wisp/) - Web server library
 
 ### Built With
 
-Glimr is built on top of these excellent Gleam libraries:
+Glimr is built on top of these excellent Gleam packages:
 
-- [**Wisp**](https://hexdocs.pm/wisp/) - The web framework that powers Glimr's HTTP handling
+- [**wisp**](https://hexdocs.pm/wisp/) - The web framework that powers Glimr's HTTP handling
 - [**gleam_http**](https://hexdocs.pm/gleam_http/) - HTTP types and utilities
 - [**gleam_json**](https://hexdocs.pm/gleam_json/) - JSON encoding and decoding
 - [**gleam_stdlib**](https://hexdocs.pm/gleam_stdlib/) - Gleam's standard library
 - [**gleam_time**](https://github.com/gleam-lang/time) - Work with time in Gleam!
+- [**simplifile**](https://github.com/bcpeinhardt/simplifile) - Simple file operations for Gleam
+- [**dot_env**](https://github.com/aosasona/dotenv) - Load environment variables from .env
 
 Special thanks to the Gleam community for building such an awesome ecosystem!
 
