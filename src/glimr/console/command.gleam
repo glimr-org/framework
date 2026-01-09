@@ -150,7 +150,7 @@ pub fn args(cmd: Command, arguments: List(CommandArg)) -> Command {
 /// Returns the standard --database option for commands that
 /// need database access. Add this to your command args when
 /// using driver-specific handlers. Uses "_default" as the
-/// default value to find the connection with is_default: True.
+/// default value to use the first configured connection.
 ///
 pub fn db_option() -> CommandArg {
   Option("database", "Database connection to use", "_default")
@@ -353,7 +353,7 @@ fn resolve_default_connection(
 ) -> ParsedArgs {
   case dict.get(parsed.options, "database") {
     Ok("_default") -> {
-      case list.find(connections, driver.is_default) {
+      case list.first(connections) {
         Ok(conn) -> {
           let actual_name = driver.connection_name(conn)
           let updated_options =
@@ -369,7 +369,7 @@ fn resolve_default_connection(
 
 /// Finds a connection by name from the list of configured
 /// connections, filtered by driver type. If name is "_default",
-/// finds the connection with is_default: True for that driver.
+/// uses the first connection of that driver type.
 ///
 fn find_connection(
   connections: List(Connection),
@@ -380,7 +380,7 @@ fn find_connection(
     list.filter(connections, fn(c) { driver.connection_type(c) == driver_type })
 
   case name {
-    "_default" -> list.find(typed, driver.is_default)
+    "_default" -> list.first(typed)
     _ -> list.find(typed, fn(c) { driver.connection_name(c) == name })
   }
 }
