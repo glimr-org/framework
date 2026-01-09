@@ -4,6 +4,7 @@
 //// in a type-safe way. Users define connections in their
 //// database_provider.gleam file which is loaded at runtime.
 
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
@@ -44,7 +45,9 @@ pub type Connection {
   )
 }
 
-/// Identifies the underlying database type (Postgres or SQLite).
+/// Identifies the underlying database type for a connection.
+/// Currently supports Postgres and SQLite as the two available
+/// database driver implementations.
 ///
 pub type DriverType {
   Postgres
@@ -54,6 +57,8 @@ pub type DriverType {
 // ------------------------------------------------------------- Public Functions
 
 /// Returns whether the connection is for Postgres or SQLite.
+/// Inspects the connection variant to determine the database
+/// type without needing to access individual fields.
 ///
 pub fn connection_type(connection: Connection) -> DriverType {
   case connection {
@@ -64,6 +69,8 @@ pub fn connection_type(connection: Connection) -> DriverType {
 }
 
 /// Returns the name identifying this connection configuration.
+/// The name is used to look up specific connections when 
+/// multiple database connections are configured in the app.
 ///
 pub fn connection_name(connection: Connection) -> String {
   case connection {
@@ -85,9 +92,9 @@ pub fn is_default(connection: Connection) -> Bool {
   }
 }
 
-/// Returns a new connection with the pool size overridden to the
-/// specified value. Useful for console commands that only need
-/// a single connection.
+/// Returns a new connection with the pool size overridden to 
+/// the specified value. Useful for console commands that only 
+/// need a single connection.
 ///
 pub fn with_pool_size(connection: Connection, size: Int) -> Connection {
   case connection {
@@ -118,9 +125,9 @@ pub fn with_pool_size(connection: Connection, size: Int) -> Connection {
   }
 }
 
-/// Converts a Connection to a pool_connection.Config. Panics with a
-/// helpful message if any required environment variables are
-/// missing.
+/// Converts a Connection to a pool_connection.Config. Panics 
+/// with a helpful message if any required environment variables 
+/// are missing.
 ///
 pub fn to_config(connection: Connection) -> Config {
   case connection {
@@ -168,7 +175,8 @@ pub fn to_config(connection: Connection) -> Config {
 }
 
 /// Validates that all required parameters for a connection are
-/// present. Returns a list of missing parameter names.
+/// present. Returns a list of missing parameter names, which
+/// will be empty if the connection is fully configured.
 ///
 pub fn validate(connection: Connection) -> List(String) {
   case connection {
@@ -230,10 +238,30 @@ pub fn validate(connection: Connection) -> List(String) {
   }
 }
 
+/// Searches through a list of connections to find one with
+/// the specified name. Returns Ok with the connection if found,
+/// or Error(Nil) if no connection matches the given name.
+///
+pub fn find_by_name(name: String, connections: List(Connection)) -> Connection {
+  let conn =
+    list.find(connections, fn(connection: Connection) {
+      connection.name == name
+    })
+
+  case conn {
+    Ok(conn) -> conn
+    _ ->
+      panic as {
+        "The connection '" <> name <> "' does not exist in your config_db.gleam"
+      }
+  }
+}
+
 // ------------------------------------------------------------- Private Functions
 
 /// Unwraps a Result or panics with a helpful error message
-/// indicating which connection and parameter is missing.
+/// indicating which connection and parameter is missing. Used 
+/// internally to provide clear configuration error messages.
 ///
 fn unwrap_or_panic(
   result: Result(a, String),
