@@ -11,9 +11,9 @@ import gleam/dynamic/decode
 
 // ------------------------------------------------------------- Public Functions
 
-/// Decodes a boolean value from either a native boolean (PostgreSQL)
-/// or an integer 0/1 (SQLite). Returns `True` for any non-zero
-/// integer, `False` for zero.
+/// Decodes a boolean value from either a native boolean 
+/// (PostgreSQL) or an integer 0/1 (SQLite). Returns `True` for 
+/// any non-zero integer, `False` for zero.
 ///
 /// *Example:*
 ///

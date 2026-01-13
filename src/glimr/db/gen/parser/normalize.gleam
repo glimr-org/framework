@@ -49,8 +49,9 @@ fn strip_block_comments(sql: String) -> String {
   }
 }
 
-/// Strip single line comments "-- like these". This works by 
-/// stripping everything from -- to end of line.
+/// Strip single line comments "-- like these" from SQL. Works
+/// by stripping everything from -- to the end of each line,
+/// preserving the code before the comment.
 ///
 fn strip_line_comments(sql: String) -> String {
   let lines = string.split(sql, "\n")
@@ -65,7 +66,8 @@ fn strip_line_comments(sql: String) -> String {
 }
 
 /// Recursively collapse multiple consecutive spaces into single
-/// spaces cleaning up the SQL code.
+/// spaces. Continues until no double-spaces remain, producing
+/// clean normalized SQL.
 ///
 fn collapse_spaces(sql: String) -> String {
   case string.contains(sql, "  ") {

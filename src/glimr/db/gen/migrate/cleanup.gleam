@@ -14,7 +14,8 @@ import simplifile
 // ------------------------------------------------------------- Public Functions
 
 /// Remove rename_from modifiers from schema files after
-/// migration is generated.
+/// migration is generated. Ensures rename directives are only
+/// used once and don't accumulate.
 ///
 pub fn clean_rename_from_modifiers(models_path: String) -> Nil {
   case simplifile.read_directory(models_path) {
@@ -75,6 +76,8 @@ pub fn clean_rename_from_modifiers(models_path: String) -> Nil {
 // ------------------------------------------------------------- Private Functions
 
 /// Remove |> rename_from("...") patterns from schema content.
+/// Processes each line and also cleans up unused imports
+/// afterwards.
 ///
 fn remove_rename_from_calls(content: String) -> String {
   // Split into lines and process each line
@@ -97,7 +100,9 @@ fn remove_rename_from_calls(content: String) -> String {
   clean_rename_from_import(cleaned)
 }
 
-/// Remove rename_from call from a single line of code.
+/// Remove rename_from call from a single line of code. Handles
+/// both direct rename_from() and schema.rename_from() patterns
+/// with proper spacing cleanup.
 ///
 fn remove_rename_from_from_line(line: String) -> String {
   // Try both patterns: |> rename_from(...) and |> schema.rename_from(...)
@@ -113,7 +118,9 @@ fn remove_rename_from_from_line(line: String) -> String {
   result
 }
 
-/// Remove the rename_from pattern and handle spacing.
+/// Remove the rename_from pattern and handle spacing. Finds
+/// the closing paren and joins the before/after parts with
+/// appropriate whitespace.
 ///
 fn remove_rename_pattern(before: String, after: String) -> String {
   case find_closing_paren(after) {
@@ -133,6 +140,8 @@ fn remove_rename_pattern(before: String, after: String) -> String {
 }
 
 /// Find everything after the closing paren of rename_from(...).
+/// Returns the remaining string content after the function
+/// call for rejoining with the prefix.
 ///
 fn find_closing_paren(s: String) -> Result(String, Nil) {
   case string.split_once(s, ")") {
@@ -142,7 +151,8 @@ fn find_closing_paren(s: String) -> Result(String, Nil) {
 }
 
 /// Remove rename_from from imports if no longer used in the
-/// file.
+/// file. Handles both single-line and multi-line import
+/// statement patterns.
 ///
 fn clean_rename_from_import(content: String) -> String {
   let has_rename_from_usage =

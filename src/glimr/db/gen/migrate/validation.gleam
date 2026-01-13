@@ -10,7 +10,8 @@ import glimr/db/gen/schema_parser.{type Table}
 // ------------------------------------------------------------- Public Functions
 
 /// Validate that no table has duplicate column names. Panics
-/// with an error message if duplicates are found.
+/// with an error message if duplicates are found, listing
+/// which columns appear more than once.
 ///
 pub fn validate_no_duplicate_columns(tables: List(Table)) -> Nil {
   list.each(tables, fn(table) {
@@ -36,13 +37,17 @@ pub fn validate_no_duplicate_columns(tables: List(Table)) -> Nil {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Find duplicate strings in a list.
+/// Find duplicate strings in a list. Returns a list of
+/// strings that appear more than once, with each duplicate
+/// appearing only once in the result.
 ///
 fn find_duplicates(items: List(String)) -> List(String) {
   find_duplicates_helper(items, [], [])
 }
 
-/// Recursive helper for find_duplicates.
+/// Recursive helper for find_duplicates. Tracks seen items
+/// and accumulates duplicates, ensuring each duplicate is
+/// only added once to the result list.
 ///
 fn find_duplicates_helper(
   items: List(String),

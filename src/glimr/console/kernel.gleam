@@ -3,13 +3,10 @@
 //// Registers Glimr's console commands and is the entry point
 //// to run your app's custom console commands as well as
 //// Glimr's default console commands.
-////
-//// NOTE: Database commands (migrate, gen) are now in driver packages:
-//// - glimr_sqlite/console/kernel for sqlite:migrate, sqlite:gen
-//// - glimr_postgres/console/kernel for postgres:migrate, postgres:gen
 
 import gleam/io
 import gleam/list
+import glimr/cache/driver.{type CacheStore} as _cache_driver
 import glimr/console/command.{type Command}
 import glimr/console/console
 import glimr/db/db
@@ -29,9 +26,6 @@ import glimr/internal/console/commands/setup_database
 /// Returns the list of internal Glimr framework commands.
 /// Commands are generic over ctx so they can be merged
 /// with user commands into a single unified list.
-///
-/// NOTE: Database commands (migrate, gen) are now in driver packages.
-/// Add them via glimr_sqlite/console/kernel or glimr_postgres/console/kernel.
 ///
 pub fn commands(connections: List(Connection)) -> List(Command) {
   [
@@ -55,6 +49,7 @@ pub fn commands(connections: List(Connection)) -> List(Command) {
 pub fn run(
   commands app_commands: List(Command),
   db_connections db_connections: List(Connection),
+  cache_stores cache_stores: List(CacheStore),
 ) {
   db.validate_connections(db_connections)
 
@@ -65,7 +60,9 @@ pub fn run(
     [] -> command.print_help(commands)
     ["-V"] | ["--version"] -> command.print_glimr_version()
     [name, ..rest] -> {
-      case command.find_and_run(commands, db_connections, name, rest) {
+      case
+        command.find_and_run(commands, db_connections, cache_stores, name, rest)
+      {
         True -> Nil
         False -> io.println(console.error("Command not found: " <> name))
       }

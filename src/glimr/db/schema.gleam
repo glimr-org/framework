@@ -10,7 +10,8 @@ import gleam/option.{type Option, None, Some}
 // ------------------------------------------------------------- Public Types
 
 /// Represents a database table definition with its name and
-/// column definitions.
+/// column definitions. Used as the source of truth for code
+/// generation, migrations, and type inference.
 ///
 pub type Table {
   Table(name: String, columns: List(Column))
@@ -433,15 +434,9 @@ pub fn auto_uuid(def: ColumnDef) -> ColumnDef {
   set_default(def, DefaultAutoUuid)
 }
 
-/// *Example:*
-///
-/// ```gleam
-/// table("users", [
-///   string("deleted_at")
-///     |> nullable()
-///     |> default_null(),
-/// ])
-/// ```
+/// Sets the default value to NULL. Use with nullable columns
+/// to explicitly set NULL as the default rather than having
+/// no default value specified.
 ///
 pub fn default_null(def: ColumnDef) -> ColumnDef {
   set_default(def, DefaultNull)
@@ -468,7 +463,9 @@ pub fn rename_from(def: ColumnDef, old_name: String) -> ColumnDef {
   }
 }
 
-/// Returns the table's columns in definition order.
+/// Returns the table's columns in definition order. Useful
+/// for iterating over columns when generating code or
+/// performing schema introspection.
 ///
 pub fn columns(t: Table) -> List(Column) {
   t.columns
@@ -476,7 +473,9 @@ pub fn columns(t: Table) -> List(Column) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Helper to set default value on a ColumnDef
+/// Helper to set default value on a ColumnDef. Handles both
+/// single columns and multiple columns (like timestamps),
+/// applying the default to all columns in the definition.
 ///
 fn set_default(def: ColumnDef, value: Default) -> ColumnDef {
   case def {

@@ -30,7 +30,8 @@ const symbol_operators = ["=", "!", ">", "<"]
 // ------------------------------------------------------------- Public Functions
 
 /// Extract parameter-to-column mappings from WHERE clause.
-/// Handles BETWEEN patterns specially for more accurate naming.
+/// Handles BETWEEN patterns specially for range queries and
+/// other comparison operators for standard conditions.
 ///
 pub fn extract(sql: String) -> List(#(Int, String)) {
   let upper = string.uppercase(sql)
@@ -53,7 +54,8 @@ pub fn extract(sql: String) -> List(#(Int, String)) {
 // ------------------------------------------------------------- Private Functions
 
 /// Merge two param column lists, preferring the first list
-/// (primary) when the same parameter appears in both.
+/// (primary) when the same parameter appears in both. Used to
+/// prioritize BETWEEN params over generic condition params.
 ///
 fn merge_param_columns(
   primary: List(#(Int, String)),
@@ -66,7 +68,8 @@ fn merge_param_columns(
 }
 
 /// Recursively parse WHERE clause conditions to extract
-/// parameter-to-column mappings from comparisons.
+/// parameter-to-column mappings from comparisons like
+/// column = $1 or $1 = column.
 ///
 fn parse_conditions(
   clause: String,
@@ -103,8 +106,9 @@ fn find_param_column_pair(s: String) -> Option(#(Int, String, String)) {
   }
 }
 
-/// Try to find the column associated with a parameter, checking
-/// both before (column = $1) and after ($1 = column) positions.
+/// Try to find the column associated with a parameter by
+/// checking both before (column = $1) and after ($1 = column)
+/// positions in the comparison.
 ///
 fn find_column_for_param(
   before: String,
@@ -117,7 +121,8 @@ fn find_column_for_param(
 }
 
 /// Look for a column name before the parameter in patterns
-/// like "column = $1". Strips operators and filters keywords.
+/// like "column = $1". Strips trailing operators and filters
+/// out SQL keywords to find the actual column name.
 ///
 fn find_column_before_param(s: String) -> Option(String) {
   let trimmed = string.trim_end(s)
@@ -158,7 +163,8 @@ fn remove_trailing_operator(s: String) -> String {
 }
 
 /// Try to remove a keyword operator (LIKE, IN, etc.) from the
-/// end of a string. Returns the shortened string if found.
+/// end of a string. Returns the shortened string if a matching
+/// operator suffix is found.
 ///
 fn try_remove_keyword_operator(
   upper: String,
@@ -176,7 +182,8 @@ fn try_remove_keyword_operator(
 }
 
 /// Try to remove a symbol operator (=, !, >, <) from the end
-/// of a string. Returns the shortened string if found.
+/// of a string. Returns the shortened string if a matching
+/// operator character is found.
 ///
 fn try_remove_symbol_operator(
   s: String,
@@ -192,7 +199,8 @@ fn try_remove_symbol_operator(
 }
 
 /// Look for a column name after the parameter in patterns
-/// like "$1 = column". Returns the column and remaining string.
+/// like "$1 = column". Returns the column name and remaining
+/// string for continued parsing.
 ///
 fn find_column_after_param(s: String) -> Option(#(String, String)) {
   let trimmed = string.trim_start(s)

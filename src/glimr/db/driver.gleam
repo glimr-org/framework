@@ -255,9 +255,8 @@ fn unwrap_or_panic(
 }
 
 /// Converts a snake_case or lowercase name to PascalCase.
-/// Used for generating type names from driver names.
-///
-/// Example: "main" -> "Main", "my_database" -> "MyDatabase"
+/// Used for generating type names from connection names.
+/// Splits on underscores and capitalizes each segment.
 ///
 pub fn to_pascal_case(name: String) -> String {
   name
@@ -265,6 +264,10 @@ pub fn to_pascal_case(name: String) -> String {
   |> do_pascal_case("")
 }
 
+/// Recursive helper for to_pascal_case. Processes each segment
+/// of the split string, capitalizing and concatenating them
+/// into the final PascalCase result.
+///
 fn do_pascal_case(parts: List(String), acc: String) -> String {
   case parts {
     [] -> acc

@@ -12,8 +12,9 @@ import glimr/db/gen/parser/util
 
 // ------------------------------------------------------------- Public Functions
 
-/// Extract params from BETWEEN ... AND ... patterns. Names the
-/// parameters as start_<column> and end_<column>.
+/// Extract params from BETWEEN ... AND ... patterns. Names
+/// the parameters as start_<column> and end_<column> for range
+/// queries on date/time and numeric columns.
 ///
 pub fn extract(clause: String) -> List(#(Int, String)) {
   do_extract(string.uppercase(clause), clause, [])
@@ -22,7 +23,8 @@ pub fn extract(clause: String) -> List(#(Int, String)) {
 // ------------------------------------------------------------- Private Functions
 
 /// Recursive helper that finds BETWEEN patterns and extracts
-/// the associated parameters with start_/end_ naming.
+/// the associated parameters. Uses start_/end_ naming for
+/// the lower and upper bounds.
 ///
 fn do_extract(
   upper: String,
@@ -56,8 +58,9 @@ fn do_extract(
   }
 }
 
-/// Extract the two params from "BETWEEN $N AND $M" pattern,
-/// naming them start_<col> and end_<col>.
+/// Extract the two params from "BETWEEN $N AND $M" pattern.
+/// Returns mappings for both start_<col> and end_<col> if both
+/// parameters are found.
 ///
 fn extract_pair_params(
   after_between: String,
@@ -76,7 +79,8 @@ fn extract_pair_params(
 }
 
 /// Extract the first parameter ($N) after BETWEEN keyword.
-/// Returns the parameter number and remaining string.
+/// Returns the parameter number and remaining string for
+/// continued parsing of the AND portion.
 ///
 fn extract_first_param(s: String) -> Result(#(Int, String), Nil) {
   use #(_, after_dollar) <- result.try(string.split_once(s, "$"))
@@ -86,7 +90,8 @@ fn extract_first_param(s: String) -> Result(#(Int, String), Nil) {
 }
 
 /// Extract the second parameter ($M) after AND keyword.
-/// Returns just the parameter number.
+/// Returns just the parameter number since this completes
+/// the BETWEEN pattern extraction.
 ///
 fn extract_second_param(rest: String) -> Result(Int, Nil) {
   use #(_, after_and) <- result.try(string.split_once(

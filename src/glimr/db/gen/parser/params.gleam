@@ -23,7 +23,8 @@ import glimr/db/gen/parser/util
 // ------------------------------------------------------------- Public Functions
 
 /// Extract all parameter numbers ($1, $2, etc.) from SQL query.
-/// Returns a sorted, deduplicated list of parameter numbers.
+/// Returns a sorted, deduplicated list of parameter numbers
+/// found anywhere in the query.
 ///
 pub fn extract(sql: String) -> List(Int) {
   do_extract_params(sql, [])
@@ -31,8 +32,9 @@ pub fn extract(sql: String) -> List(Int) {
   |> list.sort(by: int.compare)
 }
 
-/// Extract parameter-to-column mappings from SQL. Handles
-/// INSERT, UPDATE SET, and WHERE clauses.
+/// Extract parameter-to-column mappings from SQL. Combines
+/// mappings from INSERT, UPDATE SET, and WHERE clauses with
+/// INSERT/UPDATE taking precedence for duplicate parameters.
 ///
 pub fn extract_columns(sql: String) -> List(#(Int, String)) {
   let insert_params = insert.extract(sql)
@@ -49,7 +51,8 @@ pub fn extract_columns(sql: String) -> List(#(Int, String)) {
 // ------------------------------------------------------------- Private Functions
 
 /// Recursive helper that scans for $ followed by digits and
-/// accumulates found parameter numbers.
+/// accumulates found parameter numbers. Continues scanning
+/// after each found parameter.
 ///
 fn do_extract_params(s: String, acc: List(Int)) -> List(Int) {
   case string.split_once(s, "$") {
@@ -65,7 +68,8 @@ fn do_extract_params(s: String, acc: List(Int)) -> List(Int) {
 }
 
 /// Remove duplicate parameter mappings, keeping only the first
-/// occurrence of each parameter number.
+/// occurrence of each parameter number. Preserves the order
+/// from the original list.
 ///
 fn dedupe_by_param_num(params: List(#(Int, String))) -> List(#(Int, String)) {
   list.fold(params, #([], []), fn(state, param) {

@@ -27,7 +27,8 @@ pub fn strip_string_literals(sql: String) -> String {
 }
 
 /// Consume consecutive digit characters from the start of a
-/// string. Returns the consumed digits and remaining string.
+/// string. Returns a tuple of consumed digits and the remaining
+/// string for further processing.
 ///
 pub fn consume_digits(s: String, acc: String) -> #(String, String) {
   case string.pop_grapheme(s) {
@@ -42,7 +43,8 @@ pub fn consume_digits(s: String, acc: String) -> #(String, String) {
 }
 
 /// Parse an integer from a string, returning None for empty
-/// strings or invalid integers.
+/// strings or invalid integers. Used for parsing parameter
+/// numbers in SQL queries.
 ///
 pub fn parse_int(s: String) -> Option(Int) {
   case s {
@@ -51,8 +53,9 @@ pub fn parse_int(s: String) -> Option(Int) {
   }
 }
 
-/// Check if a character is valid in a SQL identifier (letters,
-/// digits, underscore).
+/// Check if a character is valid in a SQL identifier. Valid
+/// characters include letters, digits, and underscores for
+/// table and column names.
 ///
 pub fn is_identifier_char(c: String) -> Bool {
   string.contains(identifier_chars, c)
@@ -75,7 +78,8 @@ pub fn extract_identifier(s: String) -> String {
 }
 
 /// Extract the last SQL identifier from a string by working
-/// backwards from the end.
+/// backwards from the end. Used for extracting column names
+/// that appear after operators.
 ///
 pub fn extract_last_identifier(s: String) -> String {
   let trimmed = string.trim_end(s)
@@ -101,8 +105,9 @@ fn extract_identifier_chars(chars: List(String), acc: List(String)) -> String {
   }
 }
 
-/// Check if a string is a SQL keyword (not a valid column name).
-/// Used to filter out false positives in column detection.
+/// Check if a string is a SQL keyword (not a valid column
+/// name). Used to filter out false positives in column
+/// detection during SQL parsing.
 ///
 pub fn is_sql_keyword(s: String) -> Bool {
   let upper = string.uppercase(s)
@@ -206,7 +211,8 @@ fn do_strip_string_literals(sql: String, acc: String, in_string: Bool) -> String
 }
 
 /// Recursive helper that extracts characters until a delimiter
-/// is found. Stops at whitespace, commas, or parentheses.
+/// is found. Stops at whitespace, commas, or parentheses and
+/// returns the accumulated identifier.
 ///
 fn do_extract_identifier(s: String, acc: String) -> String {
   case string.pop_grapheme(s) {

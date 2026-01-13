@@ -14,8 +14,7 @@ import glimr/db/driver.{type Connection}
 
 /// Validates that all connection names are unique. Panics with
 /// a helpful message listing duplicate names if any are found.
-/// Call this when setting up database connections to catch
-/// configuration errors early.
+/// Call this during startup to catch configuration errors early.
 ///
 pub fn validate_connections(connections: List(Connection)) -> Nil {
   let names = list.map(connections, driver.connection_name)
@@ -32,8 +31,9 @@ pub fn validate_connections(connections: List(Connection)) -> Nil {
   }
 }
 
-/// Finds a connection by name from a list of connections. Panics if
-/// the connection is not found.
+/// Finds a connection by name from a list of connections.
+/// Panics with a helpful message if the connection is not found,
+/// listing all available connection names for debugging.
 ///
 pub fn get_connection(connections: List(Connection), name: String) -> Connection {
   case list.find(connections, fn(c) { driver.connection_name(c) == name }) {
@@ -48,8 +48,9 @@ pub fn get_connection(connections: List(Connection), name: String) -> Connection
   }
 }
 
-/// Finds a connection by name from a list of connections. Returns
-/// Error(Nil) if the connection is not found instead of panicking.
+/// Finds a connection by name from a list of connections.
+/// Returns Error(Nil) if the connection is not found instead of
+/// panicking. Useful when connection existence is uncertain.
 ///
 pub fn get_connection_safe(
   connections: List(Connection),
@@ -61,7 +62,8 @@ pub fn get_connection_safe(
 // ------------------------------------------------------------- Private Functions
 
 /// Finds duplicate strings in a list. Returns a list of strings
-/// that appear more than once, with each duplicate listed only once.
+/// that appear more than once, with each duplicate listed only
+/// once. Used internally for connection name validation.
 ///
 fn find_duplicates(items: List(String)) -> List(String) {
   items

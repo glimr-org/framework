@@ -21,13 +21,16 @@ import gleam/string
 // ------------------------------------------------------------- Public Types
 
 /// Represents a database table with a name and list of columns.
+/// Parsed from schema.gleam files and used for code generation
+/// and migration diffing.
 ///
 pub type Table {
   Table(name: String, columns: List(Column))
 }
 
-/// Represents a database column with its name, type, 
-/// nullability, default value, and optional rename tracking.
+/// Represents a database column with its name, type,
+/// nullability, default value, and optional rename tracking
+/// for migration generation.
 ///
 pub type Column {
   Column(
@@ -55,7 +58,8 @@ pub type DefaultValue {
 }
 
 /// Represents the data type of a column. Maps to appropriate
-/// SQL types for each database driver.
+/// SQL types for each database driver (PostgreSQL and SQLite)
+/// during code generation.
 ///
 pub type ColumnType {
   Id
@@ -100,8 +104,9 @@ pub fn parse(content: String) -> Result(Table, String) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Extract the table name from a schema file by looking for the
-/// `pub const name = "tablename"` declaration.
+/// Extract the table name from a schema file by looking for
+/// the `pub const name = "tablename"` declaration at the
+/// module level.
 ///
 fn extract_table_name(content: String) -> Option(String) {
   // Look for: pub const name = "tablename"
@@ -124,7 +129,8 @@ fn extract_table_name(content: String) -> Option(String) {
 }
 
 /// Extract the column list content from `table(name, [...])`.
-/// Returns the content inside the square brackets.
+/// Returns the content inside the square brackets for further
+/// parsing into individual column definitions.
 ///
 fn extract_column_list(content: String) -> Option(String) {
   case string.split_once(content, "table(") {
@@ -162,7 +168,8 @@ fn extract_until_balanced_bracket(s: String, depth: Int, acc: String) -> String 
 }
 
 /// Parse the column list content into a list of Column structs.
-/// Splits by top-level commas and parses each column definition.
+/// Splits by top-level commas and parses each column definition
+/// including modifiers like nullable and default values.
 ///
 fn parse_column_list(list_content: String) -> List(Column) {
   let items = split_by_top_level_comma(list_content)
@@ -171,14 +178,16 @@ fn parse_column_list(list_content: String) -> List(Column) {
 }
 
 /// Split a string by commas, but only at the top level (not
-/// inside parentheses). Entry point for the recursive helper.
+/// inside parentheses). Used to separate column definitions
+/// in the schema list.
 ///
 fn split_by_top_level_comma(content: String) -> List(String) {
   split_by_comma_helper(content, 0, "", [])
 }
 
 /// Recursive helper for splitting by top-level commas. Tracks
-/// parenthesis depth to avoid splitting inside function calls.
+/// parenthesis depth to avoid splitting inside function calls
+/// and nested expressions.
 ///
 fn split_by_comma_helper(
   s: String,
@@ -305,7 +314,8 @@ fn parse_rename_from(s: String) -> Result(String, Nil) {
 }
 
 /// Extract the first double-quoted string from the input.
-/// Returns the content between the first pair of double quotes.
+/// Returns the content between the first pair of double quotes,
+/// used for parsing column names and string arguments.
 ///
 fn extract_quoted_string(s: String) -> Result(String, Nil) {
   case string.split_once(s, "\"") {
@@ -320,7 +330,8 @@ fn extract_quoted_string(s: String) -> Result(String, Nil) {
 }
 
 /// Extract the content between the first pair of parentheses.
-/// Returns the trimmed content inside the parentheses.
+/// Returns the trimmed content inside the parentheses, used
+/// for parsing function arguments like default values.
 ///
 fn extract_parens_content(s: String) -> Result(String, Nil) {
   case string.split_once(s, "(") {
@@ -360,7 +371,9 @@ fn parse_default_value(s: String) -> Result(DefaultValue, Nil) {
   |> result.flatten()
 }
 
-/// Extract a boolean default value by checking for "True".
+/// Extract a boolean default value by checking for "True" in
+/// the string. Returns DefaultBool(True) if found, otherwise
+/// DefaultBool(False).
 ///
 fn extract_bool_default(s: String) -> Result(DefaultValue, Nil) {
   case string.contains(s, "True") {
@@ -370,6 +383,8 @@ fn extract_bool_default(s: String) -> Result(DefaultValue, Nil) {
 }
 
 /// Extract a string default value from the quoted argument.
+/// Parses the content between double quotes and wraps it in
+/// DefaultString.
 ///
 fn extract_string_default(s: String) -> Result(DefaultValue, Nil) {
   extract_quoted_string(s)
@@ -377,6 +392,8 @@ fn extract_string_default(s: String) -> Result(DefaultValue, Nil) {
 }
 
 /// Extract an integer default value from the parentheses.
+/// Parses the numeric string inside the parentheses and wraps
+/// it in DefaultInt.
 ///
 fn extract_int_default(s: String) -> Result(DefaultValue, Nil) {
   case extract_parens_content(s) {
@@ -389,7 +406,9 @@ fn extract_int_default(s: String) -> Result(DefaultValue, Nil) {
   }
 }
 
-/// Extract a float default value from the parentheses.
+/// Extract a float default value from the parentheses. Parses
+/// the numeric string inside the parentheses and wraps it in
+/// DefaultFloat.
 ///
 fn extract_float_default(s: String) -> Result(DefaultValue, Nil) {
   case extract_parens_content(s) {
@@ -449,8 +468,9 @@ fn parse_column_function(func: String) -> Option(Column) {
   }
 }
 
-/// Parse a column function with a name argument like 
-/// `string("name")` into a Column struct with the given type.
+/// Parse a column function with a name argument like
+/// `string("name")` into a Column struct with the given type
+/// and default nullability/default values.
 ///
 fn parse_named_column(func: String, col_type: ColumnType) -> Option(Column) {
   case extract_quoted_string(func) {
@@ -471,7 +491,9 @@ fn parse_foreign_column(func: String) -> Option(Column) {
   }
 }
 
-/// Get columns in definition order from a table.
+/// Get columns in definition order from a table. Returns the
+/// list of columns as defined in the schema file, preserving
+/// their original order.
 ///
 pub fn columns(table: Table) -> List(Column) {
   table.columns

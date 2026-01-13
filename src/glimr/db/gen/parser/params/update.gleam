@@ -11,7 +11,8 @@ import glimr/db/gen/parser/util
 
 // ------------------------------------------------------------- Public Functions
 
-/// Extract parameter mappings from UPDATE SET clause.
+/// Extract parameter mappings from UPDATE SET clause. Parses
+/// column = $n assignments to map parameters to columns.
 /// Pattern: UPDATE table SET col1 = $1, col2 = $2
 ///
 pub fn extract(sql: String) -> List(#(Int, String)) {
@@ -21,8 +22,9 @@ pub fn extract(sql: String) -> List(#(Int, String)) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Internal implementation that returns Result for use with
-/// result.try for cleaner error handling.
+/// Internal implementation that returns Result for cleaner
+/// error handling with result.try. Extracts SET clause and
+/// delegates to assignment parsing.
 ///
 fn do_extract(sql: String) -> Result(List(#(Int, String)), Nil) {
   let upper = string.uppercase(sql)
@@ -44,7 +46,8 @@ fn do_extract(sql: String) -> Result(List(#(Int, String)), Nil) {
 }
 
 /// Parse SET clause assignments like "col = $1, col2 = $2"
-/// and extract parameter-to-column mappings.
+/// and extract parameter-to-column mappings. Only includes
+/// assignments where the value is a parameter placeholder.
 ///
 fn parse_set_assignments(clause: String) -> List(#(Int, String)) {
   let parts = string.split(clause, ",")
@@ -71,7 +74,9 @@ fn parse_set_assignments(clause: String) -> List(#(Int, String)) {
   })
 }
 
-/// Extract only the leading digits from a string.
+/// Extract only the leading digits from a string. Used to
+/// parse parameter numbers that may have trailing content
+/// like commas or spaces.
 ///
 fn extract_digits(s: String) -> String {
   let #(digits, _) = util.consume_digits(s, "")

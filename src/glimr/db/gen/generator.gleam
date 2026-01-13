@@ -45,7 +45,8 @@ pub fn generate(
 // ------------------------------------------------------------- Private Functions
 
 /// Generates the module documentation comment with a warning
-/// that the file is auto-generated and should not be edited.
+/// that the file is auto-generated and should not be edited
+/// manually by developers.
 ///
 fn generate_header(model_name: String) -> String {
   "//// "
@@ -160,7 +161,8 @@ fn generate_model_decoder(model_name: String, table: Table) -> String {
 }
 
 /// Generates code for all query functions by mapping over the
-/// list of parsed queries and joining the results.
+/// list of parsed queries and joining the results with blank
+/// lines between each function.
 ///
 fn generate_queries(
   table: Table,
@@ -303,7 +305,8 @@ fn resolve_column_types(
 }
 
 /// Infers the return type for SQL aggregate functions. COUNT
-/// returns Int, SUM returns Int, AVG returns Float.
+/// and SUM return Int, AVG returns Float. Returns None for
+/// non-aggregate expressions.
 ///
 fn infer_aggregate_type(expr: String) -> option.Option(ColumnType) {
   let upper = string.uppercase(expr)
@@ -328,7 +331,8 @@ fn infer_aggregate_type(expr: String) -> option.Option(ColumnType) {
 }
 
 /// Generates a row type for a query's SELECT columns. Similar
-/// to generate_model_type but for query-specific result types.
+/// to generate_model_type but creates query-specific result
+/// types with only the selected columns.
 ///
 fn generate_row_type(
   type_name: String,
@@ -573,6 +577,8 @@ fn generate_query_function(
 }
 
 /// Generates SQLite _wc query function using sqlight directly.
+/// The _wc suffix indicates "with connection" for use within
+/// transactions where a connection is already checked out.
 ///
 fn generate_sqlite_wc_query(
   fn_name: String,
@@ -626,6 +632,8 @@ fn generate_sqlite_wc_query(
 }
 
 /// Generates PostgreSQL _wc query function using pog directly.
+/// The _wc suffix indicates "with connection" for use within
+/// transactions where a connection is already checked out.
 ///
 fn generate_postgres_wc_query(
   fn_name: String,
@@ -814,7 +822,9 @@ fn generate_execute_function(
   string.join([main_fn, wc_fn], "\n\n")
 }
 
-/// Generates SQLite _wc execute function using sqlight directly.
+/// Generates SQLite _wc execute function using sqlight directly
+/// for INSERT/UPDATE/DELETE queries. Returns the count of
+/// affected rows.
 ///
 fn generate_sqlite_wc_execute(
   fn_name: String,
@@ -858,7 +868,9 @@ fn generate_sqlite_wc_execute(
   <> "  }\n}"
 }
 
-/// Generates PostgreSQL _wc execute function using pog directly.
+/// Generates PostgreSQL _wc execute function using pog directly
+/// for INSERT/UPDATE/DELETE queries. Returns the count of
+/// affected rows.
 ///
 fn generate_postgres_wc_execute(
   fn_name: String,
@@ -903,7 +915,9 @@ fn generate_postgres_wc_execute(
   <> "  }\n}"
 }
 
-/// Returns the driver module name based on driver_type.
+/// Returns the driver module name based on driver_type. Used
+/// to generate the correct import path and type references
+/// in generated code.
 ///
 fn driver_module_name(driver_type: String) -> String {
   case driver_type {
@@ -913,7 +927,9 @@ fn driver_module_name(driver_type: String) -> String {
   }
 }
 
-/// Returns the native wrapper function for sqlight/pog.
+/// Returns the native wrapper function for sqlight/pog based
+/// on column type and driver. Delegates to driver-specific
+/// wrapper functions.
 ///
 fn native_wrapper(col_type: ColumnType, driver_type: String) -> String {
   case driver_type {
@@ -923,7 +939,9 @@ fn native_wrapper(col_type: ColumnType, driver_type: String) -> String {
   }
 }
 
-/// Returns the native string wrapper for the driver.
+/// Returns the native string wrapper for the driver. Used as
+/// a fallback when the column type cannot be determined from
+/// the schema.
 ///
 fn native_string_wrapper(driver_type: String) -> String {
   case driver_type {
@@ -934,6 +952,8 @@ fn native_string_wrapper(driver_type: String) -> String {
 }
 
 /// Returns the sqlight wrapper function for a column type.
+/// Maps schema column types to sqlight parameter constructor
+/// functions.
 ///
 fn sqlight_wrapper(col_type: ColumnType) -> String {
   case col_type {
@@ -953,7 +973,9 @@ fn sqlight_wrapper(col_type: ColumnType) -> String {
   }
 }
 
-/// Returns the pog wrapper function for a column type.
+/// Returns the pog wrapper function for a column type. Maps
+/// schema column types to pog parameter constructor functions
+/// for PostgreSQL queries.
 ///
 fn pog_wrapper(col_type: ColumnType) -> String {
   case col_type {
@@ -973,8 +995,9 @@ fn pog_wrapper(col_type: ColumnType) -> String {
   }
 }
 
-/// Converts a snake_case string to PascalCase by splitting on
-/// underscores and capitalizing each segment.
+/// Converts a snake_case string to PascalCase for type names.
+/// Splits on underscores and capitalizes each segment before
+/// joining them together.
 ///
 fn pascal_case(s: String) -> String {
   s
@@ -983,8 +1006,9 @@ fn pascal_case(s: String) -> String {
   |> string.join("")
 }
 
-/// Converts a PascalCase string to snake_case by inserting
-/// underscores before uppercase letters that follow lowercase.
+/// Converts a PascalCase string to snake_case for function
+/// names. Inserts underscores before uppercase letters that
+/// follow lowercase letters.
 ///
 fn snake_case(s: String) -> String {
   do_snake_case(string.to_graphemes(s), "", False)
@@ -1008,7 +1032,8 @@ fn do_snake_case(chars: List(String), acc: String, prev_lower: Bool) -> String {
 }
 
 /// Capitalizes the first character of a string, leaving the
-/// rest unchanged.
+/// rest unchanged. Used for building PascalCase type names
+/// from snake_case segments.
 ///
 fn capitalize(s: String) -> String {
   case string.pop_grapheme(s) {
@@ -1017,8 +1042,9 @@ fn capitalize(s: String) -> String {
   }
 }
 
-/// Escapes a string for use in generated Gleam code. Escapes
-/// backslashes, quotes, and replaces newlines with spaces.
+/// Escapes a string for use in generated Gleam code. Handles
+/// backslashes, double quotes, and newlines to produce valid
+/// Gleam string literals.
 ///
 fn escape_string(s: String) -> String {
   s
@@ -1027,8 +1053,9 @@ fn escape_string(s: String) -> String {
   |> string.replace("\n", " ")
 }
 
-/// Removes both block (/* */) and line (--) comments from SQL,
-/// then collapses multiple spaces into single spaces.
+/// Removes both block (/* */) and line (--) comments from SQL
+/// and collapses multiple spaces into single spaces. Prepares
+/// SQL for embedding in generated code.
 ///
 fn strip_sql_comments(sql: String) -> String {
   sql
@@ -1054,7 +1081,8 @@ fn strip_block_comments(sql: String) -> String {
 }
 
 /// Removes -- line comments from SQL by splitting each line
-/// at the comment marker and keeping only the code portion.
+/// at the comment marker and keeping only the code portion
+/// before the comment.
 ///
 fn strip_line_comments(sql: String) -> String {
   sql
@@ -1069,7 +1097,8 @@ fn strip_line_comments(sql: String) -> String {
 }
 
 /// Recursively replaces multiple consecutive spaces with single
-/// spaces until no double-spaces remain, then trims the result.
+/// spaces until no double-spaces remain. Trims leading and
+/// trailing whitespace from the final result.
 ///
 fn collapse_whitespace(sql: String) -> String {
   let collapsed = string.replace(sql, "  ", " ")

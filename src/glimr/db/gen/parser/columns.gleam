@@ -116,8 +116,9 @@ fn do_find_keyword_at_depth_zero(
   }
 }
 
-/// Extract columns from a RETURNING clause (used with INSERT,
-/// UPDATE, DELETE statements).
+/// Extract columns from a RETURNING clause used with INSERT,
+/// UPDATE, and DELETE statements. Falls back to empty list if
+/// no RETURNING clause is found.
 ///
 fn extract_returning_columns(sql: String, upper: String) -> List(SelectedColumn) {
   case string.split_once(upper, "RETURNING ") {
@@ -131,7 +132,8 @@ fn extract_returning_columns(sql: String, upper: String) -> List(SelectedColumn)
 }
 
 /// Parse a comma-separated list of column expressions into
-/// SelectedColumn structs.
+/// SelectedColumn structs. Handles special case of star (*)
+/// for all columns.
 ///
 fn parse_column_list(columns_str: String) -> List(SelectedColumn) {
   let parts = split_respecting_parens(columns_str)
@@ -145,15 +147,17 @@ fn parse_column_list(columns_str: String) -> List(SelectedColumn) {
   })
 }
 
-/// Split a string on commas, but don't split inside parentheses.
-/// Used to correctly parse column lists with function calls.
+/// Split a string on commas, but don't split inside parentheses
+/// to correctly parse column lists with function calls like
+/// COUNT(*) or COALESCE(a, b).
 ///
 fn split_respecting_parens(s: String) -> List(String) {
   do_split_respecting_parens(s, 0, "", [])
 }
 
 /// Recursive helper that tracks parenthesis depth and only
-/// splits on commas when at depth zero.
+/// splits on commas when at depth zero. Accumulates parts in
+/// reverse order for efficiency.
 ///
 fn do_split_respecting_parens(
   s: String,
@@ -182,7 +186,8 @@ fn do_split_respecting_parens(
 }
 
 /// Parse a single column expression like "u.name AS user_name"
-/// into a SelectedColumn struct with table, name, and alias.
+/// into a SelectedColumn struct. Extracts optional table alias,
+/// column name, and AS alias.
 ///
 fn parse_column_expr(expr: String) -> SelectedColumn {
   let upper = string.uppercase(expr)
@@ -205,7 +210,8 @@ fn parse_column_expr(expr: String) -> SelectedColumn {
 }
 
 /// Parse a column reference like "u.name" into optional table
-/// alias and column name. Function calls are not split.
+/// alias and column name. Function calls containing parentheses
+/// are returned as-is without splitting.
 ///
 fn parse_table_column(expr: String) -> #(Option(String), String) {
   let trimmed = string.trim(expr)

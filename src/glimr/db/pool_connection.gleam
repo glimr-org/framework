@@ -47,8 +47,9 @@ pub opaque type PoolConnection {
   PoolConnection(driver: Driver, handle: Dynamic, pool_ref: Dynamic)
 }
 
-/// Unified error type for database operations. This allows
-/// users to handle specific database errors any way they like.
+/// Unified error type for database operations. Provides
+/// specific error variants for common failure cases, allowing
+/// precise error handling in application code.
 ///
 pub type DbError {
   /// The requested row was not found (for single-row queries)
@@ -68,14 +69,16 @@ pub type DbError {
 }
 
 /// The result of a database query, containing the number of
-/// affected rows and the returned data.
+/// affected rows and the list of decoded row data. The count
+/// is useful for INSERT/UPDATE/DELETE operations.
 ///
 pub type QueryResult(t) {
   QueryResult(count: Int, rows: List(t))
 }
 
 /// A parameter value that can be passed to a database query.
-/// Use the constructor functions to create values.
+/// Use the constructor functions (int, string, bool, etc.) to
+/// create type-safe parameter values.
 ///
 pub type Value {
   IntValue(Int)
@@ -162,8 +165,9 @@ pub fn sqlite_config(path: String, pool_size pool_size: Int) -> Config {
 
 // ------------------------------------------------------------- Connection Functions
 
-/// Creates a pool connection wrapper. Called by driver packages
-/// when checking out a connection from the pool.
+/// Creates a pool connection wrapper from driver-specific
+/// handles. Called by driver packages when checking out a
+/// connection from the pool.
 ///
 pub fn wrap_connection(
   driver: Driver,
@@ -174,20 +178,24 @@ pub fn wrap_connection(
 }
 
 /// Returns the driver type for the provided pool connection.
+/// Useful for conditionally handling driver-specific behavior
+/// in application code.
 ///
 pub fn driver(connection: PoolConnection) -> Driver {
   connection.driver
 }
 
-/// Gets the raw connection handle. Used by driver packages
-/// to unwrap and cast to the native connection type.
+/// Gets the raw connection handle as Dynamic. Used by driver
+/// packages to unwrap and cast to the native connection type
+/// for executing queries.
 ///
 pub fn unwrap_handle(connection: PoolConnection) -> Dynamic {
   connection.handle
 }
 
-/// Extracts the pool reference from a pool connection. This is the
-/// reference returned by checkout that must be passed to checkin.
+/// Extracts the pool reference from a pool connection. This
+/// reference must be passed to checkin when returning the
+/// connection to the pool.
 ///
 pub fn get_pool_ref(connection: PoolConnection) -> Dynamic {
   connection.pool_ref
@@ -195,44 +203,57 @@ pub fn get_pool_ref(connection: PoolConnection) -> Dynamic {
 
 // ------------------------------------------------------------- Value Functions
 
-/// Creates an integer parameter value.
+/// Creates an integer parameter value for use in database
+/// queries. Maps to INTEGER type in both PostgreSQL and
+/// SQLite databases.
 ///
 pub fn int(value: Int) -> Value {
   IntValue(value)
 }
 
-/// Creates a float parameter value.
+/// Creates a floating-point parameter value for use in
+/// database queries. Maps to REAL/DOUBLE PRECISION depending
+/// on the database driver.
 ///
 pub fn float(value: Float) -> Value {
   FloatValue(value)
 }
 
-/// Creates a string/text parameter value.
+/// Creates a string/text parameter value for use in database
+/// queries. Maps to TEXT/VARCHAR depending on the database
+/// driver and column type.
 ///
 pub fn string(value: String) -> Value {
   StringValue(value)
 }
 
-/// Creates a boolean parameter value.
-/// Note: SQLite stores booleans as integers (0/1).
+/// Creates a boolean parameter value for use in database
+/// queries. PostgreSQL uses native BOOLEAN, while SQLite
+/// stores booleans as integers (0/1).
 ///
 pub fn bool(value: Bool) -> Value {
   BoolValue(value)
 }
 
-/// Creates a NULL parameter value.
+/// Creates a NULL parameter value for use in database queries.
+/// Use this for optional fields where the value should be
+/// stored as database NULL.
 ///
 pub fn null() -> Value {
   NullValue
 }
 
-/// Creates a binary/blob parameter value.
+/// Creates a binary/blob parameter value for storing raw
+/// bytes in the database. Maps to BYTEA in PostgreSQL and
+/// BLOB in SQLite.
 ///
 pub fn blob(value: BitArray) -> Value {
   BlobValue(value)
 }
 
-/// Creates a parameter value from an Option, converting None to NULL.
+/// Creates a parameter value from an Option, converting None
+/// to NULL. Pass the appropriate constructor function for the
+/// inner type (e.g., nullable(int, some_option)).
 ///
 pub fn nullable(inner: fn(a) -> Value, value: Option(a)) -> Value {
   case value {
@@ -257,7 +278,8 @@ pub fn convert_placeholders(sql: String, driver: Driver) -> String {
 // ------------------------------------------------------------- Private Functions
 
 /// Entry point for placeholder conversion. Converts the SQL
-/// string to graphemes and delegates to the recursive converter.
+/// string to graphemes and delegates to the recursive helper
+/// that processes each character.
 ///
 fn convert_pg_to_sqlite_placeholders(sql: String) -> String {
   do_convert_placeholders(string.to_graphemes(sql), "", False)

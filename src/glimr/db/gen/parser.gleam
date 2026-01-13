@@ -20,7 +20,8 @@ import glimr/db/gen/parser/tables
 // ------------------------------------------------------------- Public Types
 
 /// The result of parsing a SQL query, containing all extracted
-/// metadata needed for code generation.
+/// metadata needed for code generation including tables,
+/// columns, parameters, and parameter-column mappings.
 ///
 pub type ParsedQuery {
   ParsedQuery(

@@ -26,8 +26,9 @@ import simplifile
 
 // ------------------------------------------------------------- Public Functions
 
-/// Runs code generation for a named connection.
-/// Uses the folder structure: src/data/{name}/models/
+/// Runs code generation for a named database connection.
+/// Scans src/data/{name}/models/ for model directories and
+/// generates typed repository modules from schemas and SQL.
 ///
 pub fn run(
   name: String,
@@ -50,7 +51,9 @@ pub fn run(
 
 // ------------------------------------------------------------- Private Functions
 
-/// Internal implementation for code generation.
+/// Internal implementation for code generation. Reads model
+/// directories, filters by the optional model list, and
+/// processes each model to generate repository code.
 ///
 fn generate_models(
   models_path: String,

@@ -11,7 +11,8 @@ import glimr/db/gen/schema_parser.{
 // ------------------------------------------------------------- Public Functions
 
 /// Get the Gleam type name for a column type. Used for code
-/// generation to determine the appropriate Gleam type.
+/// generation to determine the appropriate Gleam type for
+/// model fields and query result types.
 ///
 pub fn gleam_type(col_type: ColumnType) -> String {
   case col_type {
@@ -32,7 +33,8 @@ pub fn gleam_type(col_type: ColumnType) -> String {
 }
 
 /// Get the decoder function name for a column type. Used for
-/// code generation to determine the appropriate decoder.
+/// code generation to determine the appropriate decoder for
+/// parsing database query results.
 ///
 pub fn decoder_fn(col_type: ColumnType) -> String {
   case col_type {

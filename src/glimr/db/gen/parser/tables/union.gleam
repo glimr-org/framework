@@ -10,7 +10,8 @@ import gleam/string
 // ------------------------------------------------------------- Public Functions
 
 /// Split SQL query on UNION and UNION ALL keywords, returning
-/// a list of individual query parts.
+/// a list of individual query parts. Preserves original case
+/// and handles both UNION and UNION ALL.
 ///
 pub fn split(sql: String) -> List(String) {
   do_split(string.uppercase(sql), sql, [])

@@ -12,7 +12,8 @@ import glimr/db/gen/parser/util
 
 // ------------------------------------------------------------- Public Functions
 
-/// Extract parameter mappings from INSERT statement.
+/// Extract parameter mappings from INSERT statement. Matches
+/// column positions with parameter positions in VALUES clause.
 /// Pattern: INSERT INTO table (col1, col2) VALUES ($1, $2)
 ///
 pub fn extract(sql: String) -> List(#(Int, String)) {
@@ -22,8 +23,9 @@ pub fn extract(sql: String) -> List(#(Int, String)) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Internal implementation that returns Result for use with
-/// result.try for cleaner error handling.
+/// Internal implementation that returns Result for cleaner
+/// error handling with result.try. Parses column names and
+/// delegates to values extraction.
 ///
 fn do_extract(sql: String) -> Result(List(#(Int, String)), Nil) {
   let upper = string.uppercase(sql)
@@ -46,8 +48,9 @@ fn do_extract(sql: String) -> Result(List(#(Int, String)), Nil) {
   Ok(extract_values_params(sql, columns))
 }
 
-/// Extract parameter-to-column mappings from a VALUES clause
-/// by matching column positions with parameter positions.
+/// Extract parameter-to-column mappings from a VALUES clause.
+/// Matches column names from the INSERT column list with
+/// parameter numbers from the VALUES list.
 ///
 fn extract_values_params(
   sql: String,
@@ -58,7 +61,8 @@ fn extract_values_params(
 }
 
 /// Internal implementation that returns Result for cleaner
-/// error handling with result.try.
+/// error handling. Parses VALUES clause and zips with column
+/// names to create mappings.
 ///
 fn do_extract_values_params(
   sql: String,

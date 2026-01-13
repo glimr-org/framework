@@ -85,7 +85,8 @@ pub fn run(
 // ------------------------------------------------------------- Private Functions
 
 /// Internal implementation that handles the actual migration
-/// generation logic.
+/// generation logic including snapshot loading, schema scanning,
+/// diff computation, and SQL file generation.
 ///
 fn do_run(
   models_path: String,
@@ -184,7 +185,8 @@ fn do_run(
 }
 
 /// Scan model directories and parse their schema files. Applies
-/// the optional filter to limit which models are scanned.
+/// the optional model filter to limit which models are included
+/// in the migration diff.
 ///
 fn scan_schemas(
   models_path: String,
@@ -233,7 +235,8 @@ fn scan_schemas(
 }
 
 /// Get current timestamp in YYYYMMDDHHMMSS format for migration
-/// filenames.
+/// filenames. Uses the system date command to generate a unique
+/// timestamp prefix.
 ///
 fn get_timestamp() -> String {
   case shellout.command("date", ["+%Y%m%d%H%M%S"], ".", []) {

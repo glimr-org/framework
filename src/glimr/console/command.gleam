@@ -14,6 +14,7 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/string
+import glimr/cache/driver.{type CacheStore} as _cache_driver
 import glimr/console/console
 import glimr/db/driver.{type Connection, type DriverType}
 import glimr/glimr
@@ -22,7 +23,8 @@ import glimr/glimr
 
 /// Represents a console command. Regular commands have a simple
 /// handler function. Database commands use CommandWithDb which
-/// includes a closure that manages pool lifecycle.
+/// includes a closure that manages pool lifecycle. Cache commands
+/// use CommandWithCache for access to cache store configuration.
 ///
 pub type Command {
   Command(
@@ -37,6 +39,13 @@ pub type Command {
     args: List(CommandArg),
     driver_type: DriverType,
     run_with_pool: fn(ParsedArgs, Connection) -> Nil,
+  )
+  CommandWithCache(
+    name: String,
+    description: String,
+    args: List(CommandArg),
+    driver_type: DriverType,
+    run_with_cache: fn(ParsedArgs, Connection, List(CacheStore)) -> Nil,
   )
 }
 
@@ -91,6 +100,7 @@ pub fn name(cmd: Command, name: String) -> Command {
   case cmd {
     Command(..) -> Command(..cmd, name: name)
     CommandWithDb(..) -> CommandWithDb(..cmd, name: name)
+    CommandWithCache(..) -> CommandWithCache(..cmd, name: name)
   }
 }
 
@@ -102,6 +112,7 @@ pub fn description(cmd: Command, description: String) -> Command {
   case cmd {
     Command(..) -> Command(..cmd, description: description)
     CommandWithDb(..) -> CommandWithDb(..cmd, description: description)
+    CommandWithCache(..) -> CommandWithCache(..cmd, description: description)
   }
 }
 
@@ -114,6 +125,13 @@ pub fn handler(cmd: Command, handler: fn(ParsedArgs) -> Nil) -> Command {
   case cmd {
     Command(..) -> Command(..cmd, handler: handler)
     CommandWithDb(name:, description:, args:, ..) ->
+      Command(
+        name: name,
+        description: description,
+        args: args,
+        handler: handler,
+      )
+    CommandWithCache(name:, description:, args:, ..) ->
       Command(
         name: name,
         description: description,
@@ -144,6 +162,7 @@ pub fn args(cmd: Command, arguments: List(CommandArg)) -> Command {
   case cmd {
     Command(..) -> Command(..cmd, args: arguments)
     CommandWithDb(..) -> CommandWithDb(..cmd, args: arguments)
+    CommandWithCache(..) -> CommandWithCache(..cmd, args: arguments)
   }
 }
 
@@ -200,12 +219,13 @@ pub fn get_args() -> List(String) {
 pub fn find_and_run(
   commands: List(Command),
   connections: List(Connection),
+  cache_stores: List(CacheStore),
   name: String,
   args: List(String),
 ) -> Bool {
   case find(commands, name) {
     Ok(cmd) -> {
-      run(cmd, args, connections)
+      run(cmd, args, connections, cache_stores)
       True
     }
     Error(_) -> False
@@ -299,6 +319,7 @@ fn run(
   cmd: Command,
   raw_args: List(String),
   connections: List(Connection),
+  cache_stores: List(CacheStore),
 ) -> Nil {
   case has_help_flag(raw_args) {
     True -> print_command_help(cmd)
@@ -329,6 +350,30 @@ fn run(
                   let updated_parsed =
                     ParsedArgs(..parsed, options: updated_options)
                   run_with_pool(updated_parsed, conn)
+                }
+                Error(_) -> {
+                  console.output()
+                  |> console.line_error("Connection not found: " <> db_name)
+                  |> console.print()
+                }
+              }
+            }
+            Error(_) -> Nil
+          }
+        }
+        CommandWithCache(run_with_cache:, driver_type:, ..) -> {
+          case parse_and_validate(cmd.name, cmd.args, raw_args) {
+            Ok(parsed) -> {
+              let db_name = get_option(parsed, "database")
+              case find_connection(connections, db_name, driver_type) {
+                Ok(conn) -> {
+                  // Replace _default with actual connection name
+                  let actual_name = driver.connection_name(conn)
+                  let updated_options =
+                    dict.insert(parsed.options, "database", actual_name)
+                  let updated_parsed =
+                    ParsedArgs(..parsed, options: updated_options)
+                  run_with_cache(updated_parsed, conn, cache_stores)
                 }
                 Error(_) -> {
                   console.output()

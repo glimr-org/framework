@@ -38,8 +38,9 @@ pub fn extract(sql: String) -> List(String) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Extract tables from a single SQL query. This function does
-/// not handle UNION cases.
+/// Extract tables from a single SQL query statement. This
+/// handles FROM, JOIN, INSERT INTO, UPDATE, and DELETE FROM
+/// but does not split UNION queries.
 ///
 fn extract_from_single_query(sql: String) -> List(String) {
   let upper = string.uppercase(sql)
@@ -72,7 +73,8 @@ fn extract_from_single_query(sql: String) -> List(String) {
 }
 
 /// Extract a table name that appears after a SQL keyword like
-/// INSERT INTO, UPDATE, or DELETE FROM.
+/// INSERT INTO, UPDATE, or DELETE FROM. Preserves original
+/// case from the SQL query.
 ///
 fn extract_table_after_keyword(
   upper: String,
@@ -93,7 +95,8 @@ fn extract_table_after_keyword(
 }
 
 /// Extract the table name from a FROM clause, preserving the
-/// original case from the SQL.
+/// original case from the SQL. Returns None if no valid table
+/// identifier is found.
 ///
 fn extract_table_name_from_clause(original: String) -> Option(String) {
   let upper_full = string.uppercase(original)
@@ -110,8 +113,9 @@ fn extract_table_name_from_clause(original: String) -> Option(String) {
   }
 }
 
-/// Recursively find all table names that are from JOIN 
-/// clauses and keep track of these join tables.
+/// Recursively find all table names from JOIN clauses
+/// including LEFT JOIN, RIGHT JOIN, INNER JOIN, etc.
+/// Accumulates found tables in the acc list.
 ///
 fn find_join_tables(
   upper: String,
@@ -136,16 +140,17 @@ fn find_join_tables(
   }
 }
 
-/// Find and extract tables from subqueries (SEECT statements
-/// inside parentheses). Handles nested subqueries recursively.
+/// Find and extract tables from subqueries (SELECT statements
+/// inside parentheses). Entry point for recursive subquery
+/// extraction.
 ///
 fn extract_from_subqueries(sql: String) -> List(String) {
   do_extract_from_subqueries(string.uppercase(sql), sql, [])
 }
 
-/// Recursively find and extract tables from subqueries 
-/// (SEECT statements inside parentheses). Handles nested 
-/// subqueries recursively we well.
+/// Recursively find and extract tables from subqueries
+/// (SELECT statements inside parentheses). Handles nested
+/// subqueries by calling extract recursively.
 ///
 fn do_extract_from_subqueries(
   upper: String,

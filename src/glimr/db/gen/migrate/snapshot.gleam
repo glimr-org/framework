@@ -16,13 +16,16 @@ import simplifile
 // ------------------------------------------------------------- Public Types
 
 /// Snapshot of all table schemas, stored as JSON between runs.
-/// Used to detect what has changed since the last migration.
+/// Used to detect what has changed since the last migration
+/// by comparing against the current schema definitions.
 ///
 pub type Snapshot {
   Snapshot(tables: Dict(String, TableSnapshot))
 }
 
-/// Snapshot of a single table's column definitions.
+/// Snapshot of a single table's column definitions. Contains
+/// the list of columns in their definition order for accurate
+/// migration diffing.
 ///
 pub type TableSnapshot {
   TableSnapshot(columns: List(ColumnSnapshot))
@@ -43,7 +46,8 @@ pub type ColumnSnapshot {
 // ------------------------------------------------------------- Public Functions
 
 /// Load the schema snapshot from a JSON file. Returns an empty
-/// snapshot if the file doesn't exist or can't be parsed.
+/// snapshot if the file doesn't exist or can't be parsed,
+/// allowing first-run migration generation.
 ///
 pub fn load(path: String) -> Snapshot {
   case simplifile.read(path) {
@@ -52,7 +56,9 @@ pub fn load(path: String) -> Snapshot {
   }
 }
 
-/// Save a snapshot to a JSON file.
+/// Save a snapshot to a JSON file. Serializes the snapshot
+/// to formatted JSON for readability and writes to the
+/// specified path.
 ///
 pub fn save(path: String, snapshot: Snapshot) -> Result(Nil, Nil) {
   let content = to_json(snapshot)
@@ -63,6 +69,8 @@ pub fn save(path: String, snapshot: Snapshot) -> Result(Nil, Nil) {
 }
 
 /// Build a new snapshot from a list of parsed Table schemas.
+/// Converts each table's columns to ColumnSnapshot format
+/// for JSON serialization.
 ///
 pub fn build(tables: List(Table)) -> Snapshot {
   let table_dict =
@@ -96,7 +104,8 @@ pub fn merge(old: Snapshot, new: Snapshot) -> Snapshot {
 }
 
 /// Convert a ColumnType to its string representation for
-/// snapshots.
+/// snapshots. Maps each variant to a consistent string format
+/// used in the JSON snapshot files.
 ///
 pub fn column_type_to_string(col_type: ColumnType) -> String {
   case col_type {
@@ -118,8 +127,9 @@ pub fn column_type_to_string(col_type: ColumnType) -> String {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Parse JSON content into a Snapshot. Returns empty on parse
-/// failure.
+/// Parse JSON content into a Snapshot. Returns an empty
+/// snapshot on parse failure to allow migration generation
+/// from scratch.
 ///
 fn parse(content: String) -> Snapshot {
   case json.parse(content, using: decoder()) {
@@ -128,7 +138,9 @@ fn parse(content: String) -> Snapshot {
   }
 }
 
-/// JSON decoder for the root Snapshot type.
+/// JSON decoder for the root Snapshot type. Expects a tables
+/// field containing a dictionary of table names to table
+/// snapshots.
 ///
 fn decoder() -> decode.Decoder(Snapshot) {
   use tables <- decode.field(
@@ -138,14 +150,18 @@ fn decoder() -> decode.Decoder(Snapshot) {
   decode.success(Snapshot(tables: tables))
 }
 
-/// JSON decoder for a TableSnapshot.
+/// JSON decoder for a TableSnapshot. Expects a columns field
+/// containing a list of column snapshots in their original
+/// definition order.
 ///
 fn table_decoder() -> decode.Decoder(TableSnapshot) {
   use columns <- decode.field("columns", decode.list(column_decoder()))
   decode.success(TableSnapshot(columns: columns))
 }
 
-/// JSON decoder for a ColumnSnapshot.
+/// JSON decoder for a ColumnSnapshot. Extracts name, type,
+/// nullable, and has_default fields from the JSON column
+/// object.
 ///
 fn column_decoder() -> decode.Decoder(ColumnSnapshot) {
   use name <- decode.field("name", decode.string)
@@ -160,7 +176,9 @@ fn column_decoder() -> decode.Decoder(ColumnSnapshot) {
   ))
 }
 
-/// Serialize a Snapshot to formatted JSON.
+/// Serialize a Snapshot to formatted JSON. Produces readable
+/// indented JSON output for the snapshot file stored between
+/// migration runs.
 ///
 fn to_json(snapshot: Snapshot) -> String {
   let tables_json =
@@ -179,7 +197,9 @@ fn to_json(snapshot: Snapshot) -> String {
   "{\n  \"tables\": {\n" <> tables_json <> "\n  }\n}\n"
 }
 
-/// Serialize a TableSnapshot's columns to JSON.
+/// Serialize a TableSnapshot's columns to JSON. Formats each
+/// column as a JSON object with name, type, nullable, and
+/// has_default properties.
 ///
 fn table_to_json(table: TableSnapshot) -> String {
   table.columns
@@ -201,7 +221,9 @@ fn table_to_json(table: TableSnapshot) -> String {
   |> string.join(",\n")
 }
 
-/// Convert a Bool to its JSON representation (lowercase true/false).
+/// Convert a Bool to its JSON representation. Returns the
+/// lowercase strings "true" or "false" as required by JSON
+/// specification.
 ///
 fn bool_to_json(value: Bool) -> String {
   case value {
