@@ -87,7 +87,6 @@ fn generate_models(
 
       io.println("")
       io.println(console.success("  Successfully generated queries!"))
-      io.println("")
     }
     Error(_) -> {
       io.println("  Error: Could not read " <> models_path)

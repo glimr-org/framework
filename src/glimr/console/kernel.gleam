@@ -4,14 +4,14 @@
 //// to run your app's custom console commands as well as
 //// Glimr's default console commands.
 
-import gleam/io
 import gleam/list
 import glimr/cache/driver.{type CacheStore} as _cache_driver
 import glimr/console/command.{type Command}
 import glimr/console/console
 import glimr/db/db
 import glimr/db/driver.{type Connection}
-import glimr/internal/console/commands/greet
+import glimr/internal/console/commands/build
+import glimr/internal/console/commands/glimr_greet
 import glimr/internal/console/commands/make_action
 import glimr/internal/console/commands/make_command
 import glimr/internal/console/commands/make_controller
@@ -19,6 +19,8 @@ import glimr/internal/console/commands/make_middleware
 import glimr/internal/console/commands/make_model
 import glimr/internal/console/commands/make_request
 import glimr/internal/console/commands/make_rule
+import glimr/internal/console/commands/route_compile
+import glimr/internal/console/commands/run
 import glimr/internal/console/commands/setup_database
 
 // ------------------------------------------------------------- Public Functions
@@ -29,7 +31,10 @@ import glimr/internal/console/commands/setup_database
 ///
 pub fn commands(connections: List(Connection)) -> List(Command) {
   [
-    greet.command(),
+    build.command(),
+    run.command(),
+    route_compile.command(),
+    glimr_greet.command(),
     make_action.command(),
     make_controller.command(),
     make_middleware.command(),
@@ -54,6 +59,8 @@ pub fn run(
   db.validate_connections(db_connections)
 
   let commands = list.append(commands(db_connections), app_commands)
+  command.store_commands(commands)
+
   let args = command.get_args()
 
   case args {
@@ -64,7 +71,12 @@ pub fn run(
         command.find_and_run(commands, db_connections, cache_stores, name, rest)
       {
         True -> Nil
-        False -> io.println(console.error("Command not found: " <> name))
+        False -> {
+          console.output()
+          |> console.line_error("Command not found: " <> name)
+          |> console.blank_line(1)
+          |> console.print()
+        }
       }
     }
   }

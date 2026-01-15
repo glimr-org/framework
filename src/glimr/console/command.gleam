@@ -226,6 +226,7 @@ pub fn find_and_run(
   case find(commands, name) {
     Ok(cmd) -> {
       run(cmd, args, connections, cache_stores)
+      io.println("")
       True
     }
     Error(_) -> False
@@ -299,6 +300,24 @@ pub fn print_help(commands: List(Command)) {
 @internal
 pub fn print_glimr_version() -> Nil {
   io.println("Glimr Framework " <> console.success(glimr.get_version()))
+}
+
+/// Stores commands in persistent term storage for later
+/// retrieval. Used by the kernel to cache registered commands
+/// so they can be accessed across process boundaries.
+///
+@internal
+pub fn store_commands(commands: List(Command)) -> Nil {
+  erlang_store_commands(commands)
+}
+
+/// Retrieves previously stored commands from persistent term
+/// storage. Returns the list of commands that were stored via
+/// store_commands for use in command lookup and execution.
+///
+@internal
+pub fn get_commands() -> List(Command) {
+  erlang_get_commands()
 }
 
 // ------------------------------------------------------------- Private Functions
@@ -846,3 +865,17 @@ fn temp_handler(_args: ParsedArgs) -> Nil {
 ///
 @external(erlang, "init", "get_plain_arguments")
 fn erlang_get_args() -> List(charlist.Charlist)
+
+/// FFI call to store commands in Erlang persistent_term.
+/// Enables fast read access to commands across all processes
+/// without copying data.
+///
+@external(erlang, "glimr_kernel_ffi", "store_commands")
+fn erlang_store_commands(commands: List(Command)) -> Nil
+
+/// FFI call to retrieve commands from Erlang persistent_term.
+/// Returns the commands stored by erlang_store_commands for
+/// use in command dispatch and help display.
+///
+@external(erlang, "glimr_kernel_ffi", "get_stored_commands")
+fn erlang_get_commands() -> List(Command)

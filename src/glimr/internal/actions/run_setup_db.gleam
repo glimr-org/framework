@@ -22,6 +22,10 @@ pub fn run(name: String, create_sqlite: Bool) -> Nil {
   }
 }
 
+/// Performs the actual directory and file creation. Creates
+/// base directory, _migrations subdirectory, models subdirectory,
+/// and optionally a data.db file for SQLite.
+///
 fn do_setup(base_path: String, create_sqlite: Bool) -> Nil {
   io.println("")
 

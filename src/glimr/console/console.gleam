@@ -219,11 +219,6 @@ pub fn print(output: Output) -> Nil {
   }
 
   do_print(output.lines)
-
-  case output.padded {
-    True -> io.println("")
-    False -> Nil
-  }
 }
 
 // ------------------------------------------------------------- Private Functions
