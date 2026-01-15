@@ -6,8 +6,8 @@ import glimr/routing/compiler
 import simplifile
 
 /// Compiles all route files in src/routes directory. Discovers
-/// .gleam files and compiles each one to the compiled
-/// subdirectory.
+/// .gleam files and compiles each one to the bootstrap/gen/routes
+/// directory.
 ///
 pub fn run() -> Result(Nil, String) {
   console.output()
@@ -16,13 +16,16 @@ pub fn run() -> Result(Nil, String) {
   |> console.line_warning("Compiling routes...")
   |> console.print()
 
+  // Ensure the output directory exists
+  let _ = simplifile.create_directory_all("src/bootstrap/gen/routes")
+
   let route_files = discover_route_files("src/routes")
   compile_route_files(route_files)
 }
 
 /// Finds all .gleam files in the routes directory and maps
 /// them to source/destination pairs. Destination is the
-/// compiled subdirectory with the same filename.
+/// bootstrap/gen/routes directory with the same filename.
 ///
 fn discover_route_files(dir: String) -> List(#(String, String)) {
   simplifile.read_directory(dir)
@@ -30,7 +33,7 @@ fn discover_route_files(dir: String) -> List(#(String, String)) {
   |> list.filter(fn(f) { string.ends_with(f, ".gleam") })
   |> list.map(fn(f) {
     let source = dir <> "/" <> f
-    let dest = dir <> "/compiled/" <> f
+    let dest = "src/bootstrap/gen/routes/" <> f
     #(source, dest)
   })
 }
