@@ -43,13 +43,15 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
         list.any(files, fn(f) {
           {
             string.contains(f, "src/routes/")
-            && !string.contains(f, "src/routes/compiled/")
+            && !string.contains(f, "src/bootstrap/gen/routes/")
           }
           || string.contains(f, "src/app/http/controllers/")
         })
 
       let only_compiled_routes =
-        list.all(files, fn(f) { string.contains(f, "src/routes/compiled/") })
+        list.all(files, fn(f) {
+          string.contains(f, "src/bootstrap/gen/routes/")
+        })
 
       case routes_source_changed {
         True -> {
