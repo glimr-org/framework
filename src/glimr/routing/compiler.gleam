@@ -1130,7 +1130,7 @@ fn extract_line_number_for_file(
   msg: String,
   file_path: String,
 ) -> Result(Int, Nil) {
-  // Error format is like "src/routes/compiled/api.gleam:12:7"
+  // Error format is like "src/bootstrap/gen/routes/api.gleam:12:7"
   // We need to find the specific file, not just any .gleam file
   case string.split_once(msg, file_path <> ":") {
     Ok(#(_, after)) -> {
