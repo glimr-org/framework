@@ -173,14 +173,27 @@ pub fn render(view: View) -> Response {
 /// ```
 ///
 pub fn render_with_status(view: View, status: Int) -> Response {
-  let html = case view.layout {
-    "" -> view.content
-    _ -> view.layout |> string.replace("{{_content_}}", view.content)
+  case view.layout {
+    "" -> {
+      // No layout: process variables directly in content
+      let html = filesystem.replace_variables(view.data, view.content)
+      wisp.html_response(html, status)
+    }
+    _ -> {
+      // Has layout: escape template syntax in content to prevent template injection
+      // when content is inserted into layout. This prevents content from being
+      // processed multiple times and causing security vulnerabilities.
+      let safe_content = filesystem.escape_template_syntax(view.content)
+      
+      // Insert the safe content into the layout
+      let html = view.layout |> string.replace("{{_content_}}", safe_content)
+
+      // Process variables in the layout (content is already safe and won't be processed again)
+      let html = filesystem.replace_variables(view.data, html)
+
+      wisp.html_response(html, status)
+    }
   }
-
-  let html = filesystem.replace_variables(view.data, html)
-
-  wisp.html_response(html, status)
 }
 
 /// Generates an error response with the given HTTP status code.
