@@ -99,20 +99,46 @@ pub fn write_from_stub_with_variables(
   }
 }
 
+/// Escapes HTML special characters to prevent XSS attacks.
+/// Converts <, >, &, ", and ' to their HTML entity equivalents.
+///
+@internal
+pub fn escape_html(value: String) -> String {
+  value
+  |> string.replace("&", "&amp;")
+  |> string.replace("<", "&lt;")
+  |> string.replace(">", "&gt;")
+  |> string.replace("\"", "&quot;")
+  |> string.replace("'", "&#x27;")
+}
+
+/// Escapes template syntax ({{ and }}) to prevent template injection
+/// when content is inserted into layouts. This prevents content from
+/// being processed multiple times.
+///
+@internal
+pub fn escape_template_syntax(content: String) -> String {
+  content
+  |> string.replace("{{", "&#123;&#123;")
+  |> string.replace("}}", "&#125;&#125;")
+}
+
 /// Replaces all {{ key }} patterns in the HTML with their values
 /// from the data dictionary. Supports both {{key}} and {{ key }}
-/// syntax (with or without spaces). Strips any unused variables
+/// syntax (with or without spaces). All values are automatically
+/// HTML-escaped to prevent XSS attacks. Strips any unused variables
 /// that weren't provided.
 ///
 @internal
 pub fn replace_variables(data: Dict(String, String), content: String) -> String {
   let html =
     dict.fold(data, content, fn(acc, key, value) {
+      let escaped_value = escape_html(value)
       acc
-      |> string.replace("{{" <> key <> "}}", value)
-      |> string.replace("{{ " <> key <> " }}", value)
-      |> string.replace("{{ " <> key <> "}}", value)
-      |> string.replace("{{" <> key <> " }}", value)
+      |> string.replace("{{" <> key <> "}}", escaped_value)
+      |> string.replace("{{ " <> key <> " }}", escaped_value)
+      |> string.replace("{{ " <> key <> "}}", escaped_value)
+      |> string.replace("{{" <> key <> " }}", escaped_value)
     })
 
   strip_unused_variables(html)
