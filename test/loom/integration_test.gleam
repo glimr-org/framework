@@ -11,11 +11,8 @@ import glimr/loom/runtime
 // Runtime Function Tests
 // =============================================================================
 
-pub fn runtime_append_test() {
-  ""
-  |> runtime.append("Hello")
-  |> runtime.append(", ")
-  |> runtime.append("World!")
+pub fn runtime_string_concat_test() {
+  { "" <> "Hello" <> ", " <> "World!" }
   |> should.equal("Hello, World!")
 }
 
@@ -215,7 +212,7 @@ pub fn compile_component_template_test() {
 
   // Should use slot argument directly
   generated.code
-  |> string.contains("runtime.append(slot)")
+  |> string.contains("<> slot")
   |> should.be_true
 }
 
@@ -245,7 +242,7 @@ pub fn compile_layout_template_test() {
 
   // Should use slot argument directly
   generated.code
-  |> string.contains("runtime.append(slot)")
+  |> string.contains("<> slot")
   |> should.be_true
 }
 
@@ -356,7 +353,7 @@ pub fn pipeline_raw_html_not_escaped_test() {
 
   // Raw variable should not call escape
   generated.code
-  |> string.contains("runtime.append(data.html_content)")
+  |> string.contains("<> data.html_content")
   |> should.be_true
 
   generated.code
