@@ -382,22 +382,22 @@ fn generate_node_code(
   case node {
     parser.TextNode(text) -> {
       let escaped = escape_gleam_string(text)
-      pad <> "|> runtime.append(\"" <> escaped <> "\")\n"
+      pad <> "<> \"" <> escaped <> "\"\n"
     }
 
     parser.VariableNode(expr) -> {
       // Expression is passed through directly (e.g., "title", "user.name")
-      pad <> "|> runtime.append(runtime.escape(" <> expr <> "))\n"
+      pad <> "<> runtime.escape(" <> expr <> ")\n"
     }
 
     parser.RawVariableNode(expr) -> {
       // Expression is passed through directly
-      pad <> "|> runtime.append(" <> expr <> ")\n"
+      pad <> "<> " <> expr <> "\n"
     }
 
     parser.SlotNode(None, []) -> {
       // <slot /> - no fallback, just output slot
-      pad <> "|> runtime.append(slot)\n"
+      pad <> "<> slot\n"
     }
 
     parser.SlotNode(None, fallback) -> {
@@ -417,12 +417,12 @@ fn generate_node_code(
       <> pad
       <> "})\n"
       <> pad
-      <> "|> runtime.append_if(slot != \"\", fn(acc) { acc |> runtime.append(slot) })\n"
+      <> "|> runtime.append_if(slot != \"\", fn(acc) { acc <> slot })\n"
     }
 
     parser.SlotNode(Some(name), []) -> {
       // <slot name="x" /> - no fallback
-      pad <> "|> runtime.append(slot_" <> to_field_name(name) <> ")\n"
+      pad <> "<> slot_" <> to_field_name(name) <> "\n"
     }
 
     parser.SlotNode(Some(name), fallback) -> {
@@ -447,9 +447,9 @@ fn generate_node_code(
       <> pad
       <> "|> runtime.append_if("
       <> slot_var
-      <> " != \"\", fn(acc) { acc |> runtime.append("
+      <> " != \"\", fn(acc) { acc <> "
       <> slot_var
-      <> ") })\n"
+      <> " })\n"
     }
 
     parser.SlotDefNode(_, _) -> {
@@ -511,10 +511,10 @@ fn generate_node_code(
       }
 
       pad
-      <> "|> runtime.append(case Nil {\n"
+      <> "<> case Nil {\n"
       <> final_branches
       <> pad
-      <> "  })\n"
+      <> "  }\n"
     }
 
     parser.EachNode(collection, items, loop_var, body) -> {
@@ -596,7 +596,7 @@ fn generate_node_code(
       }
 
       pad
-      <> "|> runtime.append("
+      <> "<> "
       <> module_alias
       <> ".html(\n"
       <> props_code
@@ -607,20 +607,20 @@ fn generate_node_code(
       <> extra_attrs_code
       <> ",\n"
       <> pad
-      <> "  ))\n"
+      <> "  )\n"
     }
 
     parser.AttributesNode(base_attrs) -> {
       case base_attrs {
         [] ->
           pad
-          <> "|> runtime.append(\" \" <> runtime.render_attributes(attributes))\n"
+          <> "<> \" \" <> runtime.render_attributes(attributes)\n"
         _ -> {
           let base_attrs_code = generate_base_attrs_code(base_attrs)
           pad
-          <> "|> runtime.append(\" \" <> runtime.render_attributes(runtime.merge_attributes("
+          <> "<> \" \" <> runtime.render_attributes(runtime.merge_attributes("
           <> base_attrs_code
-          <> ", attributes)))\n"
+          <> ", attributes))\n"
         }
       }
     }
@@ -634,25 +634,25 @@ fn generate_node_code(
       case is_void_element(tag) {
         True ->
           pad
-          <> "|> runtime.append(\"<"
+          <> "<> \"<"
           <> tag
-          <> "\")\n"
+          <> "\"\n"
           <> attrs_code
           <> pad
-          <> "|> runtime.append(\" />\")\n"
+          <> "<> \" />\"\n"
         False ->
           pad
-          <> "|> runtime.append(\"<"
+          <> "<> \"<"
           <> tag
-          <> "\")\n"
+          <> "\"\n"
           <> attrs_code
           <> pad
-          <> "|> runtime.append(\">\")\n"
+          <> "<> \">\"\n"
           <> children_code
           <> pad
-          <> "|> runtime.append(\"</"
+          <> "<> \"</"
           <> tag
-          <> ">\")\n"
+          <> ">\"\n"
       }
     }
   }
@@ -1008,9 +1008,9 @@ fn generate_element_attrs_code(attrs: List(lexer.ComponentAttr)) -> String {
       case attr_items {
         [] -> ""
         items ->
-          "  |> runtime.append(\" \" <> runtime.render_attributes(["
+          "  <> \" \" <> runtime.render_attributes(["
           <> string.join(items, ", ")
-          <> "]))\n"
+          <> "])\n"
       }
     }
   }

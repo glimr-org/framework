@@ -6,6 +6,7 @@
 
 import gleam/list
 import gleam/string
+import houdini
 
 // ------------------------------------------------------------- Public Types
 
@@ -103,12 +104,7 @@ pub fn append_each_with_loop(
 /// equivalents for safe rendering.
 ///
 pub fn escape(value: String) -> String {
-  value
-  |> string.replace("&", "&amp;")
-  |> string.replace("<", "&lt;")
-  |> string.replace(">", "&gt;")
-  |> string.replace("\"", "&quot;")
-  |> string.replace("'", "&#39;")
+  houdini.escape(value)
 }
 
 /// Builds a class string from conditional class entries. Takes

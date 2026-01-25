@@ -69,7 +69,7 @@ pub fn generate_text_only_test() {
   let result = generate(template([TextNode("Hello!")]), "hello", False)
 
   result.code
-  |> string.contains("runtime.append(\"Hello!\")")
+  |> string.contains("<> \"Hello!\"")
   |> should.be_true
 
   // Should have html function with no params (no view file = no data params)
@@ -93,7 +93,7 @@ pub fn generate_raw_variable_test() {
 
   // Should pass through directly without escape
   result.code
-  |> string.contains("runtime.append(data.html)")
+  |> string.contains("<> data.html")
   |> should.be_true
 
   // Should NOT escape raw variables
@@ -117,7 +117,7 @@ pub fn generate_template_with_slot_test() {
 
   // Should use slot argument directly
   result.code
-  |> string.contains("runtime.append(slot)")
+  |> string.contains("<> slot")
   |> should.be_true
 
   // Should have slot parameter
@@ -267,11 +267,11 @@ pub fn generate_if_else_test() {
 
   // Both branch contents should be present
   result.code
-  |> string.contains("runtime.append(\"yes\")")
+  |> string.contains("<> \"yes\"")
   |> should.be_true
 
   result.code
-  |> string.contains("runtime.append(\"no\")")
+  |> string.contains("<> \"no\"")
   |> should.be_true
 }
 
@@ -538,7 +538,7 @@ pub fn generate_component_test() {
 
   // Should use slot argument directly
   result.code
-  |> string.contains("runtime.append(slot)")
+  |> string.contains("<> slot")
   |> should.be_true
 }
 
@@ -552,7 +552,7 @@ pub fn generate_slot_node_in_component_test() {
 
   // Should use slot argument directly
   result.code
-  |> string.contains("runtime.append(slot)")
+  |> string.contains("<> slot")
   |> should.be_true
 }
 
@@ -709,12 +709,12 @@ pub fn generate_named_slot_in_component_test() {
 
   // Should use named slot argument directly
   result.code
-  |> string.contains("runtime.append(slot_header)")
+  |> string.contains("<> slot_header")
   |> should.be_true
 
   // Should use default slot argument directly
   result.code
-  |> string.contains("runtime.append(slot)")
+  |> string.contains("<> slot")
   |> should.be_true
 }
 
@@ -757,19 +757,19 @@ pub fn generate_multiple_named_slots_test() {
     )
 
   result.code
-  |> string.contains("runtime.append(slot_header)")
+  |> string.contains("<> slot_header")
   |> should.be_true
 
   result.code
-  |> string.contains("runtime.append(slot_sidebar)")
+  |> string.contains("<> slot_sidebar")
   |> should.be_true
 
   result.code
-  |> string.contains("runtime.append(slot_footer)")
+  |> string.contains("<> slot_footer")
   |> should.be_true
 
   result.code
-  |> string.contains("runtime.append(slot)")
+  |> string.contains("<> slot")
   |> should.be_true
 }
 
@@ -793,7 +793,7 @@ pub fn generate_slot_with_fallback_test() {
 
   // Should have fallback content
   result.code
-  |> string.contains("runtime.append(\"Default content\")")
+  |> string.contains("<> \"Default content\"")
   |> should.be_true
 
   // Should also append slot when not empty
@@ -818,7 +818,7 @@ pub fn generate_named_slot_with_fallback_test() {
 
   // Should have fallback content
   result.code
-  |> string.contains("runtime.append(\"Default Header\")")
+  |> string.contains("<> \"Default Header\"")
   |> should.be_true
 }
 
