@@ -76,10 +76,24 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
               && !string.contains(f, "src/bootstrap/gen/routes/")
             })
 
+          let controller_files =
+            list.filter(files, fn(f) {
+              string.contains(f, "src/app/http/controllers/")
+            })
+
+          let controller_changed = !list.is_empty(controller_files)
+
           io.println("")
           io.println(console.warning("File changes detected:"))
           list.each(route_files, fn(f) { io.println("  " <> f) })
+          list.each(controller_files, fn(f) { io.println("  " <> f) })
           io.println("")
+
+          // If controllers changed, recompile all routes
+          let files_to_compile = case controller_changed {
+            True -> get_all_route_files()
+            False -> route_files
+          }
 
           case list.is_empty(hooks.run_reload_route_modified) {
             True -> watch_loop(current_mtimes, port, hooks)
@@ -87,7 +101,7 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
               case
                 run_hooks.run_for_files(
                   hooks.run_reload_route_modified,
-                  route_files,
+                  files_to_compile,
                 )
               {
                 Ok(_) -> watch_loop(current_mtimes, port, hooks)
@@ -244,6 +258,18 @@ fn get_mtime(path: String) -> Result(Int, Nil) {
   case simplifile.file_info(path) {
     Ok(info) -> Ok(info.mtime_seconds)
     Error(_) -> Error(Nil)
+  }
+}
+
+/// Gets all route files in the src/routes directory. Used
+/// when controller files change to recompile all routes
+/// since any route might reference the changed controller.
+///
+fn get_all_route_files() -> List(String) {
+  case simplifile.get_files("src/routes") {
+    Ok(files) ->
+      list.filter(files, fn(f) { string.ends_with(f, ".gleam") })
+    Error(_) -> []
   }
 }
 
