@@ -7,7 +7,7 @@ repository = { type = "github", user = "glimr-org", repo = "framework" }
 # links = [{ title = "Website", href = "" }]
 
 [dependencies]
-gleam_stdlib = ">= 0.44.0 and < 0.67.1"
+gleam_stdlib = ">= 0.44.0 and < 2.0.0"
 wisp = ">= 2.1.0 and < 3.0.0"
 gleam_http = ">= 4.3.0 and < 5.0.0"
 gleam_httpc = ">= 5.0.0 and < 6.0.0"

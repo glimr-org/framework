@@ -56,6 +56,9 @@ pub fn compile_file(source_path: String) -> Result(CompileResult, String) {
 
   let imports = extract_imports(content)
   let routes = parse_routes(content)
+
+  use _ <- result.try(validate_path_params(routes))
+
   let used_methods = collect_used_methods(routes)
   let uses_middleware = check_uses_middleware(routes)
   let #(routes_code, line_to_route) =
@@ -88,6 +91,44 @@ fn check_uses_middleware(routes: List(ParsedRoute)) -> Bool {
       ParsedRedirect(..) -> False
     }
   })
+}
+
+/// Validates that no path parameters use reserved names.
+/// Returns an error if req, _req, ctx, or _ctx are used
+/// as path parameter names.
+///
+fn validate_path_params(routes: List(ParsedRoute)) -> Result(Nil, String) {
+  let reserved = ["req", "_req", "ctx", "_ctx"]
+
+  let invalid =
+    routes
+    |> list.filter_map(fn(r) {
+      case r {
+        ParsedRoute(path:, ..) -> {
+          let params = extract_params_from_path(path)
+          let bad = list.filter(params, fn(p) { list.contains(reserved, p) })
+          case bad {
+            [] -> Error(Nil)
+            _ -> Ok(#(path, bad))
+          }
+        }
+        ParsedRedirect(..) -> Error(Nil)
+      }
+    })
+
+  case invalid {
+    [] -> Ok(Nil)
+    [#(path, params), ..] -> {
+      let names = string.join(params, ", ")
+      Error(
+        "Reserved path parameter name in route '"
+        <> path
+        <> "': "
+        <> names
+        <> "\nThese names are reserved: req, _req, ctx, _ctx",
+      )
+    }
+  }
 }
 
 /// Collects unique HTTP methods used across all routes.
@@ -963,24 +1004,23 @@ fn generate_handler_call(
 
 /// Generates a call to an anonymous function handler. Wraps
 /// the function definition in braces and passes appropriate
-/// arguments. Matches path params to function params by name.
+/// arguments. Matches params by name - req/ctx are recognized
+/// specially, everything else is a path param.
 ///
 fn generate_anon_fn_call(handler: String) -> String {
   let fn_params = extract_fn_params(handler)
   let fn_param_names = list.map(fn_params, extract_param_name_from_signature)
-  let param_count = list.length(fn_params)
 
-  let args = case param_count {
-    0 -> ""
-    1 -> "req"
-    2 -> "req, ctx"
-    _ -> {
-      // Get function's path param names (skip req, ctx)
-      let fn_path_params = list.drop(fn_param_names, 2)
-      let base = ["req", "ctx"]
-      base |> list.append(fn_path_params) |> string.join(", ")
-    }
-  }
+  let args =
+    fn_param_names
+    |> list.map(fn(name) {
+      case name {
+        "req" | "_req" -> "req"
+        "ctx" | "_ctx" -> "ctx"
+        _ -> name
+      }
+    })
+    |> string.join(", ")
 
   "{ " <> handler <> " }(" <> args <> ")"
 }
@@ -1099,11 +1139,13 @@ pub fn write_compiled_file(
                 Ok(path) -> " (route: " <> path <> ")"
                 Error(_) -> ""
               }
+              let specific_hint = get_specific_error_hint(msg)
               Error(
                 "Failed to compile "
                 <> dest_path
                 <> route_hint
-                <> "\nSee: https://github.com/glimr-org/glimr?tab=readme-ov-file#route-handler-setup",
+                <> "\n"
+                <> specific_hint,
               )
             }
             False -> {
@@ -1155,5 +1197,39 @@ fn extract_line_number_for_file(
       }
     }
     Error(_) -> Error(Nil)
+  }
+}
+
+/// Analyzes a Gleam compiler error message and returns a
+/// specific hint. Detects common issues like arity mismatches
+/// and unknown functions to provide helpful guidance.
+///
+fn get_specific_error_hint(msg: String) -> String {
+  let is_arity_error =
+    string.contains(msg, "Expected") && string.contains(msg, "arguments")
+  let is_unknown_var = string.contains(msg, "Unknown variable")
+  let is_unknown_module = string.contains(msg, "Unknown module")
+  let is_not_function = string.contains(msg, "not a function")
+  let is_wrong_return =
+    string.contains(msg, "Response") && string.contains(msg, "Type mismatch")
+
+  case Nil {
+    _ if is_arity_error ->
+      "Handler function has incorrect number of parameters.\n"
+      <> "Expected signature: fn(req, ctx) or fn(req, ctx, ...path_params)"
+    _ if is_wrong_return ->
+      "Handler function must return a wisp.Response.\n"
+      <> "Make sure your handler returns a Response type."
+    _ if is_unknown_var ->
+      "Handler function not found.\n"
+      <> "Make sure the module is imported and the function exists."
+    _ if is_unknown_module ->
+      "Handler module not found.\n"
+      <> "Make sure the module is imported in your routes file."
+    _ if is_not_function ->
+      "Handler is not a function.\n"
+      <> "Make sure you're referencing a function, not a value."
+    _ ->
+      "See: https://github.com/glimr-org/glimr?tab=readme-ov-file#route-handler-setup"
   }
 }

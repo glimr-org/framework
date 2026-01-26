@@ -145,13 +145,13 @@ fn compile_route_file(
         Error(err) -> {
           console.output()
           |> console.unpadded()
-          |> console.line_error("  " <> source <> " failed")
+          |> console.line_error(source <> " failed")
           |> console.blank_line(1)
           |> console.print()
           Error(err)
         }
       }
     }
-    Error(_) -> Ok(Nil)
+    Error(err) -> Error(err)
   }
 }
