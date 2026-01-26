@@ -510,11 +510,7 @@ fn generate_node_code(
         False -> branches_code <> pad <> "    _ -> \"\"\n"
       }
 
-      pad
-      <> "<> case Nil {\n"
-      <> final_branches
-      <> pad
-      <> "  }\n"
+      pad <> "<> case Nil {\n" <> final_branches <> pad <> "  }\n"
     }
 
     parser.EachNode(collection, items, loop_var, body) -> {
@@ -612,9 +608,7 @@ fn generate_node_code(
 
     parser.AttributesNode(base_attrs) -> {
       case base_attrs {
-        [] ->
-          pad
-          <> "<> \" \" <> runtime.render_attributes(attributes)\n"
+        [] -> pad <> "<> \" \" <> runtime.render_attributes(attributes)\n"
         _ -> {
           let base_attrs_code = generate_base_attrs_code(base_attrs)
           pad

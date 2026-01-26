@@ -267,8 +267,7 @@ fn get_mtime(path: String) -> Result(Int, Nil) {
 ///
 fn get_all_route_files() -> List(String) {
   case simplifile.get_files("src/routes") {
-    Ok(files) ->
-      list.filter(files, fn(f) { string.ends_with(f, ".gleam") })
+    Ok(files) -> list.filter(files, fn(f) { string.ends_with(f, ".gleam") })
     Error(_) -> []
   }
 }
