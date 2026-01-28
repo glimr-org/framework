@@ -18,6 +18,7 @@ import glimr/internal/console/commands/make_command
 import glimr/internal/console/commands/make_controller
 import glimr/internal/console/commands/make_middleware
 import glimr/internal/console/commands/make_model
+import glimr/internal/console/commands/make_route_file
 import glimr/internal/console/commands/make_rule
 import glimr/internal/console/commands/make_validator
 import glimr/internal/console/commands/route_compile
@@ -48,6 +49,7 @@ pub fn commands(
     make_rule.command(),
     make_command.command(),
     make_model.command(),
+    make_route_file.command(),
     setup_database.command(connections),
   ]
 }

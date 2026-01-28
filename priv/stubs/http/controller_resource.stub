@@ -25,6 +25,6 @@ pub fn update(req: Request, ctx: Context, id: String) -> Response {
   todo
 }
 
-pub fn delete(req: Request, ctx: Context, id: String) -> Response {
+pub fn destroy(req: Request, ctx: Context, id: String) -> Response {
   todo
 }

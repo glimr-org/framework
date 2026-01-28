@@ -1,0 +1,7 @@
+import wisp
+
+pub fn routes(path, _method, _req, _ctx) {
+  case path {
+    _ -> wisp.not_found()
+  }
+}
