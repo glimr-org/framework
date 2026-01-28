@@ -2,6 +2,8 @@ import gleeunit/should
 import glimr/forms/form
 import wisp
 
+// ------------------------------------------------------------- Field Value Tests
+
 pub fn get_existing_field_test() {
   let form_data =
     wisp.FormData(
@@ -37,6 +39,8 @@ pub fn has_missing_field_test() {
   |> form.has("missing")
   |> should.be_false()
 }
+
+// ------------------------------------------------------------- File Tests
 
 pub fn get_file_result_existing_test() {
   let uploaded_file =

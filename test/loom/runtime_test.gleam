@@ -1,9 +1,7 @@
 import gleeunit/should
 import glimr/loom/runtime
 
-// =============================================================================
-// build_classes Tests
-// =============================================================================
+// ------------------------------------------------------------- build_classes Tests
 
 pub fn build_classes_all_true_test() {
   runtime.build_classes([
@@ -49,9 +47,7 @@ pub fn build_classes_preserves_spaces_in_classes_test() {
   |> should.equal("hover:bg-blue-500 focus:outline-none")
 }
 
-// =============================================================================
-// class() Helper Tests - Static class wrapper
-// =============================================================================
+// ------------------------------------------------------------- class() Helper Tests
 
 pub fn class_helper_returns_always_true_tuple_test() {
   runtime.class("btn primary")
@@ -85,9 +81,7 @@ pub fn class_helper_mixed_static_and_conditional_test() {
   |> should.equal("btn lg rounded active")
 }
 
-// =============================================================================
-// build_styles Tests
-// =============================================================================
+// ------------------------------------------------------------- build_styles Tests
 
 pub fn build_styles_all_true_test() {
   runtime.build_styles([
@@ -132,9 +126,7 @@ pub fn build_styles_with_semicolons_test() {
   |> should.equal("color: red; margin: 0;")
 }
 
-// =============================================================================
-// style() Helper Tests - Static style wrapper
-// =============================================================================
+// ------------------------------------------------------------- style() Helper Tests
 
 pub fn style_helper_returns_always_true_tuple_test() {
   runtime.style("color: red; margin: 0")

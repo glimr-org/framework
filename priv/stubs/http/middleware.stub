@@ -4,7 +4,7 @@ import wisp.{type Request, type Response}
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#middleware
 
-pub fn handle(req: Request, ctx: Context, next: Next(Context)) -> Response {
+pub fn run(req: Request, ctx: Context, next: Next(Context)) -> Response {
   todo
 
   next(req, ctx)

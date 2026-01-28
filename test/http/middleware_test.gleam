@@ -19,7 +19,7 @@ pub fn make_request() -> wisp.Request {
   |> request.set_body(stub_connection())
 }
 
-// No Middleware Tests
+// ------------------------------------------------------------- No Middleware Tests
 
 pub fn apply_no_middleware_test() {
   let req = make_request()
@@ -50,7 +50,7 @@ pub fn apply_no_middleware_calls_handler_test() {
   |> should.equal(200)
 }
 
-// Single Middleware Tests
+// ------------------------------------------------------------- Single Middleware Tests
 
 pub fn apply_single_middleware_test() {
   let req = make_request()
@@ -122,7 +122,7 @@ pub fn apply_single_middleware_accesses_context_test() {
   |> should.equal([#("x-auth", "valid")])
 }
 
-// Multiple Middleware Tests
+// ------------------------------------------------------------- Multiple Middleware Tests
 
 pub fn apply_multiple_middleware_test() {
   let req = make_request()
@@ -232,7 +232,7 @@ pub fn apply_middleware_chain_modifies_request_test() {
   |> should.equal(200)
 }
 
-// Short-circuit Tests
+// ------------------------------------------------------------- Short-circuit Tests
 
 pub fn apply_middleware_can_short_circuit_test() {
   let req = make_request()
@@ -285,7 +285,7 @@ pub fn apply_middleware_early_return_stops_chain_test() {
   |> should.equal([])
 }
 
-// Response Modification Tests
+// ------------------------------------------------------------- Response Modification Tests
 
 pub fn apply_middleware_modifies_response_body_test() {
   let req = make_request()
@@ -330,7 +330,7 @@ pub fn apply_middleware_modifies_status_code_test() {
   |> should.equal(201)
 }
 
-// Complex Scenarios
+// ------------------------------------------------------------- Complex Scenarios
 
 pub fn apply_middleware_realistic_auth_flow_test() {
   let req = make_request()

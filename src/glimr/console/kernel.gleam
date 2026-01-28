@@ -18,11 +18,12 @@ import glimr/internal/console/commands/make_command
 import glimr/internal/console/commands/make_controller
 import glimr/internal/console/commands/make_middleware
 import glimr/internal/console/commands/make_model
-import glimr/internal/console/commands/make_request
 import glimr/internal/console/commands/make_rule
+import glimr/internal/console/commands/make_validator
 import glimr/internal/console/commands/route_compile
 import glimr/internal/console/commands/run
 import glimr/internal/console/commands/setup_database
+import glimr/routing/router.{type RouteGroupConfig}
 
 // ------------------------------------------------------------- Public Functions
 
@@ -30,17 +31,20 @@ import glimr/internal/console/commands/setup_database
 /// Commands are generic over ctx so they can be merged
 /// with user commands into a single unified list.
 ///
-pub fn commands(connections: List(Connection)) -> List(Command) {
+pub fn commands(
+  connections: List(Connection),
+  route_groups: List(RouteGroupConfig),
+) -> List(Command) {
   [
     build.command(),
-    run.command(),
-    route_compile.command(),
+    run.command(route_groups),
+    route_compile.command(route_groups),
     loom_compile.command(),
     glimr_greet.command(),
     make_action.command(),
     make_controller.command(),
     make_middleware.command(),
-    make_request.command(),
+    make_validator.command(),
     make_rule.command(),
     make_command.command(),
     make_model.command(),
@@ -57,10 +61,12 @@ pub fn run(
   commands app_commands: List(Command),
   db_connections db_connections: List(Connection),
   cache_stores cache_stores: List(CacheStore),
+  route_groups route_groups: List(RouteGroupConfig),
 ) {
   db.validate_connections(db_connections)
 
-  let commands = list.append(commands(db_connections), app_commands)
+  let commands =
+    list.append(commands(db_connections, route_groups), app_commands)
   command.store_commands(commands)
 
   let args = command.get_args()

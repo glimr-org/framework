@@ -44,9 +44,7 @@ fn if_elseif_else_node(
   IfNode(list.append(if_branches, [#(None, else_body)]))
 }
 
-// =============================================================================
-// Basic Parsing Tests
-// =============================================================================
+// ------------------------------------------------------------- Basic Parsing Tests
 
 pub fn parse_empty_test() {
   let assert Ok(template) = parser.parse([])
@@ -93,9 +91,7 @@ pub fn parse_multiple_nodes_test() {
   )
 }
 
-// =============================================================================
-// Slot Tests
-// =============================================================================
+// ------------------------------------------------------------- Slot Tests
 
 pub fn parse_slot_test() {
   let tokens = [Text("<div>"), Slot(None), Text("</div>")]
@@ -125,9 +121,7 @@ pub fn parse_named_slot_test() {
   )
 }
 
-// =============================================================================
-// l-if Tests (Element-based conditionals)
-// =============================================================================
+// ------------------------------------------------------------- l-if Tests
 
 pub fn parse_lm_if_test() {
   let tokens = [
@@ -169,9 +163,7 @@ pub fn parse_lm_if_with_attrs_test() {
   )
 }
 
-// =============================================================================
-// l-else and l-else-if Tests
-// =============================================================================
+// ------------------------------------------------------------- l-else and l-else-if Tests
 
 pub fn parse_lm_if_else_test() {
   let tokens = [
@@ -277,9 +269,7 @@ pub fn parse_lm_if_without_else_test() {
   )
 }
 
-// =============================================================================
-// l-for Tests
-// =============================================================================
+// ------------------------------------------------------------- l-for Tests
 
 pub fn parse_lm_for_test() {
   let tokens = [
@@ -361,9 +351,7 @@ pub fn parse_lm_for_self_closing_test() {
   )
 }
 
-// =============================================================================
-// Combined l-if and l-for Tests
-// =============================================================================
+// ------------------------------------------------------------- Combined l-if and l-for Tests
 
 pub fn parse_lm_for_with_lm_if_inside_test() {
   let tokens = [
@@ -399,9 +387,7 @@ pub fn parse_lm_for_with_lm_if_inside_test() {
   }
 }
 
-// =============================================================================
-// Component with l-* Tests
-// =============================================================================
+// ------------------------------------------------------------- Component with l-* Tests
 
 pub fn parse_component_with_lm_if_test() {
   let tokens = [
@@ -463,9 +449,7 @@ pub fn parse_component_self_closing_with_lm_if_test() {
   )
 }
 
-// =============================================================================
-// Slot Definition Tests
-// =============================================================================
+// ------------------------------------------------------------- Slot Definition Tests
 
 pub fn parse_slot_with_fallback_test() {
   // At top level, <slot name="x">fallback</slot> creates SlotNode with fallback
@@ -511,9 +495,7 @@ pub fn parse_component_with_named_slots_test() {
   )
 }
 
-// =============================================================================
-// Standard Component Tests (without l-*)
-// =============================================================================
+// ------------------------------------------------------------- Standard Component Tests
 
 pub fn parse_self_closing_component_test() {
   let tokens = [Component("alert", [], True)]
@@ -583,9 +565,7 @@ pub fn parse_nested_components_test() {
   )
 }
 
-// =============================================================================
-// Attributes Tests
-// =============================================================================
+// ------------------------------------------------------------- Attributes Tests
 
 pub fn parse_attributes_standalone_test() {
   let tokens = [Text("<div "), Attributes, Text(">content</div>")]
@@ -621,9 +601,7 @@ pub fn parse_attributes_in_component_template_test() {
   ])
 }
 
-// =============================================================================
-// Error Tests
-// =============================================================================
+// ------------------------------------------------------------- Error Tests
 
 pub fn error_unexpected_lm_else_test() {
   let tokens = [

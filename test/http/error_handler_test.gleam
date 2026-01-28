@@ -3,6 +3,8 @@ import gleeunit/should
 import glimr/http/error_handler
 import wisp
 
+// ------------------------------------------------------------- HTML Response Tests
+
 pub fn html_200_unchanged_test() {
   let response = wisp.response(200)
 
@@ -101,6 +103,8 @@ pub fn html_500_test() {
     _ -> should.fail()
   }
 }
+
+// ------------------------------------------------------------- JSON Response Tests
 
 pub fn json_200_unchanged_test() {
   let response = wisp.response(200)

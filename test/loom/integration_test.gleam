@@ -7,9 +7,7 @@ import glimr/loom/lexer
 import glimr/loom/parser
 import glimr/loom/runtime
 
-// =============================================================================
-// Runtime Function Tests
-// =============================================================================
+// ------------------------------------------------------------- Runtime Function Tests
 
 pub fn runtime_string_concat_test() {
   { "" <> "Hello" <> ", " <> "World!" }
@@ -57,9 +55,7 @@ pub fn runtime_escape_preserves_normal_text_test() {
   |> should.equal("Hello, World!")
 }
 
-// =============================================================================
-// Full Pipeline Tests (Tokenize -> Parse -> Verify Structure)
-// =============================================================================
+// ------------------------------------------------------------- Full Pipeline Tests
 
 pub fn pipeline_simple_text_test() {
   let template = "Hello, World!"
@@ -147,9 +143,7 @@ pub fn pipeline_self_closing_component_test() {
   }
 }
 
-// =============================================================================
-// Full Template Compilation Tests
-// =============================================================================
+// ------------------------------------------------------------- Full Template Compilation Tests
 
 pub fn compile_page_template_test() {
   // With new architecture, templates use explicit data. prefixes
@@ -301,9 +295,7 @@ pub fn compile_template_with_each_and_component_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Edge Case Tests
-// =============================================================================
+// ------------------------------------------------------------- Edge Case Tests
 
 pub fn pipeline_multiple_at_signs_test() {
   // Make sure @ not followed by directive is treated as text
@@ -361,9 +353,7 @@ pub fn pipeline_raw_html_not_escaped_test() {
   |> should.be_false
 }
 
-// =============================================================================
-// Error Propagation Tests
-// =============================================================================
+// ------------------------------------------------------------- Error Propagation Tests
 
 pub fn error_lexer_propagates_test() {
   let template = "{{ unclosed"
@@ -402,9 +392,7 @@ pub fn error_mismatched_component_test() {
   |> should.be_error
 }
 
-// =============================================================================
-// Attribute Forwarding Tests
-// =============================================================================
+// ------------------------------------------------------------- Attribute Forwarding Tests
 
 pub fn runtime_render_attributes_test() {
   let attrs = [
@@ -564,9 +552,7 @@ pub fn compile_using_component_with_attributes_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Attribute Merging End-to-End Tests
-// =============================================================================
+// ------------------------------------------------------------- Attribute Merging End-to-End Tests
 
 pub fn merge_class_attributes_at_runtime_test() {
   // Test that class attributes get merged correctly at runtime

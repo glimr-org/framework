@@ -49,9 +49,7 @@ fn generate(
   generator.generate(tmpl, name, is_component, None, dict.new(), dict.new())
 }
 
-// =============================================================================
-// Basic Generation Tests
-// =============================================================================
+// ------------------------------------------------------------- Basic Generation Tests
 
 pub fn generate_empty_template_test() {
   let result = generate(template([]), "empty", False)
@@ -102,9 +100,7 @@ pub fn generate_raw_variable_test() {
   |> should.be_false
 }
 
-// =============================================================================
-// Slot Generation Tests (layouts are now components, this tests slot handling)
-// =============================================================================
+// ------------------------------------------------------------- Slot Generation Tests
 
 pub fn generate_template_with_slot_test() {
   // Templates with slots get slot parameters
@@ -126,9 +122,7 @@ pub fn generate_template_with_slot_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// If Node Generation Tests
-// =============================================================================
+// ------------------------------------------------------------- If Node Generation Tests
 
 pub fn generate_if_node_test() {
   // With new arch, condition is passed through as a case guard
@@ -338,9 +332,7 @@ pub fn generate_nested_if_else_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Each Node Generation Tests
-// =============================================================================
+// ------------------------------------------------------------- Each Node Generation Tests
 
 pub fn generate_each_node_test() {
   // @each(data.items as item) with item.name access
@@ -508,9 +500,7 @@ pub fn generate_each_without_loop_uses_simple_append_test() {
   |> should.be_false
 }
 
-// =============================================================================
-// Component Generation Tests
-// =============================================================================
+// ------------------------------------------------------------- Component Generation Tests
 
 pub fn generate_component_test() {
   // Components use is_component: True with labeled arguments
@@ -612,9 +602,7 @@ pub fn generate_component_with_expr_attr_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// String Escaping Tests
-// =============================================================================
+// ------------------------------------------------------------- String Escaping Tests
 
 pub fn generate_escaped_text_test() {
   let result =
@@ -640,9 +628,7 @@ pub fn generate_escaped_text_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Header Generation Test
-// =============================================================================
+// ------------------------------------------------------------- Header Generation Test
 
 pub fn generate_header_comment_test() {
   let result = generate(template([]), "test", False)
@@ -656,9 +642,7 @@ pub fn generate_header_comment_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Import Generation Tests
-// =============================================================================
+// ------------------------------------------------------------- Import Generation Tests
 
 pub fn generate_runtime_import_test() {
   let result = generate(template([]), "test", False)
@@ -690,9 +674,7 @@ pub fn generate_multiple_component_imports_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Named Slot Tests
-// =============================================================================
+// ------------------------------------------------------------- Named Slot Tests
 
 pub fn generate_named_slot_in_component_test() {
   let result =
@@ -773,9 +755,7 @@ pub fn generate_multiple_named_slots_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Slot Fallback Tests
-// =============================================================================
+// ------------------------------------------------------------- Slot Fallback Tests
 
 pub fn generate_slot_with_fallback_test() {
   // Slot with fallback content should check if empty
@@ -822,9 +802,7 @@ pub fn generate_named_slot_with_fallback_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Slot Conditional Tests
-// =============================================================================
+// ------------------------------------------------------------- Slot Conditional Tests
 
 pub fn generate_slot_conditional_test() {
   // l-if="slot" should transform to slot != ""
@@ -864,9 +842,7 @@ pub fn generate_named_slot_conditional_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Attribute Forwarding Tests
-// =============================================================================
+// ------------------------------------------------------------- Attribute Forwarding Tests
 
 pub fn generate_component_call_with_attributes_test() {
   // When using a component, all attributes should be passed in attributes list
@@ -967,9 +943,7 @@ pub fn generate_component_with_expr_attr_in_attributes_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Extract Named Slots Test
-// =============================================================================
+// ------------------------------------------------------------- Extract Named Slots Test
 
 pub fn extract_named_slots_test() {
   let tmpl =
@@ -989,9 +963,7 @@ pub fn extract_named_slots_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Class and Style Attribute Tests
-// =============================================================================
+// ------------------------------------------------------------- Class and Style Attribute Tests
 
 pub fn generate_component_with_class_attr_test() {
   let result =
@@ -1175,9 +1147,7 @@ pub fn generate_class_attr_only_conditionals_unchanged_test() {
   |> should.be_true
 }
 
-// =============================================================================
-// Helpers
-// =============================================================================
+// ------------------------------------------------------------- Helpers
 
 fn list_contains(list: List(String), target: String) -> Bool {
   case list {

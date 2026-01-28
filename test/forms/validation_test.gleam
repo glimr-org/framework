@@ -9,6 +9,8 @@ import wisp
 
 const ctx = Nil
 
+// ------------------------------------------------------------- String Rule Tests
+
 pub fn for_required_pass_test() {
   let form_data = wisp.FormData(values: [#("name", "John")], files: [])
 
@@ -118,6 +120,8 @@ pub fn for_max_length_fail_test() {
   }
 }
 
+// ------------------------------------------------------------- Numeric Rule Tests
+
 pub fn for_numeric_pass_test() {
   let form_data = wisp.FormData(values: [#("age", "25")], files: [])
 
@@ -192,6 +196,8 @@ pub fn for_max_fail_test() {
     _ -> should.fail()
   }
 }
+
+// ------------------------------------------------------------- Format Rule Tests
 
 pub fn for_url_pass_test() {
   let form_data =
@@ -299,6 +305,8 @@ pub fn for_max_digits_fail_test() {
   }
 }
 
+// ------------------------------------------------------------- Multiple Rules Tests
+
 pub fn for_multiple_rules_all_pass_test() {
   let form_data =
     wisp.FormData(values: [#("email", "test@example.com")], files: [])
@@ -383,6 +391,8 @@ pub fn start_some_fail_test() {
     Ok(_) -> should.fail()
   }
 }
+
+// ------------------------------------------------------------- File Validation Tests
 
 pub fn for_file_required_pass_test() {
   let uploaded_file =
@@ -487,6 +497,8 @@ pub fn for_file_extension_case_insensitive_test() {
   |> should.be_ok()
 }
 
+// ------------------------------------------------------------- File Size Tests
+
 pub fn for_file_min_size_pass_test() {
   let test_path = "/tmp/glimr_test_min_size_pass.txt"
   let content = bit_array.from_string("a" <> string.repeat("x", 2047))
@@ -576,6 +588,8 @@ pub fn for_file_max_size_fail_test() {
     _ -> should.fail()
   }
 }
+
+// ------------------------------------------------------------- Custom Validation Tests
 
 pub fn for_custom_pass_test() {
   let form_data = wisp.FormData(values: [#("username", "alice123")], files: [])

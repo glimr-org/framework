@@ -10,10 +10,6 @@ const name = "loom:compile"
 /// The console command description.
 const description = "Compile loom templates to Gleam code"
 
-const views_path = "src/resources/views/"
-
-const app_loom_path = "src/app/loom/"
-
 /// Define the console command and its properties.
 ///
 pub fn command() -> Command {
@@ -40,32 +36,28 @@ fn run(args: ParsedArgs) -> Nil {
   let verbose = command.has_flag(args, "verbose")
 
   case path {
-    "" -> compile_all(verbose)
-    _ -> compile_path(path, verbose)
-  }
-}
-
-fn compile_all(verbose: Bool) -> Nil {
-  case compile_loom.run(verbose) {
-    Ok(_) -> Nil
-    Error(msg) -> io.println(console.error(msg))
-  }
-}
-
-fn compile_path(path: String, verbose: Bool) -> Nil {
-  let is_views_path = string.starts_with(path, views_path)
-  let is_app_loom_path = string.starts_with(path, app_loom_path)
-
-  case is_views_path || is_app_loom_path {
-    False -> {
-      io.println(console.error(
-        "Not a loom file: path must be in src/resources/views/ or src/app/loom/",
-      ))
-    }
-    True -> {
-      case compile_loom.run_path(path, verbose) {
+    "" -> {
+      case compile_loom.run(verbose) {
         Ok(_) -> Nil
         Error(msg) -> io.println(console.error(msg))
+      }
+    }
+    _ -> {
+      let is_views_path = string.starts_with(path, "src/resources/views/")
+      let is_app_loom_path = string.starts_with(path, "src/app/loom/")
+
+      case is_views_path || is_app_loom_path {
+        False -> {
+          io.println(console.error(
+            "Not a loom file: path must be in src/resources/views/ or src/app/loom/",
+          ))
+        }
+        True -> {
+          case compile_loom.run_path(path, verbose) {
+            Ok(_) -> Nil
+            Error(msg) -> io.println(console.error(msg))
+          }
+        }
       }
     }
   }

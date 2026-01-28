@@ -11,16 +11,18 @@ import gleam/io
 import gleam/list
 import gleam/string
 import glimr/console/console
+import glimr/internal/actions/compile_routes
 import glimr/internal/actions/run_hooks
 import glimr/internal/config.{type Hooks}
 import glimr/internal/dev_proxy
+import glimr/routing/router.{type RouteGroupConfig}
 import simplifile
 
 /// Starts the application with file watching. Monitors the src
 /// directory for changes and triggers hooks or restarts based
 /// on which files changed.
 ///
-pub fn run(hooks: Hooks) -> Nil {
+pub fn run(hooks: Hooks, route_groups: List(RouteGroupConfig)) -> Nil {
   config.load_env()
 
   let app_port = config.app_port()
@@ -31,34 +33,35 @@ pub fn run(hooks: Hooks) -> Nil {
   let initial_mtimes = get_watched_file_mtimes("src")
   let port = start_gleam_run()
   start_output_reader(port)
-  watch_loop(initial_mtimes, port, hooks)
+  watch_loop(initial_mtimes, port, hooks, route_groups)
 }
 
 /// Main file watching loop. Polls for file changes every
 /// second and triggers appropriate hooks or restarts based
 /// on which files were modified.
 ///
-fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
+fn watch_loop(
+  last_mtimes: Dict(String, Int),
+  port: Port,
+  hooks: Hooks,
+  route_groups: List(RouteGroupConfig),
+) -> Nil {
   process.sleep(1000)
 
   let current_mtimes = get_watched_file_mtimes("src")
   let changed_files = find_changed_files(last_mtimes, current_mtimes)
 
   case changed_files {
-    [] -> watch_loop(current_mtimes, port, hooks)
+    [] -> watch_loop(current_mtimes, port, hooks, route_groups)
     files -> {
-      let routes_source_changed =
+      let controller_changed =
         list.any(files, fn(f) {
-          {
-            string.contains(f, "src/routes/")
-            && !string.contains(f, "src/bootstrap/gen/routes/")
-          }
-          || string.contains(f, "src/app/http/controllers/")
+          string.contains(f, "src/app/http/controllers/")
         })
 
       let loom_source_changed =
         list.any(files, fn(f) {
-          string.contains(f, ".loom.html")
+          string.ends_with(f, ".loom.html")
           || string.contains(f, "src/app/loom/")
         })
 
@@ -68,49 +71,24 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
           || string.contains(f, "src/bootstrap/gen/loom/")
         })
 
-      case routes_source_changed, loom_source_changed {
+      case controller_changed, loom_source_changed {
         True, _ -> {
-          let route_files =
-            list.filter(files, fn(f) {
-              string.contains(f, "src/routes/")
-              && !string.contains(f, "src/bootstrap/gen/routes/")
-            })
-
           let controller_files =
             list.filter(files, fn(f) {
               string.contains(f, "src/app/http/controllers/")
             })
 
-          let controller_changed = !list.is_empty(controller_files)
-
           io.println("")
-          io.println(console.warning("File changes detected:"))
-          list.each(route_files, fn(f) { io.println("  " <> f) })
+          io.println(console.warning("Controller changes detected:"))
           list.each(controller_files, fn(f) { io.println("  " <> f) })
           io.println("")
 
-          // If controllers changed, recompile all routes
-          let files_to_compile = case controller_changed {
-            True -> get_all_route_files()
-            False -> route_files
-          }
-
-          case list.is_empty(hooks.run_reload_route_modified) {
-            True -> watch_loop(current_mtimes, port, hooks)
-            False -> {
-              case
-                run_hooks.run_for_files(
-                  hooks.run_reload_route_modified,
-                  files_to_compile,
-                )
-              {
-                Ok(_) -> watch_loop(current_mtimes, port, hooks)
-                Error(msg) -> {
-                  io.println("")
-                  io.println(console.error(msg))
-                  watch_loop(current_mtimes, port, hooks)
-                }
-              }
+          // Recompile all routes when any controller changes
+          case compile_routes.run(False, route_groups) {
+            Ok(_) -> watch_loop(current_mtimes, port, hooks, route_groups)
+            Error(msg) -> {
+              io.println(console.error(msg))
+              watch_loop(current_mtimes, port, hooks, route_groups)
             }
           }
         }
@@ -127,7 +105,7 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
           io.println("")
 
           case list.is_empty(hooks.run_reload_loom_modified) {
-            True -> watch_loop(current_mtimes, port, hooks)
+            True -> watch_loop(current_mtimes, port, hooks, route_groups)
             False -> {
               case
                 run_hooks.run_for_files(
@@ -135,11 +113,11 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
                   loom_files,
                 )
               {
-                Ok(_) -> watch_loop(current_mtimes, port, hooks)
+                Ok(_) -> watch_loop(current_mtimes, port, hooks, route_groups)
                 Error(msg) -> {
                   io.println("")
                   io.println(console.error(msg))
-                  watch_loop(current_mtimes, port, hooks)
+                  watch_loop(current_mtimes, port, hooks, route_groups)
                 }
               }
             }
@@ -189,7 +167,7 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
           stop_port(port)
           let new_port = start_gleam_run()
           start_output_reader(new_port)
-          watch_loop(current_mtimes, new_port, hooks)
+          watch_loop(current_mtimes, new_port, hooks, route_groups)
         }
       }
     }
@@ -258,17 +236,6 @@ fn get_mtime(path: String) -> Result(Int, Nil) {
   case simplifile.file_info(path) {
     Ok(info) -> Ok(info.mtime_seconds)
     Error(_) -> Error(Nil)
-  }
-}
-
-/// Gets all route files in the src/routes directory. Used
-/// when controller files change to recompile all routes
-/// since any route might reference the changed controller.
-///
-fn get_all_route_files() -> List(String) {
-  case simplifile.get_files("src/routes") {
-    Ok(files) -> list.filter(files, fn(f) { string.ends_with(f, ".gleam") })
-    Error(_) -> []
   }
 }
 

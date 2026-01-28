@@ -6,7 +6,7 @@ import glimr/routing/router
 import routing/helpers
 import wisp
 
-// Prefix Matching Tests
+// ------------------------------------------------------------- Prefix Matching Tests
 
 pub fn prefix_match_exact_test() {
   let groups = [
@@ -149,17 +149,17 @@ pub fn prefix_match_catch_all_test() {
   |> should.equal(200)
 }
 
-// Path Stripping Tests
+// ------------------------------------------------------------- Full Path Tests
 
-pub fn path_stripping_removes_prefix_test() {
+pub fn full_path_passed_to_handler_test() {
   let groups = [
     router.RouteGroup(
       prefix: "/api",
       middleware_group: kernel.Api,
       routes: fn(path, _method, _req, _ctx) {
-        // Path should be stripped of "/api"
+        // Path should include full path with prefix
         case path {
-          ["users", "123"] -> wisp.response(201)
+          ["api", "users", "123"] -> wisp.response(201)
           _ -> wisp.response(500)
         }
       },
@@ -214,15 +214,15 @@ pub fn path_stripping_empty_prefix_no_change_test() {
   |> should.equal(200)
 }
 
-pub fn path_stripping_nested_prefix_test() {
+pub fn full_path_nested_prefix_test() {
   let groups = [
     router.RouteGroup(
       prefix: "/api/v1",
       middleware_group: kernel.Api,
       routes: fn(path, _method, _req, _ctx) {
-        // Path should be stripped of "/api/v1"
+        // Path should include full path with nested prefix
         case path {
-          ["users"] -> wisp.response(201)
+          ["api", "v1", "users"] -> wisp.response(201)
           _ -> wisp.response(500)
         }
       },
@@ -272,7 +272,7 @@ pub fn path_stripping_root_path_test() {
   |> should.equal(200)
 }
 
-// Pattern Matching in Handlers Tests
+// ------------------------------------------------------------- Pattern Matching in Handlers Tests
 
 pub fn handler_pattern_matching_exact_test() {
   let groups = [
@@ -414,7 +414,7 @@ pub fn handler_pattern_matching_catch_all_test() {
   |> should.equal(404)
 }
 
-// Middleware Group Tests
+// ------------------------------------------------------------- Middleware Group Tests
 
 pub fn middleware_group_api_test() {
   let groups = [
@@ -504,7 +504,7 @@ pub fn middleware_group_web_test() {
   |> should.equal([#("x-middleware", "web")])
 }
 
-// Error Cases Tests
+// ------------------------------------------------------------- Error Cases Tests
 
 pub fn no_matching_group_returns_404_test() {
   // No groups registered at all
@@ -552,7 +552,7 @@ pub fn handler_404_passes_through_test() {
   |> should.equal(404)
 }
 
-// Context Tests
+// ------------------------------------------------------------- Context Tests
 
 pub fn context_passed_to_handler_test() {
   let groups = [

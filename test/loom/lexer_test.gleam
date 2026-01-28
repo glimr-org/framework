@@ -6,9 +6,7 @@ import glimr/loom/lexer.{
   SlotDefEnd, StringAttr, StyleAttr, Text, Variable,
 }
 
-// =============================================================================
-// Text and Variable Tests
-// =============================================================================
+// ------------------------------------------------------------- Text and Variable Tests
 
 pub fn tokenize_plain_text_test() {
   let assert Ok(tokens) = lexer.tokenize("Hello, World!")
@@ -59,9 +57,7 @@ pub fn tokenize_dotted_variable_test() {
   |> should.equal([Variable("user.name")])
 }
 
-// =============================================================================
-// l-if Tests
-// =============================================================================
+// ------------------------------------------------------------- l-if Tests
 
 pub fn tokenize_lm_if_test() {
   let assert Ok(tokens) = lexer.tokenize("<p l-if=\"show\">visible</p>")
@@ -103,9 +99,7 @@ pub fn tokenize_lm_if_self_closing_test() {
   |> should.equal([Element("br", [LmIf("show")], True)])
 }
 
-// =============================================================================
-// l-else-if and l-else Tests
-// =============================================================================
+// ------------------------------------------------------------- l-else-if and l-else Tests
 
 pub fn tokenize_lm_else_test() {
   let assert Ok(tokens) =
@@ -163,9 +157,7 @@ pub fn tokenize_multiple_lm_else_if_test() {
   ])
 }
 
-// =============================================================================
-// l-for Tests
-// =============================================================================
+// ------------------------------------------------------------- l-for Tests
 
 pub fn tokenize_lm_for_test() {
   let assert Ok(tokens) =
@@ -268,9 +260,7 @@ pub fn tokenize_element_expr_attr_single_quotes_test() {
   ])
 }
 
-// =============================================================================
-// l-* with other attributes
-// =============================================================================
+// ------------------------------------------------------------- l-* with other attributes
 
 pub fn tokenize_lm_if_with_class_test() {
   let assert Ok(tokens) =
@@ -306,9 +296,7 @@ pub fn tokenize_lm_for_with_multiple_attrs_test() {
   ])
 }
 
-// =============================================================================
-// Component with l-* attributes
-// =============================================================================
+// ------------------------------------------------------------- Component with l-* attributes
 
 pub fn tokenize_component_with_lm_if_test() {
   let assert Ok(tokens) =
@@ -352,9 +340,7 @@ pub fn tokenize_component_self_closing_with_lm_if_test() {
   ])
 }
 
-// =============================================================================
-// Template element tests
-// =============================================================================
+// ------------------------------------------------------------- Template element tests
 
 pub fn tokenize_template_element_test() {
   let assert Ok(tokens) =
@@ -370,9 +356,7 @@ pub fn tokenize_template_element_test() {
   ])
 }
 
-// =============================================================================
-// Slot Tests
-// =============================================================================
+// ------------------------------------------------------------- Slot Tests
 
 pub fn tokenize_slot_self_closing_test() {
   let assert Ok(tokens) = lexer.tokenize("<div><slot /></div>")
@@ -423,9 +407,7 @@ pub fn tokenize_slot_def_single_quotes_test() {
   |> should.equal([SlotDef(Some("footer")), Text("Copyright"), SlotDefEnd])
 }
 
-// =============================================================================
-// Component Tests
-// =============================================================================
+// ------------------------------------------------------------- Component Tests
 
 pub fn tokenize_self_closing_component_test() {
   let assert Ok(tokens) = lexer.tokenize("<x-alert />")
@@ -528,9 +510,7 @@ pub fn tokenize_nested_components_test() {
   ])
 }
 
-// =============================================================================
-// Attributes Tests
-// =============================================================================
+// ------------------------------------------------------------- Attributes Tests
 
 pub fn tokenize_attributes_standalone_test() {
   let assert Ok(tokens) = lexer.tokenize("@attributes")
@@ -563,9 +543,7 @@ pub fn tokenize_attributes_word_boundary_test() {
   |> should.be_false
 }
 
-// =============================================================================
-// Error Tests
-// =============================================================================
+// ------------------------------------------------------------- Error Tests
 
 pub fn error_unterminated_variable_test() {
   let result = lexer.tokenize("{{ name")
@@ -618,9 +596,7 @@ pub fn tokenize_valid_variable_names_test() {
   let assert Ok(_) = lexer.tokenize("{{ user123 }}")
 }
 
-// =============================================================================
-// Class and Style Attribute Tests
-// =============================================================================
+// ------------------------------------------------------------- Class and Style Attribute Tests
 
 pub fn tokenize_class_attr_test() {
   let assert Ok(tokens) =
@@ -697,9 +673,7 @@ pub fn tokenize_class_and_style_together_test() {
   ])
 }
 
-// =============================================================================
-// Plain HTML (without l-* attributes) should remain as text
-// =============================================================================
+// ------------------------------------------------------------- Plain HTML Tests
 
 pub fn tokenize_plain_html_as_text_test() {
   let assert Ok(tokens) =
@@ -716,9 +690,7 @@ pub fn tokenize_plain_self_closing_html_as_text_test() {
   |> should.equal([Text("<img src=\"image.png\" />")])
 }
 
-// =============================================================================
-// Elements with dynamic attributes (without l-*) should be parsed as Element
-// =============================================================================
+// ------------------------------------------------------------- Elements with Dynamic Attributes
 
 pub fn tokenize_element_with_dynamic_class_test() {
   // Element with :class but no l-* should be parsed as Element
@@ -778,9 +750,7 @@ pub fn tokenize_nested_divs_with_dynamic_inner_test() {
   ])
 }
 
-// =============================================================================
-// Helpers
-// =============================================================================
+// ------------------------------------------------------------- Helpers
 
 fn list_contains(tokens: List(lexer.Token), target: lexer.Token) -> Bool {
   case tokens {
