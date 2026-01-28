@@ -152,7 +152,7 @@ pub fn parse_route_with_middleware_test() {
   let source =
     "
 /// @get \"/admin\"
-/// @middleware \"app/http/middleware/auth\"
+/// @middleware \"auth\"
 ///
 pub fn index(_req, _ctx) {
   wisp.ok()
@@ -174,8 +174,8 @@ pub fn parse_route_with_multiple_middleware_test() {
   let source =
     "
 /// @get \"/admin\"
-/// @middleware \"app/http/middleware/auth\"
-/// @middleware \"app/http/middleware/logging\"
+/// @middleware \"auth\"
+/// @middleware \"logging\"
 ///
 pub fn index(_req, _ctx) {
   wisp.ok()
@@ -199,7 +199,7 @@ pub fn index(_req, _ctx) {
 pub fn parse_group_middleware_test() {
   let source =
     "
-// @group_middleware \"app/http/middleware/auth\"
+// @group_middleware \"auth\"
 
 /// @get \"/dashboard\"
 ///
@@ -232,10 +232,10 @@ pub fn settings(_req, _ctx) {
 pub fn parse_group_middleware_combined_with_route_middleware_test() {
   let source =
     "
-// @group_middleware \"app/http/middleware/auth\"
+// @group_middleware \"auth\"
 
 /// @get \"/dashboard\"
-/// @middleware \"app/http/middleware/logging\"
+/// @middleware \"logging\"
 ///
 pub fn dashboard(_req, _ctx) {
   wisp.ok()
@@ -463,8 +463,8 @@ pub fn store(_req, _ctx) {
 pub fn annotation_parser_extracts_group_middleware_test() {
   let source =
     "
-// @group_middleware \"app/http/middleware/auth\"
-// @group_middleware \"app/http/middleware/logging\"
+// @group_middleware \"auth\"
+// @group_middleware \"logging\"
 
 /// @get \"/admin\"
 ///
@@ -476,14 +476,14 @@ pub fn index(_req, _ctx) {
   let assert Ok(result) = annotation_parser.parse(source)
 
   result.group_middleware
-  |> should.equal(["app/http/middleware/auth", "app/http/middleware/logging"])
+  |> should.equal(["auth", "logging"])
 }
 
 pub fn annotation_parser_extracts_route_middleware_test() {
   let source =
     "
 /// @get \"/admin\"
-/// @middleware \"app/http/middleware/auth\"
+/// @middleware \"auth\"
 ///
 pub fn index(_req, _ctx) {
   wisp.ok()
@@ -494,7 +494,7 @@ pub fn index(_req, _ctx) {
 
   case result.routes {
     [ParsedRoute(middleware: mw, ..)] -> {
-      mw |> should.equal(["app/http/middleware/auth"])
+      mw |> should.equal(["auth"])
     }
     _ -> should.fail()
   }
@@ -503,10 +503,10 @@ pub fn index(_req, _ctx) {
 pub fn annotation_parser_combines_group_and_route_middleware_test() {
   let source =
     "
-// @group_middleware \"app/http/middleware/group\"
+// @group_middleware \"group\"
 
 /// @get \"/admin\"
-/// @middleware \"app/http/middleware/route\"
+/// @middleware \"route\"
 ///
 pub fn index(_req, _ctx) {
   wisp.ok()
@@ -518,7 +518,7 @@ pub fn index(_req, _ctx) {
   case result.routes {
     [ParsedRoute(middleware: mw, ..)] -> {
       mw
-      |> should.equal(["app/http/middleware/group", "app/http/middleware/route"])
+      |> should.equal(["group", "route"])
     }
     _ -> should.fail()
   }
@@ -614,7 +614,7 @@ pub fn show(_req, _ctx, ctx: String) {
 pub fn rejects_invalid_group_middleware_test() {
   let source =
     "
-// @group_middleware \"app/http/middleware/nonexistent\"
+// @group_middleware \"nonexistent\"
 
 /// @get \"/users\"
 ///
@@ -633,9 +633,7 @@ pub fn index(_req, _ctx) {
       |> should.be_true
 
       msg
-      |> string.contains(
-        "Middleware \"app/http/middleware/nonexistent\" doesn't exist",
-      )
+      |> string.contains("Middleware \"nonexistent\" doesn't exist")
       |> should.be_true
     }
     Ok(_) -> should.fail()
@@ -646,7 +644,7 @@ pub fn rejects_invalid_route_middleware_test() {
   let source =
     "
 /// @get \"/users\"
-/// @middleware \"app/http/middleware/nonexistent\"
+/// @middleware \"nonexistent\"
 ///
 pub fn index(_req, _ctx) {
   wisp.ok()
@@ -663,9 +661,7 @@ pub fn index(_req, _ctx) {
       |> should.be_true
 
       msg
-      |> string.contains(
-        "Middleware \"app/http/middleware/nonexistent\" doesn't exist",
-      )
+      |> string.contains("Middleware \"nonexistent\" doesn't exist")
       |> should.be_true
     }
     Ok(_) -> should.fail()
@@ -675,7 +671,7 @@ pub fn index(_req, _ctx) {
 pub fn rejects_group_middleware_without_run_test() {
   let source =
     "
-// @group_middleware \"app/http/middleware/no_handle\"
+// @group_middleware \"no_handle\"
 
 /// @get \"/users\"
 ///
@@ -705,7 +701,7 @@ pub fn rejects_route_middleware_without_run_test() {
   let source =
     "
 /// @get \"/users\"
-/// @middleware \"app/http/middleware/no_handle\"
+/// @middleware \"no_handle\"
 ///
 pub fn index(_req, _ctx) {
   wisp.ok()
@@ -735,7 +731,7 @@ pub fn parse_route_with_validator_test() {
   let source =
     "
 /// @post \"/users\"
-/// @validator \"app/http/requests/user_request\"
+/// @validator \"user_validator\"
 ///
 pub fn store(_req, _ctx, validated) {
   wisp.ok()
@@ -746,7 +742,7 @@ pub fn store(_req, _ctx, validated) {
     compile_controller("app/http/controllers/user_controller", source)
 
   result.routes_code
-  |> string.contains("user_request.validate(req, ctx)")
+  |> string.contains("user_validator.validate(req, ctx)")
   |> should.be_true
 
   result.routes_code
@@ -758,7 +754,7 @@ pub fn parse_route_with_validator_and_path_params_test() {
   let source =
     "
 /// @post \"/users/:id\"
-/// @validator \"app/http/requests/user_request\"
+/// @validator \"user_validator\"
 ///
 pub fn update(_req, _ctx, id, validated) {
   wisp.ok()
@@ -769,7 +765,7 @@ pub fn update(_req, _ctx, id, validated) {
     compile_controller("app/http/controllers/user_controller", source)
 
   result.routes_code
-  |> string.contains("user_request.validate(req, ctx)")
+  |> string.contains("user_validator.validate(req, ctx)")
   |> should.be_true
 
   // Path params come before validated
@@ -782,8 +778,8 @@ pub fn parse_route_with_validator_and_middleware_test() {
   let source =
     "
 /// @post \"/users\"
-/// @middleware \"app/http/middleware/auth\"
-/// @validator \"app/http/requests/user_request\"
+/// @middleware \"auth\"
+/// @validator \"user_validator\"
 ///
 pub fn store(_req, _ctx, validated) {
   wisp.ok()
@@ -799,7 +795,7 @@ pub fn store(_req, _ctx, validated) {
   |> should.be_true
 
   result.routes_code
-  |> string.contains("user_request.validate(req, ctx)")
+  |> string.contains("user_validator.validate(req, ctx)")
   |> should.be_true
 }
 
@@ -807,7 +803,7 @@ pub fn rejects_invalid_validator_test() {
   let source =
     "
 /// @post \"/users\"
-/// @validator \"app/http/requests/nonexistent\"
+/// @validator \"nonexistent\"
 ///
 pub fn store(_req, _ctx, validated) {
   wisp.ok()
@@ -824,9 +820,7 @@ pub fn store(_req, _ctx, validated) {
       |> should.be_true
 
       msg
-      |> string.contains(
-        "Validator \"app/http/requests/nonexistent\" doesn't exist",
-      )
+      |> string.contains("Validator \"nonexistent\" doesn't exist")
       |> should.be_true
     }
     Ok(_) -> should.fail()
@@ -837,7 +831,7 @@ pub fn annotation_parser_extracts_validator_test() {
   let source =
     "
 /// @post \"/users\"
-/// @validator \"app/http/requests/user_request\"
+/// @validator \"user_validator\"
 ///
 pub fn store(_req, _ctx, validated) {
   wisp.ok()
@@ -848,7 +842,7 @@ pub fn store(_req, _ctx, validated) {
 
   case result.routes {
     [ParsedRoute(validator: option.Some(v), ..)] -> {
-      v |> should.equal("app/http/requests/user_request")
+      v |> should.equal("user_validator")
     }
     _ -> should.fail()
   }

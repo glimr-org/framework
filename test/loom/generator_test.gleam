@@ -561,7 +561,7 @@ pub fn generate_component_usage_test() {
   // Should import component
   result.code
   |> string.contains(
-    "import bootstrap/gen/loom/components/alert as components_alert",
+    "import compiled/loom/components/alert as components_alert",
   )
   |> should.be_true
 
@@ -583,7 +583,7 @@ pub fn generate_nested_component_path_test() {
   // Should have correct import path
   result.code
   |> string.contains(
-    "import bootstrap/gen/loom/components/forms/input as components_forms_input",
+    "import compiled/loom/components/forms/input as components_forms_input",
   )
   |> should.be_true
 }

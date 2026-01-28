@@ -25,7 +25,7 @@ const views_path = "src/resources/views/"
 
 const app_loom_path = "src/app/loom/"
 
-const output_path = "src/bootstrap/gen/loom/"
+const output_path = "src/compiled/loom/"
 
 /// Tracks a compiled file with its source path, output path,
 /// and previous content. Used for reverting generated files
@@ -179,7 +179,7 @@ fn compile_existing_loom_path(path: String, verbose: Bool) -> Nil {
 
 /// Cleans up the generated file when a source template is
 /// deleted. Removes the corresponding .gleam file from the
-/// bootstrap/gen/loom directory.
+/// compiled/loom directory.
 ///
 fn cleanup_deleted_loom_file(path: String, verbose: Bool) -> Nil {
   let output_file = path_to_output_path(path)
@@ -697,7 +697,7 @@ fn path_to_module_name(path: String) -> String {
 }
 
 /// Converts a template path to its output path. Maps from
-/// the views directory to the bootstrap/gen/loom directory
+/// the views directory to the compiled/loom directory
 /// with .gleam extension.
 ///
 fn path_to_output_path(path: String) -> String {

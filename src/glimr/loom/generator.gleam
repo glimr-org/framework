@@ -139,7 +139,7 @@ fn generate_imports(
   let user_imports = case view_file {
     Some(vf) ->
       vf.imports
-      |> list.filter(fn(imp) { !string.contains(imp, "bootstrap/gen/") })
+      |> list.filter(fn(imp) { !string.contains(imp, "compiled/") })
     None -> []
   }
 
@@ -150,7 +150,7 @@ fn generate_imports(
     |> list.sort(string.compare)
     |> list.map(fn(name) {
       let module_path =
-        "bootstrap/gen/loom/components/" <> string.replace(name, ":", "/")
+        "compiled/loom/components/" <> string.replace(name, ":", "/")
       let alias = component_module_alias(name)
       "import " <> module_path <> " as " <> alias
     })

@@ -18,6 +18,34 @@ import glimr/routing/annotation_parser.{
 import shellout
 import simplifile
 
+// ------------------------------------------------------------- Private Constants
+
+/// Base path for middleware modules. Bare middleware names
+/// are expanded to this path, e.g., "logger" becomes
+/// "app/http/middleware/logger".
+///
+const middleware_base_path = "app/http/middleware/"
+
+/// Base path for validator modules. Bare validator names
+/// are expanded to this path, e.g., "user_validator" becomes
+/// "app/http/validators/user_validator".
+///
+const validator_base_path = "app/http/validators/"
+
+/// Expands a bare middleware name to its full module path.
+/// "logger" becomes "app/http/middleware/logger".
+///
+fn expand_middleware_path(name: String) -> String {
+  middleware_base_path <> name
+}
+
+/// Expands a bare validator name to its full module path.
+/// "user_validator" becomes "app/http/validators/user_validator".
+///
+fn expand_validator_path(name: String) -> String {
+  validator_base_path <> name
+}
+
 // ------------------------------------------------------------- Public Types
 
 /// Result of compiling routes. Contains the extracted imports,
@@ -160,13 +188,14 @@ fn generate_imports(
       }
     })
     |> list.unique
-    |> list.map(fn(m) { "import " <> m })
+    |> list.map(fn(m) { "import " <> expand_middleware_path(m) })
 
   let validator_imports =
     routes
     |> list.filter_map(fn(r) {
       case r {
-        ParsedRoute(validator: option.Some(v), ..) -> Ok("import " <> v)
+        ParsedRoute(validator: option.Some(v), ..) ->
+          Ok("import " <> expand_validator_path(v))
         _ -> Error(Nil)
       }
     })
@@ -289,8 +318,9 @@ type MiddlewareError {
 /// Searches both src/ and test/fixtures/ directories.
 ///
 fn check_middleware(mw: String) -> Result(Nil, MiddlewareError) {
-  let src_path = "src/" <> mw <> ".gleam"
-  let test_path = "test/fixtures/" <> mw <> ".gleam"
+  let full_path = expand_middleware_path(mw)
+  let src_path = "src/" <> full_path <> ".gleam"
+  let test_path = "test/fixtures/" <> full_path <> ".gleam"
 
   // Try src/ first, then test/fixtures/ for test environments
   let file_path = case simplifile.is_file(src_path) {
@@ -431,8 +461,9 @@ type ValidatorError {
 /// function. Searches both src/ and test/fixtures/ directories.
 ///
 fn check_validator(v: String) -> Result(Nil, ValidatorError) {
-  let src_path = "src/" <> v <> ".gleam"
-  let test_path = "test/fixtures/" <> v <> ".gleam"
+  let full_path = expand_validator_path(v)
+  let src_path = "src/" <> full_path <> ".gleam"
+  let test_path = "test/fixtures/" <> full_path <> ".gleam"
 
   // Try src/ first, then test/fixtures/ for test environments
   let file_path = case simplifile.is_file(src_path) {
@@ -993,7 +1024,7 @@ fn extract_line_number_for_file(
   msg: String,
   file_path: String,
 ) -> Result(Int, Nil) {
-  // Error format is like "src/bootstrap/gen/routes/api.gleam:12:7"
+  // Error format is like "src/compiled/routes/api.gleam:12:7"
   // We need to find the specific file, not just any .gleam file
   case string.split_once(msg, file_path <> ":") {
     Ok(#(_, after)) -> {

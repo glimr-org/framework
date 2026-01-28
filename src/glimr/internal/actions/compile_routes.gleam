@@ -17,7 +17,7 @@ import simplifile
 
 /// Compiles all controller files in src/app/http/controllers.
 /// Discovers annotated handlers and generates compiled routes
-/// files in bootstrap/gen/routes, split by route group prefix.
+/// files in compiled/routes, split by route group prefix.
 ///
 pub fn run(
   verbose: Bool,
@@ -33,7 +33,7 @@ pub fn run(
   }
 
   // Ensure the output directory exists
-  let _ = simplifile.create_directory_all("src/bootstrap/gen/routes")
+  let _ = simplifile.create_directory_all("src/compiled/routes")
 
   let controller_files = discover_controller_files("src/app/http/controllers")
   compile_controllers(controller_files, verbose, route_groups)
@@ -205,7 +205,7 @@ fn compile_grouped_routes(
       let #(group_name, controller_results) = entry
       case compiler.compile_routes(controller_results) {
         Ok(result) -> {
-          let dest = "src/bootstrap/gen/routes/" <> group_name <> ".gleam"
+          let dest = "src/compiled/routes/" <> group_name <> ".gleam"
           case compiler.write_compiled_file(result, dest) {
             Ok(_) -> {
               case verbose {

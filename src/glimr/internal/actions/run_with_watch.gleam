@@ -67,8 +67,8 @@ fn watch_loop(
 
       let only_compiled_files =
         list.all(files, fn(f) {
-          string.contains(f, "src/bootstrap/gen/routes/")
-          || string.contains(f, "src/bootstrap/gen/loom/")
+          string.contains(f, "src/compiled/routes/")
+          || string.contains(f, "src/compiled/loom/")
         })
 
       case controller_changed, loom_source_changed {
