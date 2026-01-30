@@ -1159,13 +1159,7 @@ compile_routes() {
         shift
         ;;
       -h|--help)
-        echo "route:compile - Compile controller routes to optimized pattern matching"
-        echo ""
-        echo "Usage: ./glimr route:compile [options]"
-        echo ""
-        echo "Options:"
-        echo "  -v, --verbose  Display detailed information about compiled routes"
-        echo "  -h, --help     Show this help message"
+        gleam run --no-print-progress -m glimr_console -- route:compile --help
         return 0
         ;;
       *)

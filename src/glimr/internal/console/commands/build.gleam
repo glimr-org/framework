@@ -26,13 +26,6 @@ pub fn command() -> Command {
 fn run(_args: ParsedArgs) -> Nil {
   let cfg = config.load()
 
-  case list.is_empty(cfg.hooks.build_pre) {
-    True -> Nil
-    False -> {
-      io.println("")
-    }
-  }
-
   case run_hooks.run(cfg.hooks.build_pre) {
     Ok(_) -> {
       case run_build.run() {

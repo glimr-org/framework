@@ -35,15 +35,6 @@ pub fn output_creates_empty_padded_output_test() {
   |> should.equal(True)
 }
 
-pub fn unpadded_sets_padded_to_false_test() {
-  let output =
-    console.output()
-    |> console.unpadded()
-
-  output.padded
-  |> should.equal(False)
-}
-
 pub fn line_adds_message_to_output_test() {
   let output =
     console.output()

@@ -52,7 +52,7 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
       case verbose {
         True ->
           console.output()
-          |> console.line_warning("Compiling loom views...")
+          |> console.line_warning("Compiling loom templates...")
           |> console.print()
         False -> Nil
       }
@@ -89,7 +89,7 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
 
       case verbose {
         True -> Nil
-        False -> io.println(console.success("Compiled loom templates..."))
+        False -> io.println(console.success("Compiled loom templates"))
       }
 
       Ok(Nil)
@@ -561,7 +561,6 @@ fn compile_file(
                   case verbose {
                     True ->
                       console.output()
-                      |> console.unpadded()
                       |> console.line(
                         "  " <> path <> " -> " <> console.success(output_file),
                       )

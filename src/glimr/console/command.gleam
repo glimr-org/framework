@@ -228,7 +228,6 @@ pub fn find_and_run(
   case find(commands, name) {
     Ok(cmd) -> {
       run(cmd, args, connections, cache_stores)
-      io.println("")
       True
     }
     Error(_) -> False
@@ -291,8 +290,6 @@ pub fn print_help(commands: List(Command)) {
       io.println("  " <> console.success(padded_name) <> cmd.description)
     })
   })
-
-  io.println("")
 }
 
 /// Prints the current Glimr framework version to the console.

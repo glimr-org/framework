@@ -98,23 +98,6 @@ pub fn output() -> Output {
   Output(lines: [], padded: True)
 }
 
-/// Disables padding (blank lines before/after) on the output.
-/// By default, output is padded with blank lines when printed.
-/// Use this when you want output without extra spacing.
-///
-/// *Example*
-///
-/// ```gleam
-/// console.output()
-/// |> console.unpadded()
-/// |> console.line("No blank lines around this")
-/// |> console.print()
-/// ```
-///
-pub fn unpadded(output: Output) -> Output {
-  Output(..output, padded: False)
-}
-
 /// Adds a line of text to the output builder. Lines are
 /// printed in the order they are added. Use this for
 /// plain text without any color formatting applied.
@@ -213,11 +196,6 @@ pub fn line_warning(output: Output, message: String) -> Output {
 /// ```
 ///
 pub fn print(output: Output) -> Nil {
-  case output.padded {
-    True -> io.println("")
-    False -> Nil
-  }
-
   do_print(output.lines)
 }
 
