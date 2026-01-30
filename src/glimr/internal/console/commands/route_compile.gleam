@@ -1,8 +1,7 @@
 import gleam/io
 import glimr/console/command.{type Command, type ParsedArgs, Flag}
 import glimr/console/console
-import glimr/internal/actions/compile_routes
-import glimr/routing/router.{type RouteGroupConfig}
+import shellout
 
 /// The name of the console command.
 const name = "route:compile"
@@ -12,23 +11,35 @@ const description = "Compile controller routes to optimized pattern matching"
 
 /// Define the console command and its properties.
 ///
-pub fn command(route_groups: List(RouteGroupConfig)) -> Command {
+pub fn command() -> Command {
   command.new()
   |> command.name(name)
   |> command.description(description)
   |> command.args([
     Flag("verbose", "v", "Display information about compiled routes"),
   ])
-  |> command.handler(fn(args) { run(args, route_groups) })
+  |> command.handler(run)
 }
 
 /// Execute the console command.
 ///
-fn run(args: ParsedArgs, route_groups: List(RouteGroupConfig)) -> Nil {
+/// Note: This is handled by the CLI bash wrapper, so this 
+/// code only runs if called programmatically from Gleam code.
+///
+fn run(args: ParsedArgs) -> Nil {
   let verbose = command.has_flag(args, "verbose")
+  let cmd_args = case verbose {
+    True -> ["route:compile", "-v"]
+    False -> ["route:compile"]
+  }
 
-  case compile_routes.run(verbose, route_groups) {
+  case
+    shellout.command("./glimr", cmd_args, in: ".", opt: [
+      shellout.LetBeStdout,
+      shellout.LetBeStderr,
+    ])
+  {
     Ok(_) -> Nil
-    Error(msg) -> io.println(console.error(msg))
+    Error(#(_, msg)) -> io.println(console.error(msg))
   }
 }
