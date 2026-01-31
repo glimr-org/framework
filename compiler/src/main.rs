@@ -2,6 +2,7 @@ mod config;
 mod generator;
 mod parser;
 mod validator;
+mod patterns;
 
 use std::env;
 use std::process;

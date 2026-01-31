@@ -1,4 +1,5 @@
 use crate::parser::Route;
+use crate::patterns;
 use regex::Regex;
 use std::fs;
 use std::path::Path;
@@ -61,8 +62,7 @@ fn validate_path(path: &str) -> Result<(), String> {
     }
 
     // Valid chars: letters, numbers, hyphens, underscores, slashes, :params
-    let re = Regex::new(r"^(/([a-zA-Z0-9_-]+|:[a-zA-Z_][a-zA-Z0-9_]*))*/?$|^/$").unwrap();
-    if !re.is_match(path) {
+    if !patterns::VALID_PATH.is_match(path) {
         return Err(format!("Invalid route path format: {}", path));
     }
 
@@ -72,9 +72,8 @@ fn validate_path(path: &str) -> Result<(), String> {
 /// Validate reserved path params
 fn validate_path_params(path: &str) -> Result<(), String> {
     let reserved = &["req", "_req", "ctx", "_ctx"];
-    let param_re = Regex::new(r":([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
 
-    for cap in param_re.captures_iter(path) {
+    for cap in patterns::PATH_PARAM.captures_iter(path) {
         let param = &cap[1];
         if reserved.contains(&param) {
             return Err(format!(
@@ -159,8 +158,7 @@ fn find_file(dirs: &[&str], name: &str) -> Result<String, String> {
 /// Validate handler params match route
 fn validate_handler_params(route: &Route, handler: &str) -> Result<(), String> {
     // Extract path params from route
-    let param_re = Regex::new(r":([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
-    let path_params: Vec<String> = param_re
+    let path_params: Vec<String> = patterns::PATH_PARAM
         .captures_iter(&route.path)
         .map(|c| c[1].to_string())
         .collect();
@@ -292,17 +290,9 @@ fn check_validator_data_import(controller_path: &str, validator: &str) -> bool {
         Err(_) => return false,
     };
 
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("//") {
-            continue;
-        }
-        if re.is_match(line) {
-            return true;
-        }
-    }
-
-    false
+    content.lines()
+        .filter(|line| !line.trim().starts_with("//"))
+        .any(|line| re.is_match(line))
 }
 
 /// Check if a param type is a valid Request type (wisp.Request or imported from wisp)
@@ -329,22 +319,9 @@ fn check_wisp_request_import(controller_path: &str) -> bool {
         Err(_) => return false,
     };
 
-    let re = match Regex::new(r"import\s+wisp\s*\.\s*\{[^}]*\bRequest\b[^}]*\}") {
-        Ok(r) => r,
-        Err(_) => return false,
-    };
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("//") {
-            continue;
-        }
-        if re.is_match(line) {
-            return true;
-        }
-    }
-
-    false
+    content.lines()
+        .filter(|line| !line.trim().starts_with("//"))
+        .any(|line| patterns::WISP_REQUEST_IMPORT.is_match(line))
 }
 
 /// Check if a param type is a valid Context type (ctx.Context or imported from ctx)
@@ -371,22 +348,9 @@ fn check_ctx_context_import(controller_path: &str) -> bool {
         Err(_) => return false,
     };
 
-    let re = match Regex::new(r"import\s+app/http/context/ctx\s*\.\s*\{[^}]*\bContext\b[^}]*\}") {
-        Ok(r) => r,
-        Err(_) => return false,
-    };
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("//") {
-            continue;
-        }
-        if re.is_match(line) {
-            return true;
-        }
-    }
-
-    false
+    content.lines()
+        .filter(|line| !line.trim().starts_with("//"))
+        .any(|line| patterns::CTX_CONTEXT_IMPORT.is_match(line))
 }
 
 /// Validate that route handler returns wisp.Response

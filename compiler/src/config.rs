@@ -1,4 +1,4 @@
-use regex::Regex;
+use crate::patterns;
 use std::fs;
 use std::path::Path;
 use std::time::SystemTime;
@@ -49,9 +49,6 @@ pub fn read_route_groups() -> Vec<RouteGroup> {
         }
     };
 
-    let name_re = Regex::new(r#"name:\s*"([^"]+)""#).unwrap();
-    let prefix_re = Regex::new(r#"prefix:\s*"([^"]*)""#).unwrap();
-
     let mut groups = Vec::new();
     let mut current_name: Option<String> = None;
     let mut current_prefix: Option<String> = None;
@@ -65,10 +62,10 @@ pub fn read_route_groups() -> Vec<RouteGroup> {
         }
 
         if in_config {
-            if let Some(caps) = name_re.captures(line) {
+            if let Some(caps) = patterns::CONFIG_NAME.captures(line) {
                 current_name = Some(caps[1].to_string());
             }
-            if let Some(caps) = prefix_re.captures(line) {
+            if let Some(caps) = patterns::CONFIG_PREFIX.captures(line) {
                 current_prefix = Some(caps[1].to_string());
             }
             if line.contains(')') {
@@ -200,9 +197,6 @@ fn parse_auto_compile(content: &str) -> bool {
 /// Parse route groups from content (for testing)
 #[cfg(test)]
 fn parse_route_groups(content: &str) -> Vec<RouteGroup> {
-    let name_re = Regex::new(r#"name:\s*"([^"]+)""#).unwrap();
-    let prefix_re = Regex::new(r#"prefix:\s*"([^"]*)""#).unwrap();
-
     let mut groups = Vec::new();
     let mut current_name: Option<String> = None;
     let mut current_prefix: Option<String> = None;
@@ -216,10 +210,10 @@ fn parse_route_groups(content: &str) -> Vec<RouteGroup> {
         }
 
         if in_config {
-            if let Some(caps) = name_re.captures(line) {
+            if let Some(caps) = crate::patterns::CONFIG_NAME.captures(line) {
                 current_name = Some(caps[1].to_string());
             }
-            if let Some(caps) = prefix_re.captures(line) {
+            if let Some(caps) = crate::patterns::CONFIG_PREFIX.captures(line) {
                 current_prefix = Some(caps[1].to_string());
             }
             if line.contains(')') {
