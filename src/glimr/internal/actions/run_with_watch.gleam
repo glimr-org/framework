@@ -39,11 +39,7 @@ pub fn run(hooks: Hooks) -> Nil {
 /// second and triggers appropriate hooks or restarts based
 /// on which files were modified.
 ///
-fn watch_loop(
-  last_mtimes: Dict(String, Int),
-  port: Port,
-  hooks: Hooks,
-) -> Nil {
+fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
   process.sleep(1000)
 
   let current_mtimes = get_watched_file_mtimes("src")
@@ -79,7 +75,6 @@ fn watch_loop(
           io.println("")
           io.println(console.warning("Controller changes detected:"))
           list.each(controller_files, fn(f) { io.println("  " <> f) })
-          io.println("")
 
           // Recompile routes using the bash script (respects auto_compile config)
           case
@@ -162,7 +157,6 @@ fn watch_loop(
             }
           }
 
-          io.println("")
           io.println(console.warning("Restarting application... ✨"))
           stop_port(port)
           let new_port = start_gleam_run()
