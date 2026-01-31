@@ -38,10 +38,11 @@ GLIMR_COMPILER=$(detect_compiler)
 # Check compiler exists
 require_compiler() {
   if [[ ! -x "$GLIMR_COMPILER" ]]; then
-    echo "Error: No compiler binary found for your platform"
-    echo "Expected: $GLIMR_COMPILER"
+    echo -e "\033[0;31mError: No compiler binary found for your platform\033[0m"
+    echo -e "\033[0;31mExpected: $GLIMR_COMPILER\033[0m"
     echo ""
-    echo "Supported platforms: linux-x64, linux-arm64, darwin-x64, darwin-arm64, windows-x64"
+    echo -e "\033[0;33mSupported platforms:\033[0m linux-x64, linux-arm64, darwin-x64, darwin-arm64, windows-x64"
+    echo ""
     exit 1
   fi
 }
