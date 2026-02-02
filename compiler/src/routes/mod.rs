@@ -1,3 +1,10 @@
+//! Routes Compiler
+//!
+//! Orchestrates route compilation from controller files into
+//! generated Gleam code. Coordinates parsing, validation, and
+//! code generation across route groups defined in config.
+//!
+
 mod config;
 mod generator;
 mod parser;
@@ -10,15 +17,15 @@ use crate::common::colors::{GREEN, NC, RED, YELLOW};
 
 // ------------------------------------------------------------- Public Functions
 
-/// Re-exported from config. Returns true if routes should auto
-/// compile based on the user's `glimr.toml` settings.
+/// Re-exported from config for use by the CLI. Returns true if
+/// routes should auto-compile based on the user's `glimr.toml`
+/// settings and whether source files have changed.
 ///
 pub use config::should_auto_compile;
 
-/// Compiles all routes from controller files.
-///
-/// Parses controllers, validates route annotations, and
-/// generates Gleam route files grouped by path prefix.
+/// Main entry point for route compilation. Discovers controller
+/// files, parses route annotations, validates for conflicts and
+/// errors, then generates Gleam route files grouped by prefix.
 ///
 pub fn compile(verbose: bool) {
     if verbose {

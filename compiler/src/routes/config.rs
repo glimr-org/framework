@@ -1,29 +1,42 @@
+//! Route Configuration
+//!
+//! Manages route compilation settings and group configuration.
+//! Reads from glimr.toml for auto-compile preferences and from
+//! config_route.gleam for route group definitions that control
+//! how routes are split across output files.
+//!
+
 use super::patterns;
+use crate::common::toml;
 use std::fs;
 use std::path::Path;
 use std::time::SystemTime;
 
 // ------------------------------------------------------------- Public Consts
 
-/// Shared with parser.rs so it can find controller files
-/// in the same location we check for staleness.
+/// Directory containing controller files that define routes.
+/// Used for scanning route definitions and checking if source
+/// files are newer than compiled output.
 ///
 pub(super) const CONTROLLER_DIR: &str = "src/app/http/controllers";
 
-/// Where compiled route files are written. Used to check
-/// if recompilation is needed by comparing mtimes.
+/// Directory where compiled route files are written. Compared
+/// against controller mtimes to determine if recompilation is
+/// needed, avoiding unnecessary rebuilds.
 ///
 pub(super) const COMPILED_DIR: &str = "src/compiled/routes";
 
 // ------------------------------------------------------------- Private Consts
 
 /// Gleam config file that defines route groups. Parsed to
-/// determine how routes are split across output files.
+/// determine how routes are organized and split across
+/// separate output files based on path prefixes.
 ///
 const CONFIG_ROUTE_FILE: &str = "src/config/config_route.gleam";
 
-/// User's project config file. Checked for auto_compile
-/// setting to decide if routes should compile on run/build.
+/// User's project config file containing compilation settings.
+/// Checked for auto_compile preference to decide if routes
+/// should automatically compile during run/build commands.
 ///
 const GLIMR_TOML: &str = "glimr.toml";
 
@@ -35,7 +48,11 @@ const GLIMR_TOML: &str = "glimr.toml";
 ///
 #[derive(Debug, Clone)]
 pub struct RouteGroup {
+    /// Output file name without extension (e.g., "api", "web").
+    ///
     pub name: String,
+    /// URL path prefix for matching routes to this group.
+    ///
     pub prefix: String,
 }
 
@@ -54,26 +71,10 @@ pub fn should_auto_compile() -> bool {
 /// explicitly disabled with `auto_compile = false`.
 ///
 pub fn has_auto_compile() -> bool {
-    let content = match fs::read_to_string(GLIMR_TOML) {
-        Ok(content) => content,
-        Err(_) => return true,
-    };
-
-    let mut in_routes_section = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-
-        if trimmed.starts_with('[') {
-            in_routes_section = trimmed == "[routes]";
-        }
-
-        if in_routes_section && trimmed.contains("auto_compile") && trimmed.contains("false") {
-            return false;
-        }
-    }
-
-    true
+    fs::read_to_string(GLIMR_TOML)
+        .ok()
+        .and_then(|content| toml::parse_section_bool(&content, "routes", "auto_compile"))
+        .unwrap_or(true)
 }
 
 /// Reads route group configuration to determine how routes
@@ -231,28 +232,6 @@ fn get_oldest_mtime_in_dir(dir: &str) -> Option<SystemTime> {
     oldest
 }
 
-/// Testable version of has_auto_compile that takes content
-/// directly instead of reading from the filesystem.
-///
-#[cfg(test)]
-fn parse_auto_compile(content: &str) -> bool {
-    let mut in_routes_section = false;
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-
-        if trimmed.starts_with('[') {
-            in_routes_section = trimmed == "[routes]";
-        }
-
-        if in_routes_section && trimmed.contains("auto_compile") && trimmed.contains("false") {
-            return false;
-        }
-    }
-
-    true
-}
-
 /// Testable version of read_route_groups that takes content
 /// directly instead of reading from the filesystem.
 ///
@@ -304,56 +283,6 @@ fn parse_route_groups(content: &str) -> Vec<RouteGroup> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ----------------------------------------- parse_auto_compile tests
-
-    #[test]
-    fn test_parse_auto_compile_default_true() {
-        let content = "";
-        assert!(parse_auto_compile(content));
-    }
-
-    #[test]
-    fn test_parse_auto_compile_explicit_true() {
-        let content = r#"
-[routes]
-auto_compile = true
-"#;
-        assert!(parse_auto_compile(content));
-    }
-
-    #[test]
-    fn test_parse_auto_compile_false() {
-        let content = r#"
-[routes]
-auto_compile = false
-"#;
-        assert!(!parse_auto_compile(content));
-    }
-
-    #[test]
-    fn test_parse_auto_compile_different_section() {
-        let content = r#"
-[other]
-auto_compile = false
-
-[routes]
-auto_compile = true
-"#;
-        assert!(parse_auto_compile(content));
-    }
-
-    #[test]
-    fn test_parse_auto_compile_false_in_routes_section() {
-        let content = r#"
-[other]
-auto_compile = true
-
-[routes]
-auto_compile = false
-"#;
-        assert!(!parse_auto_compile(content));
-    }
 
     // ----------------------------------------- parse_route_groups tests
 

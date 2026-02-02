@@ -1,4 +1,5 @@
 mod common;
+mod loom;
 mod routes;
 
 use common::args;
@@ -20,6 +21,18 @@ fn main() {
             }
 
             routes::compile(args.verbose);
+        }
+        "loom" => {
+            if args.check_only {
+                // Return 0 or 1 to process exit if loom should compile.
+                process::exit(!loom::should_auto_compile() as i32)
+            }
+
+            if args.stale_only {
+                loom::compile_stale(args.verbose);
+            } else {
+                loom::compile(args.verbose);
+            }
         }
         _ => {
             eprintln!("{}Unknown command: {}{}", RED, args.command, NC);

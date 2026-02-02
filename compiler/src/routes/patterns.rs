@@ -1,3 +1,10 @@
+//! Route Regex Patterns
+//!
+//! Static regex patterns for parsing controller annotations and
+//! function signatures. Uses LazyLock for one-time compilation
+//! at first access, avoiding repeated regex parsing overhead.
+//!
+
 use regex::Regex;
 use std::sync::LazyLock;
 

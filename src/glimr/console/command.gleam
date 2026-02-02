@@ -592,13 +592,6 @@ fn print_command_help(cmd: Command) -> Nil {
     io.println("  " <> console.success(padded) <> flag_desc)
   })
 
-  // Always show -h, --help
-  let help_label = string.pad_end("-h, --help", max_len + 2, " ")
-  io.println(
-    "  " <> console.success(help_label) <> "Display help for this command",
-  )
-  io.println("")
-
   // Options section (only if there are options with values)
   case options {
     [] -> Nil
@@ -614,6 +607,12 @@ fn print_command_help(cmd: Command) -> Nil {
       io.println("")
     }
   }
+
+  // Always show -h, --help
+  let help_label = string.pad_end("-h, --help", max_len + 2, " ")
+  io.println(
+    "  " <> console.success(help_label) <> "Display help for this command",
+  )
 }
 
 /// Builds the usage line showing command name, flags/options placeholder,

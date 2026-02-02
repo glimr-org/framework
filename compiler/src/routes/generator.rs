@@ -1,3 +1,10 @@
+//! Route Code Generator
+//!
+//! Transforms parsed route definitions into Gleam source files.
+//! Generates pattern matching code for path dispatch, method
+//! handling, middleware pipelines, and validator integration.
+//!
+
 use super::config::COMPILED_DIR;
 use super::config::RouteGroup;
 use super::parser::Route;
@@ -344,9 +351,9 @@ fn path_to_pattern(path: &str) -> String {
         .trim_start_matches('/')
         .split('/')
         .map(|s| {
-            if s.starts_with(':') {
+            if let Some(param) = s.strip_prefix(':') {
                 // Parameter - use variable name
-                s[1..].to_string()
+                param.to_string()
             } else {
                 // Static segment - quote it
                 format!("\"{}\"", s)

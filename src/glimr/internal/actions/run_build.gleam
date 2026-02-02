@@ -14,7 +14,6 @@ import shellout
 ///
 pub fn run() -> Result(Nil, String) {
   console.output()
-  |> console.blank_line(1)
   |> console.line_warning("Building application...")
   |> console.print()
 

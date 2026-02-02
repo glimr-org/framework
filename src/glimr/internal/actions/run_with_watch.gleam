@@ -95,27 +95,24 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
             })
 
           io.println("")
-          io.println(console.warning("File changes detected:"))
-          list.each(loom_files, fn(f) { io.println(f) })
-          io.println("")
+          io.println(console.warning("Loom changes detected:"))
+          list.each(loom_files, fn(f) { io.println("  " <> f) })
 
-          case list.is_empty(hooks.run_reload_loom_modified) {
-            True -> watch_loop(current_mtimes, port, hooks)
-            False -> {
-              case
-                run_hooks.run_for_files(
-                  hooks.run_reload_loom_modified,
-                  loom_files,
-                )
-              {
-                Ok(_) -> watch_loop(current_mtimes, port, hooks)
-                Error(msg) -> {
-                  io.println("")
-                  io.println(console.error(msg))
-                  watch_loop(current_mtimes, port, hooks)
-                }
-              }
-            }
+          // Recompile loom using the bash script (respects auto_compile config)
+          // Use --stale to only compile changed files and their dependents
+          case
+            shellout.command(
+              "./glimr",
+              ["loom:compile", "--stale"],
+              in: ".",
+              opt: [
+                shellout.LetBeStdout,
+                shellout.LetBeStderr,
+              ],
+            )
+          {
+            Ok(_) -> watch_loop(current_mtimes, port, hooks)
+            Error(_) -> watch_loop(current_mtimes, port, hooks)
           }
         }
         False, False -> {

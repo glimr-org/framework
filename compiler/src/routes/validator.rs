@@ -1,3 +1,10 @@
+//! Route Validator
+//!
+//! Validates parsed routes before code generation. Checks path
+//! formats, handler signatures, middleware existence, and type
+//! correctness to catch errors early with helpful messages.
+//!
+
 use super::parser::Route;
 use super::patterns;
 use regex::Regex;

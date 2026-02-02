@@ -1,8 +1,7 @@
 import gleam/io
-import gleam/string
-import glimr/console/command.{type Command, type ParsedArgs, Flag, Option}
+import glimr/console/command.{type Command, type ParsedArgs, Flag}
 import glimr/console/console
-import glimr/internal/actions/compile_loom
+import shellout
 
 /// The name of the console command.
 const name = "loom:compile"
@@ -17,9 +16,6 @@ pub fn command() -> Command {
   |> command.name(name)
   |> command.description(description)
   |> command.args([
-    Option("path", "Path to a specific loom file to compile", ""),
-  ])
-  |> command.args([
     Flag(
       "verbose",
       "v",
@@ -31,34 +27,23 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
+/// Note: This is handled by the CLI bash wrapper, so this
+/// code only runs if called programmatically from Gleam code.
+///
 fn run(args: ParsedArgs) -> Nil {
-  let path = command.get_option(args, "path")
   let verbose = command.has_flag(args, "verbose")
+  let cmd_args = case verbose {
+    True -> ["loom:compile", "-v"]
+    False -> ["loom:compile"]
+  }
 
-  case path {
-    "" -> {
-      case compile_loom.run(verbose) {
-        Ok(_) -> Nil
-        Error(msg) -> io.println(console.error(msg))
-      }
-    }
-    _ -> {
-      let is_views_path = string.starts_with(path, "src/resources/views/")
-      let is_app_loom_path = string.starts_with(path, "src/app/loom/")
-
-      case is_views_path || is_app_loom_path {
-        False -> {
-          io.println(console.error(
-            "Not a loom file: path must be in src/resources/views/ or src/app/loom/",
-          ))
-        }
-        True -> {
-          case compile_loom.run_path(path, verbose) {
-            Ok(_) -> Nil
-            Error(msg) -> io.println(console.error(msg))
-          }
-        }
-      }
-    }
+  case
+    shellout.command("./glimr", cmd_args, in: ".", opt: [
+      shellout.LetBeStdout,
+      shellout.LetBeStderr,
+    ])
+  {
+    Ok(_) -> Nil
+    Error(#(_, msg)) -> io.println(console.error(msg))
   }
 }

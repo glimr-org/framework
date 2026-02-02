@@ -52,11 +52,30 @@ compile_routes_cmd() {
   "$GLIMR_COMPILER" routes "$@"
 }
 
+# Track if any compilation occurred
+GLIMR_COMPILED=false
+
 compile_routes_if_needed_cmd() {
   require_compiler
   # Use --check-only: exit 0 means compile needed
   if "$GLIMR_COMPILER" routes --check-only 2>/dev/null; then
     "$GLIMR_COMPILER" routes
+    GLIMR_COMPILED=true
+  fi
+}
+
+compile_loom_cmd() {
+  require_compiler
+  "$GLIMR_COMPILER" loom "$@"
+}
+
+compile_loom_if_needed_cmd() {
+  require_compiler
+  # Use --check-only: exit 0 means compile needed
+  # Use --stale to compile only changed files
+  if "$GLIMR_COMPILER" loom --check-only >/dev/null 2>&1; then
+    "$GLIMR_COMPILER" loom --stale
+    GLIMR_COMPILED=true
   fi
 }
 
@@ -65,6 +84,10 @@ echo ""
 case "${1:-}" in
   build|run|serve)
     compile_routes_if_needed_cmd
+    compile_loom_if_needed_cmd
+    if [[ "$GLIMR_COMPILED" == true ]]; then
+      echo ""
+    fi
     ;;
   route:compile)
     shift
@@ -73,6 +96,17 @@ case "${1:-}" in
       gleam run --no-print-progress -m glimr_console -- route:compile --help
     else
       compile_routes_cmd "$@"
+    fi
+    echo ""
+    exit 0
+    ;;
+  loom:compile)
+    shift
+    # Check for --help to pass to Gleam
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+      gleam run --no-print-progress -m glimr_console -- loom:compile --help
+    else
+      compile_loom_cmd "$@"
     fi
     echo ""
     exit 0

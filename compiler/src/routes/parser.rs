@@ -1,3 +1,11 @@
+//! Route Parser
+//!
+//! Extracts route definitions from controller file annotations.
+//! Parses `@get`, `@post`, and other directives from comments,
+//! matches them to handler functions, and builds Route structs
+//! for the generator to consume.
+//!
+
 use regex::Regex;
 use std::collections::HashSet;
 use std::fs;
@@ -16,17 +24,41 @@ use super::patterns;
 ///
 #[derive(Debug, Clone)]
 pub struct Route {
+    /// HTTP method (GET, POST, PUT, DELETE, PATCH).
+    ///
     pub method: String,
+    /// URL path pattern, may include `:param` segments.
+    ///
     pub path: String,
+    /// Name of the handler function to call.
+    ///
     pub handler: String,
+    /// File path to the controller containing this route.
+    ///
     pub controller_path: String,
+    /// Route-specific middleware from `@middleware` annotations.
+    ///
     pub middleware: Vec<String>,
+    /// Validator module from `@validator` annotation.
+    ///
     pub validator: Option<String>,
+    /// Redirect target path from `@redirect` annotation.
+    ///
     pub redirect: Option<String>,
+    /// Whether redirect is permanent (301) vs temporary (302).
+    ///
     pub redirect_permanent: bool,
+    /// Handler function parameters for argument generation.
+    ///
     pub params: Vec<FunctionParam>,
+    /// Controller-wide middleware from `@group_middleware`.
+    ///
     pub group_middleware: Vec<String>,
+    /// Handler return type for validation purposes.
+    ///
     pub return_type: String,
+    /// Whether the controller imports Response from wisp.
+    ///
     pub has_wisp_response_import: bool,
 }
 
@@ -36,7 +68,11 @@ pub struct Route {
 ///
 #[derive(Debug, Clone)]
 pub struct FunctionParam {
+    /// Parameter name without leading underscore.
+    ///
     pub name: String,
+    /// Type annotation if present, empty string otherwise.
+    ///
     pub param_type: String,
 }
 
@@ -83,8 +119,6 @@ struct AnnotationBlock {
     redirect: Option<String>,
     redirect_permanent: bool,
 }
-
-// ------------------------------------------------------------- Private Enums
 
 /// Represents the different annotation types we can parse from
 /// controller comments. Each variant corresponds to an `@`

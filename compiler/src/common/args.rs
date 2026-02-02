@@ -1,3 +1,10 @@
+//! CLI Argument Parsing
+//!
+//! Parses command-line arguments using pico-args for minimal
+//! overhead. Validates input and exits early on unknown flags
+//! so compilers receive clean, validated arguments.
+//!
+
 use super::colors::{NC, RED};
 use std::process;
 
@@ -22,6 +29,11 @@ pub struct Args {
     /// without actually compiling. Exits 0 if stale, 1 if fresh.
     ///
     pub check_only: bool,
+
+    /// Only compile stale files (incremental compilation).
+    /// Used by build/run commands. Enabled with `--stale`.
+    ///
+    pub stale_only: bool,
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -36,6 +48,7 @@ pub fn parse() -> Args {
     let args = Args {
         verbose: pargs.contains(["-v", "--verbose"]),
         check_only: pargs.contains("--check-only"),
+        stale_only: pargs.contains("--stale"),
         command: pargs.free_from_str().unwrap_or_default(),
     };
 
