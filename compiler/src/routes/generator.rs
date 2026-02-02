@@ -1,13 +1,19 @@
-use crate::config::RouteGroup;
-use crate::parser::Route;
+use super::config::COMPILED_DIR;
+use super::config::RouteGroup;
+use super::parser::Route;
+use crate::common::colors::{GREEN, NC};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
-const COMPILED_DIR: &str = "src/compiled/routes";
-const GREEN: &str = "\x1b[0;32m";
-const NC: &str = "\x1b[0m";
+// ------------------------------------------------------------- Public Functions
 
-/// Compile a route group and return the number of routes
+/// Entry point for compiling a single route group. Filters
+/// routes by longest-prefix match, generates Gleam code, and
+/// writes to the compiled output directory.
+///
+/// Returns 0 if no routes match or on write error, allowing
+/// the caller to skip empty groups in output messages.
+///
 pub fn compile_group(
     group: &RouteGroup,
     all_routes: &[Route],
@@ -30,6 +36,7 @@ pub fn compile_group(
     fs::create_dir_all(COMPILED_DIR).ok();
 
     let output_path = format!("{}/{}.gleam", COMPILED_DIR, group.name);
+
     if let Err(e) = fs::write(&output_path, &code) {
         eprintln!("Error writing {}: {}", output_path, e);
         return 0;
@@ -48,7 +55,13 @@ pub fn compile_group(
     group_routes.len()
 }
 
-/// Find the best matching group for a route path (longest prefix)
+// ------------------------------------------------------------- Private Functions
+
+/// Routes are assigned to groups by longest-prefix match, so
+/// `/api/v2/users` goes to `api_v2` (prefix `/api/v2`) not
+/// `api` (prefix `/api`). Falls back to "web" when no prefix
+/// matches.
+///
 fn best_matching_group(path: &str, groups: &[RouteGroup]) -> String {
     let mut best_match = "web".to_string();
     let mut best_len = 0;
@@ -67,7 +80,13 @@ fn best_matching_group(path: &str, groups: &[RouteGroup]) -> String {
     best_match
 }
 
-/// Generate the Gleam code for a route group
+/// Builds the complete Gleam source file for a route group.
+/// Generates imports, the `routes` function signature, path
+/// matching cases, and method dispatch for each path.
+///
+/// Static paths are sorted before parameterized ones so Gleam's
+/// pattern matching tries exact matches first.
+///
 fn generate_routes_code(group: &RouteGroup, routes: &[&Route]) -> String {
     let mut code = String::new();
 
@@ -168,7 +187,13 @@ fn generate_routes_code(group: &RouteGroup, routes: &[&Route]) -> String {
     code
 }
 
-/// Collect all necessary imports
+/// Gathers all import statements needed for the generated file.
+/// Controllers come first (sorted), then HTTP methods, then
+/// middleware/validators, then wisp.
+///
+/// Uses a HashSet to dedupe middleware that appears on multiple
+/// routes, avoiding duplicate import statements.
+///
 fn collect_imports(routes: &[&Route], _group: &RouteGroup) -> String {
     let mut controller_imports = Vec::new();
     let mut other_imports = Vec::new();
@@ -247,7 +272,11 @@ fn collect_imports(routes: &[&Route], _group: &RouteGroup) -> String {
     result
 }
 
-/// Convert controller path to import statement
+/// Converts a controller file path to a Gleam import. Nested
+/// controllers get aliased (e.g., `api/users_controller` becomes
+/// `import ... as api_users_controller`) so handler calls don't
+/// need the full path.
+///
 fn controller_to_import(path: &str) -> String {
     // src/app/http/controllers/home_controller.gleam -> app/http/controllers/home_controller
     let module_path = path.trim_start_matches("src/").trim_end_matches(".gleam");
@@ -275,7 +304,11 @@ fn controller_to_import(path: &str) -> String {
     format!("import {}", module_path)
 }
 
-/// Group routes by their path (without group prefix)
+/// Groups routes by path (with group prefix stripped) so we can
+/// generate one `case path` arm per unique path. Multiple HTTP
+/// methods on the same path share a single arm with nested
+/// method dispatch.
+///
 fn group_routes_by_path<'a>(routes: &[&'a Route], prefix: &str) -> HashMap<String, Vec<&'a Route>> {
     let mut map: HashMap<String, Vec<&Route>> = HashMap::new();
 
@@ -298,7 +331,10 @@ fn group_routes_by_path<'a>(routes: &[&'a Route], prefix: &str) -> HashMap<Strin
     map
 }
 
-/// Convert path to Gleam pattern match
+/// Converts a URL path to a Gleam list pattern. Static segments
+/// become quoted strings, parameters (`:id`) become unquoted
+/// variables that Gleam binds during pattern matching.
+///
 fn path_to_pattern(path: &str) -> String {
     if path == "/" {
         return "[]".to_string();
@@ -321,7 +357,10 @@ fn path_to_pattern(path: &str) -> String {
     format!("[{}]", segments.join(", "))
 }
 
-/// Convert method to PascalCase (GET -> Get)
+/// Gleam's http module uses PascalCase for methods (Get, Post)
+/// while route attributes use uppercase (GET, POST). This
+/// converts between the two formats.
+///
 fn to_pascal_case(method: &str) -> String {
     let lower = method.to_lowercase();
     let mut chars: Vec<char> = lower.chars().collect();
@@ -331,7 +370,11 @@ fn to_pascal_case(method: &str) -> String {
     chars.into_iter().collect()
 }
 
-/// Generate handler call with middleware/validator wrapping
+/// Generates the right-hand side of a method match arm. Simple
+/// routes get a direct handler call; routes with middleware or
+/// validators get a block with `use` expressions that chain
+/// through the middleware pipeline before calling the handler.
+///
 fn generate_handler_call(route: &Route) -> String {
     // Get controller alias
     let controller_alias = get_controller_alias(&route.controller_path);
@@ -406,7 +449,11 @@ fn generate_handler_call(route: &Route) -> String {
     code
 }
 
-/// Get controller alias from path
+/// Extracts the alias we use when calling controller functions.
+/// Must match the alias created in `controller_to_import` so
+/// generated calls like `api_users_controller.show()` resolve
+/// to the correct import.
+///
 fn get_controller_alias(path: &str) -> String {
     let module_path = path.trim_start_matches("src/").trim_end_matches(".gleam");
 
@@ -417,11 +464,15 @@ fn get_controller_alias(path: &str) -> String {
             .unwrap_or("")
             .replace('/', "_")
     } else {
-        module_path.split('/').last().unwrap_or("").to_string()
+        module_path.split('/').next_back().unwrap_or("").to_string()
     }
 }
 
-/// Build handler argument list
+/// Builds the argument list for a handler call based on what
+/// the handler function expects. Maps parameter names to the
+/// appropriate values: `req`/`ctx` pass through, `validated`
+/// comes from the validator, and others are path parameters.
+///
 fn build_handler_args(route: &Route) -> String {
     let mut args = Vec::new();
 
@@ -431,9 +482,10 @@ fn build_handler_args(route: &Route) -> String {
             "req".to_string()
         } else if param.name == "ctx" {
             "ctx".to_string()
-        } else if param.name == "validated" || param.name == "data" {
-            "validated".to_string()
-        } else if param.param_type.contains("Data") {
+        } else if param.name == "validated"
+            || param.name == "data"
+            || param.param_type.contains("Data")
+        {
             "validated".to_string()
         } else {
             // Path parameter - use the variable name
@@ -446,10 +498,12 @@ fn build_handler_args(route: &Route) -> String {
     args.join(", ")
 }
 
+// ------------------------------------------------------------- Unit Tests
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::FunctionParam;
+    use crate::routes::parser::FunctionParam;
 
     // Helper to create a route
     fn make_route(
@@ -488,9 +542,7 @@ mod tests {
         }
     }
 
-    // ============================================================
-    // to_pascal_case tests
-    // ============================================================
+    // ----------------------------------------- to_pascal_case tests
 
     #[test]
     fn test_to_pascal_case_get() {
@@ -512,9 +564,7 @@ mod tests {
         assert_eq!(to_pascal_case("Get"), "Get");
     }
 
-    // ============================================================
-    // path_to_pattern tests
-    // ============================================================
+    // ----------------------------------------- path_to_pattern tests
 
     #[test]
     fn test_path_to_pattern_root() {
@@ -547,9 +597,7 @@ mod tests {
         );
     }
 
-    // ============================================================
-    // controller_to_import tests
-    // ============================================================
+    // --------------------------------------- controller_to_import tests
 
     #[test]
     fn test_controller_to_import_simple() {
@@ -575,9 +623,7 @@ mod tests {
         );
     }
 
-    // ============================================================
-    // get_controller_alias tests
-    // ============================================================
+    // --------------------------------------- get_controller_alias tests
 
     #[test]
     fn test_get_controller_alias_simple() {
@@ -595,9 +641,7 @@ mod tests {
         );
     }
 
-    // ============================================================
-    // build_handler_args tests
-    // ============================================================
+    // ---------------------------------------- build_handler_args tests
 
     #[test]
     fn test_build_handler_args_empty() {
@@ -671,9 +715,7 @@ mod tests {
         assert_eq!(build_handler_args(&route), "validated");
     }
 
-    // ============================================================
-    // best_matching_group tests
-    // ============================================================
+    // --------------------------------------- best_matching_group tests
 
     #[test]
     fn test_best_matching_group_default() {
@@ -700,9 +742,7 @@ mod tests {
         assert_eq!(best_matching_group("/users", &groups), "web");
     }
 
-    // ============================================================
-    // generate_handler_call tests
-    // ============================================================
+    // -------------------------------------- generate_handler_call tests
 
     #[test]
     fn test_generate_handler_call_simple() {

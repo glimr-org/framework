@@ -1,20 +1,35 @@
-use crate::parser::Route;
-use crate::patterns;
+use super::parser::Route;
+use super::patterns;
 use regex::Regex;
 use std::fs;
 use std::path::Path;
 
+// ------------------------------------------------------------- Private Consts
+
+/// Directories to search when resolving middleware names.
+/// Includes both production and test paths so validation
+/// works correctly in both contexts.
+///
 const MIDDLEWARE_DIRS: &[&str] = &[
     "src/app/http/middleware",
     "test/fixtures/app/http/middleware",
 ];
 
+/// Directories to search when resolving validator names.
+/// Mirrors middleware search paths to maintain consistent
+/// resolution behavior across the codebase.
+///
 const VALIDATOR_DIRS: &[&str] = &[
     "src/app/http/validators",
     "test/fixtures/app/http/validators",
 ];
 
-/// Validate all routes
+// ------------------------------------------------------------- Public Functions
+
+/// Entry point for route validation. Checks all routes for
+/// correctness before code generation, providing helpful
+/// error messages when issues are found.
+///
 pub fn validate_routes(routes: &[Route]) -> Result<(), String> {
     for route in routes {
         let controller = get_controller_name(&route.controller_path);
@@ -23,45 +38,46 @@ pub fn validate_routes(routes: &[Route]) -> Result<(), String> {
         validate_path(&route.path)?;
         validate_path_params(&route.path)?;
 
-        // Validate group middleware (applied to controller)
         for mw in &route.group_middleware {
             validate_middleware(mw, &controller, true)?;
         }
 
-        // Validate route middleware (applied to handler)
         for mw in &route.middleware {
             validate_middleware(mw, &handler, false)?;
         }
 
-        // Validate validator
         if let Some(ref v) = route.validator {
             validate_validator(v, &handler)?;
         }
 
-        // Validate handler params
         validate_handler_params(route, &handler)?;
-
-        // Validate return type
         validate_return_type(route, &handler)?;
     }
 
     Ok(())
 }
 
-/// Get controller name from path for error messages
+// ------------------------------------------------------------- Private Functions
+
+/// Extracts a readable controller name from its file path.
+/// Converts `src/app/http/controllers/api/users.gleam` to
+/// `api.users` for use in error messages.
+///
 fn get_controller_name(path: &str) -> String {
     path.trim_start_matches("src/app/http/controllers/")
         .trim_end_matches(".gleam")
         .replace('/', ".")
 }
 
-/// Validate path format
+/// Ensures route paths follow URL conventions. Paths must
+/// start with `/` and contain only valid characters to
+/// prevent runtime routing failures.
+///
 fn validate_path(path: &str) -> Result<(), String> {
     if !path.starts_with('/') {
         return Err(format!("Route path must start with '/': {}", path));
     }
 
-    // Valid chars: letters, numbers, hyphens, underscores, slashes, :params
     if !patterns::VALID_PATH.is_match(path) {
         return Err(format!("Invalid route path format: {}", path));
     }
@@ -69,7 +85,10 @@ fn validate_path(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validate reserved path params
+/// Prevents conflicts between path params and special names.
+/// Names like `req` and `ctx` are reserved for request and
+/// context injection, so they can't be used as URL params.
+///
 fn validate_path_params(path: &str) -> Result<(), String> {
     let reserved = &["req", "_req", "ctx", "_ctx"];
 
@@ -86,7 +105,10 @@ fn validate_path_params(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Validate middleware exists and has run function
+/// Verifies middleware exists and has the required `run`
+/// function. Catches typos in middleware names and missing
+/// implementations before runtime.
+///
 fn validate_middleware(name: &str, applied_to: &str, _is_group: bool) -> Result<(), String> {
     let file_path = match find_file(MIDDLEWARE_DIRS, name) {
         Ok(path) => path,
@@ -115,7 +137,10 @@ fn validate_middleware(name: &str, applied_to: &str, _is_group: bool) -> Result<
     Ok(())
 }
 
-/// Validate validator exists and has validate function
+/// Verifies validators exist and have the required `validate`
+/// function. Similar to middleware validation but checks for
+/// the validation-specific entry point.
+///
 fn validate_validator(name: &str, handler: &str) -> Result<(), String> {
     let file_path = match find_file(VALIDATOR_DIRS, name) {
         Ok(path) => path,
@@ -144,7 +169,10 @@ fn validate_validator(name: &str, handler: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Find file in one of the given directories
+/// Searches multiple directories for a named Gleam file.
+/// Enables consistent resolution of middleware and validators
+/// across production and test environments.
+///
 fn find_file(dirs: &[&str], name: &str) -> Result<String, String> {
     for dir in dirs {
         let path = format!("{}/{}.gleam", dir, name);
@@ -155,15 +183,16 @@ fn find_file(dirs: &[&str], name: &str) -> Result<String, String> {
     Err(format!("File not found: {}", name))
 }
 
-/// Validate handler params match route
+/// Validates handler function signatures match route paths.
+/// Ensures path params like `:id` have corresponding function
+/// params, and special params have correct types.
+///
 fn validate_handler_params(route: &Route, handler: &str) -> Result<(), String> {
-    // Extract path params from route
     let path_params: Vec<String> = patterns::PATH_PARAM
         .captures_iter(&route.path)
         .map(|c| c[1].to_string())
         .collect();
 
-    // Validate req/ctx param types
     for param in &route.params {
         if param.name == "req" {
             if param.param_type.is_empty() {
@@ -197,7 +226,6 @@ fn validate_handler_params(route: &Route, handler: &str) -> Result<(), String> {
         }
     }
 
-    // Check that all path params are in handler
     for path_param in &path_params {
         let found = route.params.iter().any(|p| &p.name == path_param);
         if !found {
@@ -208,20 +236,17 @@ fn validate_handler_params(route: &Route, handler: &str) -> Result<(), String> {
         }
     }
 
-    // Check for extra params not in route (excluding req, ctx, and valid data params)
     let special_params = &["req", "ctx"];
     for param in &route.params {
         if special_params.contains(&param.name.as_str()) {
             continue;
         }
         if !path_params.contains(&param.name) {
-            // Check if it's a valid validator data param
-            if let Some(ref validator) = route.validator {
-                if is_valid_data_param(&param.param_type, validator, &route.controller_path) {
-                    continue;
-                }
+            if let Some(ref validator) = route.validator
+                && is_valid_data_param(&param.param_type, validator, &route.controller_path)
+            {
+                continue;
             }
-            // Better error message if validator is present and param is named data/validated
             if route.validator.is_some() && (param.name == "data" || param.name == "validated") {
                 return Err(format!(
                     "{} has extra param '{}' not in route path '{}'\n\
@@ -236,7 +261,6 @@ fn validate_handler_params(route: &Route, handler: &str) -> Result<(), String> {
         }
     }
 
-    // Check if @validator is used but no valid Data param
     if let Some(ref validator) = route.validator {
         let has_data_param = route
             .params
@@ -253,16 +277,17 @@ fn validate_handler_params(route: &Route, handler: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Check if a param type is a valid Data type for the given validator
+/// Checks if a param type matches the validator's Data type.
+/// Supports both qualified (`validator.Data`) and imported
+/// (`Data`) forms for flexibility in handler signatures.
+///
 fn is_valid_data_param(param_type: &str, validator: &str, controller_path: &str) -> bool {
     let param_type = param_type.trim();
 
-    // Check for fully qualified type: validator_name.Data
     if param_type == format!("{}.Data", validator) {
         return true;
     }
 
-    // Check for just "Data" with proper import
     if param_type == "Data" {
         return check_validator_data_import(controller_path, validator);
     }
@@ -270,17 +295,16 @@ fn is_valid_data_param(param_type: &str, validator: &str, controller_path: &str)
     false
 }
 
-/// Check if the controller imports Data from the given validator
+/// Verifies the controller imports Data from the validator.
+/// Required when using unqualified `Data` type to ensure
+/// it refers to the correct validator's type.
+///
 fn check_validator_data_import(controller_path: &str, validator: &str) -> bool {
     let content = match fs::read_to_string(controller_path) {
         Ok(c) => c,
         Err(_) => return false,
     };
 
-    // Match patterns like:
-    // - import app/http/validators/user_validator.{type Data}
-    // - import app/http/validators/user_validator.{Data}
-    // - import app/http/validators/user_validator.{type Data, validate}
     let pattern = format!(
         r"import\s+app/http/validators/{}\s*\.\s*\{{[^}}]*\bData\b[^}}]*\}}",
         regex::escape(validator)
@@ -290,21 +314,23 @@ fn check_validator_data_import(controller_path: &str, validator: &str) -> bool {
         Err(_) => return false,
     };
 
-    content.lines()
+    content
+        .lines()
         .filter(|line| !line.trim().starts_with("//"))
         .any(|line| re.is_match(line))
 }
 
-/// Check if a param type is a valid Request type (wisp.Request or imported from wisp)
+/// Validates `req` param has correct wisp.Request type.
+/// Accepts both qualified and imported forms to support
+/// different coding styles in controllers.
+///
 fn is_valid_request_type(param_type: &str, controller_path: &str) -> bool {
     let param_type = param_type.trim();
 
-    // wisp.Request is always valid
     if param_type == "wisp.Request" {
         return true;
     }
 
-    // Request is valid only if imported from wisp
     if param_type == "Request" {
         return check_wisp_request_import(controller_path);
     }
@@ -312,28 +338,33 @@ fn is_valid_request_type(param_type: &str, controller_path: &str) -> bool {
     false
 }
 
-/// Check if the controller imports Request from wisp
+/// Verifies the controller imports Request from wisp.
+/// Required when using unqualified `Request` type to
+/// ensure it's the correct wisp type.
+///
 fn check_wisp_request_import(controller_path: &str) -> bool {
     let content = match fs::read_to_string(controller_path) {
         Ok(c) => c,
         Err(_) => return false,
     };
 
-    content.lines()
+    content
+        .lines()
         .filter(|line| !line.trim().starts_with("//"))
         .any(|line| patterns::WISP_REQUEST_IMPORT.is_match(line))
 }
 
-/// Check if a param type is a valid Context type (ctx.Context or imported from ctx)
+/// Validates `ctx` param has correct ctx.Context type.
+/// Accepts both qualified and imported forms to support
+/// different coding styles in controllers.
+///
 fn is_valid_context_type(param_type: &str, controller_path: &str) -> bool {
     let param_type = param_type.trim();
 
-    // ctx.Context is always valid
     if param_type == "ctx.Context" {
         return true;
     }
 
-    // Context is valid only if imported from app/http/context/ctx
     if param_type == "Context" {
         return check_ctx_context_import(controller_path);
     }
@@ -341,23 +372,29 @@ fn is_valid_context_type(param_type: &str, controller_path: &str) -> bool {
     false
 }
 
-/// Check if the controller imports Context from app/http/context/ctx
+/// Verifies the controller imports Context from ctx module.
+/// Required when using unqualified `Context` type to
+/// ensure it's the correct application context type.
+///
 fn check_ctx_context_import(controller_path: &str) -> bool {
     let content = match fs::read_to_string(controller_path) {
         Ok(c) => c,
         Err(_) => return false,
     };
 
-    content.lines()
+    content
+        .lines()
         .filter(|line| !line.trim().starts_with("//"))
         .any(|line| patterns::CTX_CONTEXT_IMPORT.is_match(line))
 }
 
-/// Validate that route handler returns wisp.Response
+/// Ensures handlers return wisp.Response type. All route
+/// handlers must return a Response so the framework can
+/// send it back to the client.
+///
 fn validate_return_type(route: &Route, handler: &str) -> Result<(), String> {
     let return_type = route.return_type.trim();
 
-    // Empty return type means no explicit return type annotation
     if return_type.is_empty() {
         return Err(format!(
             "{} must have a return type annotation of wisp.Response",
@@ -365,12 +402,10 @@ fn validate_return_type(route: &Route, handler: &str) -> Result<(), String> {
         ));
     }
 
-    // wisp.Response is always valid
     if return_type == "wisp.Response" {
         return Ok(());
     }
 
-    // Response is valid only if imported from wisp
     if return_type == "Response" {
         if route.has_wisp_response_import {
             return Ok(());
@@ -383,19 +418,19 @@ fn validate_return_type(route: &Route, handler: &str) -> Result<(), String> {
         }
     }
 
-    // Any other return type is invalid
     Err(format!(
         "{} must return wisp.Response, got {}",
         handler, return_type
     ))
 }
 
+// ------------------------------------------------------------- Unit Tests
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::FunctionParam;
+    use crate::routes::parser::FunctionParam;
 
-    // Helper to create a minimal route for testing
     fn make_route(
         path: &str,
         handler: &str,
@@ -425,9 +460,7 @@ mod tests {
         }
     }
 
-    // ============================================================
-    // validate_path tests
-    // ============================================================
+    // ----------------------------------------- validate_path tests
 
     #[test]
     fn test_validate_path_root() {
@@ -470,9 +503,7 @@ mod tests {
         assert!(validate_path("/users#anchor").is_err());
     }
 
-    // ============================================================
-    // validate_path_params tests
-    // ============================================================
+    // ----------------------------------------- validate_path_params tests
 
     #[test]
     fn test_validate_path_params_valid() {
@@ -500,9 +531,7 @@ mod tests {
         assert!(validate_path_params("/users/:_ctx").is_err());
     }
 
-    // ============================================================
-    // validate_return_type tests
-    // ============================================================
+    // ----------------------------------------- validate_return_type tests
 
     #[test]
     fn test_validate_return_type_wisp_response() {
@@ -548,9 +577,7 @@ mod tests {
         );
     }
 
-    // ============================================================
-    // validate_handler_params tests
-    // ============================================================
+    // ----------------------------------------- validate_handler_params tests
 
     #[test]
     fn test_validate_handler_params_no_params() {
@@ -602,9 +629,7 @@ mod tests {
         assert!(result.unwrap_err().contains("must have a type annotation"));
     }
 
-    // ============================================================
-    // get_controller_name tests
-    // ============================================================
+    // ----------------------------------------- get_controller_name tests
 
     #[test]
     fn test_get_controller_name_simple() {
@@ -625,13 +650,10 @@ mod tests {
         assert_eq!(name, "api.v1.admin.users_controller");
     }
 
-    // ============================================================
-    // is_valid_data_param tests (requires filesystem, so limited)
-    // ============================================================
+    // ----------------------------------------- is_valid_data_param tests
 
     #[test]
     fn test_is_valid_data_param_qualified() {
-        // Qualified type doesn't need filesystem check
         assert!(is_valid_data_param(
             "user_validator.Data",
             "user_validator",
@@ -657,9 +679,7 @@ mod tests {
         ));
     }
 
-    // ============================================================
-    // is_valid_request_type tests
-    // ============================================================
+    // ----------------------------------------- is_valid_request_type tests
 
     #[test]
     fn test_is_valid_request_type_qualified() {
@@ -672,9 +692,7 @@ mod tests {
         assert!(!is_valid_request_type("other.Request", "nonexistent.gleam"));
     }
 
-    // ============================================================
-    // is_valid_context_type tests
-    // ============================================================
+    // ----------------------------------------- is_valid_context_type tests
 
     #[test]
     fn test_is_valid_context_type_qualified() {
