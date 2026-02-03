@@ -15,14 +15,13 @@ import glimr/internal/actions/compile_routes
 import glimr/internal/actions/run_hooks
 import glimr/internal/config.{type Hooks}
 import glimr/internal/dev_proxy
-import glimr/routing/router.{type RouteGroupConfig}
 import simplifile
 
 /// Starts the application with file watching. Monitors the src
 /// directory for changes and triggers hooks or restarts based
 /// on which files changed.
 ///
-pub fn run(hooks: Hooks, route_groups: List(RouteGroupConfig)) -> Nil {
+pub fn run(hooks: Hooks) -> Nil {
   config.load_env()
 
   let app_port = config.app_port()
@@ -33,26 +32,21 @@ pub fn run(hooks: Hooks, route_groups: List(RouteGroupConfig)) -> Nil {
   let initial_mtimes = get_watched_file_mtimes("src")
   let port = start_gleam_run()
   start_output_reader(port)
-  watch_loop(initial_mtimes, port, hooks, route_groups)
+  watch_loop(initial_mtimes, port, hooks)
 }
 
 /// Main file watching loop. Polls for file changes every
 /// second and triggers appropriate hooks or restarts based
 /// on which files were modified.
 ///
-fn watch_loop(
-  last_mtimes: Dict(String, Int),
-  port: Port,
-  hooks: Hooks,
-  route_groups: List(RouteGroupConfig),
-) -> Nil {
+fn watch_loop(last_mtimes: Dict(String, Int), port: Port, hooks: Hooks) -> Nil {
   process.sleep(1000)
 
   let current_mtimes = get_watched_file_mtimes("src")
   let changed_files = find_changed_files(last_mtimes, current_mtimes)
 
   case changed_files {
-    [] -> watch_loop(current_mtimes, port, hooks, route_groups)
+    [] -> watch_loop(current_mtimes, port, hooks)
     files -> {
       let controller_changed =
         list.any(files, fn(f) {
@@ -84,11 +78,11 @@ fn watch_loop(
           io.println("")
 
           // Recompile all routes when any controller changes
-          case compile_routes.run(False, route_groups) {
-            Ok(_) -> watch_loop(current_mtimes, port, hooks, route_groups)
+          case compile_routes.run(False) {
+            Ok(_) -> watch_loop(current_mtimes, port, hooks)
             Error(msg) -> {
               io.println(console.error(msg))
-              watch_loop(current_mtimes, port, hooks, route_groups)
+              watch_loop(current_mtimes, port, hooks)
             }
           }
         }
@@ -105,7 +99,7 @@ fn watch_loop(
           io.println("")
 
           case list.is_empty(hooks.run_reload_loom_modified) {
-            True -> watch_loop(current_mtimes, port, hooks, route_groups)
+            True -> watch_loop(current_mtimes, port, hooks)
             False -> {
               case
                 run_hooks.run_for_files(
@@ -113,11 +107,11 @@ fn watch_loop(
                   loom_files,
                 )
               {
-                Ok(_) -> watch_loop(current_mtimes, port, hooks, route_groups)
+                Ok(_) -> watch_loop(current_mtimes, port, hooks)
                 Error(msg) -> {
                   io.println("")
                   io.println(console.error(msg))
-                  watch_loop(current_mtimes, port, hooks, route_groups)
+                  watch_loop(current_mtimes, port, hooks)
                 }
               }
             }
@@ -167,7 +161,7 @@ fn watch_loop(
           stop_port(port)
           let new_port = start_gleam_run()
           start_output_reader(new_port)
-          watch_loop(current_mtimes, new_port, hooks, route_groups)
+          watch_loop(current_mtimes, new_port, hooks)
         }
       }
     }

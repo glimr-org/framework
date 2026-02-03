@@ -10,19 +10,16 @@ import gleam/int
 import gleam/list
 import gleam/string
 import glimr/console/console
+import glimr/config/route_groups.{type RouteGroupConfig}
 import glimr/routing/annotation_parser
 import glimr/routing/compiler
-import glimr/routing/router.{type RouteGroupConfig}
 import simplifile
 
 /// Compiles all controller files in src/app/http/controllers.
 /// Discovers annotated handlers and generates compiled routes
 /// files in compiled/routes, split by route group prefix.
 ///
-pub fn run(
-  verbose: Bool,
-  route_groups: List(RouteGroupConfig),
-) -> Result(Nil, String) {
+pub fn run(verbose: Bool) -> Result(Nil, String) {
   case verbose {
     True -> {
       console.output()
@@ -35,8 +32,9 @@ pub fn run(
   // Ensure the output directory exists
   let _ = simplifile.create_directory_all("src/compiled/routes")
 
+  let groups = route_groups.load()
   let controller_files = discover_controller_files("src/app/http/controllers")
-  compile_controllers(controller_files, verbose, route_groups)
+  compile_controllers(controller_files, verbose, groups)
 }
 
 /// Compiles routes when specific controller files have changed.
@@ -46,10 +44,9 @@ pub fn run(
 pub fn run_for_controllers(
   _paths: List(String),
   verbose: Bool,
-  route_groups: List(RouteGroupConfig),
 ) -> Result(Nil, String) {
   // Always recompile all controllers since output is aggregated
-  run(verbose, route_groups)
+  run(verbose)
 }
 
 /// Recursively finds all .gleam files in the controllers directory.
