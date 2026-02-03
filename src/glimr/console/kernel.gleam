@@ -24,7 +24,6 @@ import glimr/internal/console/commands/make_validator
 import glimr/internal/console/commands/route_compile
 import glimr/internal/console/commands/run
 import glimr/internal/console/commands/setup_database
-import glimr/routing/router.{type RouteGroupConfig}
 
 // ------------------------------------------------------------- Public Functions
 
@@ -32,14 +31,11 @@ import glimr/routing/router.{type RouteGroupConfig}
 /// Commands are generic over ctx so they can be merged
 /// with user commands into a single unified list.
 ///
-pub fn commands(
-  connections: List(Connection),
-  route_groups: List(RouteGroupConfig),
-) -> List(Command) {
+pub fn commands(connections: List(Connection)) -> List(Command) {
   [
     build.command(),
-    run.command(route_groups),
-    route_compile.command(route_groups),
+    run.command(),
+    route_compile.command(),
     loom_compile.command(),
     glimr_greet.command(),
     make_action.command(),
@@ -63,12 +59,10 @@ pub fn run(
   commands app_commands: List(Command),
   db_connections db_connections: List(Connection),
   cache_stores cache_stores: List(CacheStore),
-  route_groups route_groups: List(RouteGroupConfig),
 ) {
   db.validate_connections(db_connections)
 
-  let commands =
-    list.append(commands(db_connections, route_groups), app_commands)
+  let commands = list.append(commands(db_connections), app_commands)
   command.store_commands(commands)
 
   let args = command.get_args()
@@ -84,7 +78,6 @@ pub fn run(
         False -> {
           console.output()
           |> console.line_error("Command not found: " <> name)
-          |> console.blank_line(1)
           |> console.print()
         }
       }

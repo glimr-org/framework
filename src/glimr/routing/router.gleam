@@ -10,18 +10,8 @@ import gleam/http/response
 import gleam/list
 import gleam/string
 import glimr/http/kernel.{type MiddlewareGroup}
+import glimr/config/route_groups
 import wisp.{type Request, type Response}
-
-// ------------------------------------------------------------- Public Types
-
-/// Configuration for a route group used at compile time.
-/// Defines the output file name, URL prefix for matching, and 
-/// middleware group. Used by the route compiler to split routes 
-/// into separate files.
-///
-pub type RouteGroupConfig {
-  RouteGroupConfig(name: String, prefix: String, middleware: MiddlewareGroup)
-}
 
 /// Groups routes together with a shared middleware group and
 /// handler function. Routes use pattern matching for type-safe
@@ -100,21 +90,21 @@ pub fn handle(
   }
 }
 
-/// Registers route groups from config by attaching route 
-/// handlers. Takes route group configs and a loader function 
-/// that returns the routes function for each named group
+/// Registers route groups by loading config from
+/// config/route_groups.toml and attaching route handlers.
+/// Takes a loader function that returns the routes function
+/// for each named group.
 ///
 pub fn register(
-  route_groups: List(RouteGroupConfig),
   routes_for: fn(String) ->
     fn(List(String), Method, Request, context) -> Response,
 ) -> List(RouteGroup(context)) {
-  route_groups
-  |> list.map(fn(config) {
+  route_groups.load()
+  |> list.map(fn(group_config) {
     RouteGroup(
-      prefix: config.prefix,
-      middleware_group: config.middleware,
-      routes: routes_for(config.name),
+      prefix: group_config.prefix,
+      middleware_group: group_config.middleware,
+      routes: routes_for(group_config.name),
     )
   })
 }
