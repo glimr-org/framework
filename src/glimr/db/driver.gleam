@@ -225,7 +225,7 @@ pub fn find_by_name(name: String, connections: List(Connection)) -> Connection {
     Ok(conn) -> conn
     _ ->
       panic as {
-        "The connection '" <> name <> "' does not exist in your config_db.gleam"
+        "The connection '" <> name <> "' does not exist in config/database.toml"
       }
   }
 }
