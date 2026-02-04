@@ -1,13 +1,16 @@
-//// Glimr Console Kernel
+//// Console Kernel
 ////
-//// Registers Glimr's console commands and is the entry point
-//// to run your app's custom console commands as well as
-//// Glimr's default console commands.
+//// Entry point for CLI execution so application code only needs
+//// to call run() with custom commands. Handles argument parsing,
+//// command dispatch, and merging framework commands with app
+//// commands into a unified interface.
+////
 
 import gleam/list
 import glimr/console/command.{type Command}
 import glimr/console/console
 import glimr/internal/console/commands/build
+import glimr/internal/console/commands/command_compile
 import glimr/internal/console/commands/glimr_greet
 import glimr/internal/console/commands/loom_compile
 import glimr/internal/console/commands/make_action
@@ -24,7 +27,9 @@ import glimr/internal/console/commands/setup_database
 
 // ------------------------------------------------------------- Public Functions
 
-/// Returns the list of internal Glimr framework commands.
+/// Provides built-in commands so apps get build, run, make:*,
+/// etc. out of the box. Returned as a list so apps can filter
+/// or extend before passing to run().
 ///
 pub fn commands() -> List(Command) {
   [
@@ -32,6 +37,7 @@ pub fn commands() -> List(Command) {
     run.command(),
     route_compile.command(),
     loom_compile.command(),
+    command_compile.command(),
     glimr_greet.command(),
     make_action.command(),
     make_controller.command(),
@@ -45,10 +51,9 @@ pub fn commands() -> List(Command) {
   ]
 }
 
-/// Entry point for running console commands. Merges internal
-/// Glimr commands with user-defined commands into a single
-/// list. Cache and database config are loaded from TOML files
-/// as needed by individual commands.
+/// Single entry point keeps app console setup to one function
+/// call. Framework commands come first so apps can override
+/// them by registering commands with the same name.
 ///
 pub fn run(commands app_commands: List(Command)) {
   let commands = list.append(commands(), app_commands)
@@ -59,8 +64,8 @@ pub fn run(commands app_commands: List(Command)) {
   case args {
     [] -> command.print_help(commands)
     ["-V"] | ["--version"] -> command.print_glimr_version()
-    [name, ..rest] -> {
-      case command.find_and_run(commands, name, rest) {
+    [name, ..] -> {
+      case command.find_and_run(commands, name) {
         True -> Nil
         False -> {
           console.output()

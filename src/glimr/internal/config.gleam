@@ -19,7 +19,15 @@ import tom
 /// and run lifecycle events.
 ///
 pub type Config {
-  Config(hooks: Hooks)
+  Config(hooks: Hooks, commands: Commands)
+}
+
+/// Command configuration for package discovery. Lists packages
+/// that provide console commands to be included in the command
+/// registry.
+///
+pub type Commands {
+  Commands(packages: List(String))
 }
 
 /// Hook configuration for build and run lifecycle events.
@@ -87,8 +95,8 @@ pub fn dev_proxy_port() -> Int {
 // ------------------------------------------------------------- Private Functions
 
 /// Parses TOML content into a Config struct. Extracts the hooks
-/// section and falls back to defaults if parsing fails or
-/// sections are missing.
+/// and commands sections and falls back to defaults if parsing
+/// fails or sections are missing.
 ///
 fn parse(content: String) -> Config {
   case tom.parse(content) {
@@ -97,10 +105,22 @@ fn parse(content: String) -> Config {
         Ok(hooks_toml) -> parse_hooks(hooks_toml)
         Error(_) -> default_hooks()
       }
-      Config(hooks: hooks)
+      let commands = case dict.get(toml, "commands") {
+        Ok(commands_toml) -> parse_commands(commands_toml)
+        Error(_) -> default_commands()
+      }
+      Config(hooks: hooks, commands: commands)
     }
     Error(_) -> default_config()
   }
+}
+
+/// Extracts command configuration from the [commands] TOML section.
+/// Parses the packages list which specifies which packages provide
+/// console commands.
+///
+fn parse_commands(toml: tom.Toml) -> Commands {
+  Commands(packages: get_string_list(toml, "packages"))
 }
 
 /// Extracts hook configuration from the [hooks] TOML section.
@@ -177,7 +197,15 @@ fn get_string_list(toml: tom.Toml, key: String) -> List(String) {
 /// provide sensible defaults.
 ///
 fn default_config() -> Config {
-  Config(hooks: default_hooks())
+  Config(hooks: default_hooks(), commands: default_commands())
+}
+
+/// Returns default commands with glimr as the only package.
+/// The glimr package provides all built-in framework commands
+/// like build, run, make_controller, etc.
+///
+fn default_commands() -> Commands {
+  Commands(packages: ["glimr"])
 }
 
 /// Returns default hooks with all lists empty. No commands

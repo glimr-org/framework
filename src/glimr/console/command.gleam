@@ -206,6 +206,42 @@ pub fn get_option(parsed: Args, name: String) -> String {
   }
 }
 
+/// Central dispatch for command execution. Handles the common
+/// concerns (help flags, argument validation) before delegating
+/// to the appropriate handler based on command type.
+///
+pub fn run(cmd: Command) -> Nil {
+  let args = get_args()
+
+  // If the args passed have help flags (--h, -h), then we can just
+  // print the help information for the command, and return
+  use <- bool.lazy_guard(has_help_flag(args), fn() { print_command_help(cmd) })
+
+  // Validate required args are present
+  case parse_and_validate(cmd.name, cmd.args, args) {
+    Ok(parsed) -> {
+      case cmd {
+        // Handle a command with no database/cache access
+        Command(handler:, ..) -> handler(parsed)
+
+        // Handle a command with database access
+        CommandWithDb(run_with_pool:, driver_type:, ..) -> {
+          run_with_connection(parsed, driver_type, run_with_pool)
+        }
+
+        // Handle a command with cache access
+        CommandWithCache(run_with_cache:, driver_type:, ..) -> {
+          let cache_stores = cache.load()
+          use p, conn <- run_with_connection(parsed, driver_type)
+
+          run_with_cache(p, conn, cache_stores)
+        }
+      }
+    }
+    Error(_) -> Nil
+  }
+}
+
 // ------------------------------------------------------------- Internal Public Functions
 
 /// Bridges Erlang's charlist-based CLI args to Gleam strings.
@@ -223,14 +259,10 @@ pub fn get_args() -> List(String) {
 /// found" or let the command handle its own output.
 ///
 @internal
-pub fn find_and_run(
-  commands: List(Command),
-  name: String,
-  args: List(String),
-) -> Bool {
+pub fn find_and_run(commands: List(Command), name: String) -> Bool {
   case find(commands, name) {
     Ok(cmd) -> {
-      run(cmd, args)
+      run(cmd)
       True
     }
     Error(_) -> False
@@ -244,6 +276,7 @@ pub fn find_and_run(
 @internal
 pub fn print_help(commands: List(Command)) {
   print_glimr_version()
+  io.println("Build scalable web apps AI can understand, and you can trust.")
   io.println("")
 
   io.println(console.warning("Usage:"))
@@ -301,7 +334,7 @@ pub fn print_help(commands: List(Command)) {
 ///
 @internal
 pub fn print_glimr_version() -> Nil {
-  io.println("Glimr Framework " <> console.success(glimr.get_version()))
+  io.println("Glimr " <> console.success(glimr.get_version()))
 }
 
 /// Stores commands in persistent term storage for later
@@ -330,40 +363,6 @@ pub fn get_commands() -> List(Command) {
 ///
 fn find(commands: List(Command), name: String) -> Result(Command, Nil) {
   list.find(commands, fn(cmd) { cmd.name == name })
-}
-
-/// Central dispatch for command execution. Handles the common
-/// concerns (help flags, argument validation) before delegating
-/// to the appropriate handler based on command type.
-///
-fn run(cmd: Command, args: List(String)) -> Nil {
-  // If the args passed have help flags (--h, -h), then we can just
-  // print the help information for the command, and return
-  use <- bool.lazy_guard(has_help_flag(args), fn() { print_command_help(cmd) })
-
-  // Validate required args are present
-  case parse_and_validate(cmd.name, cmd.args, args) {
-    Ok(parsed) -> {
-      case cmd {
-        // Handle a command with no database/cache access
-        Command(handler:, ..) -> handler(parsed)
-
-        // Handle a command with database access
-        CommandWithDb(run_with_pool:, driver_type:, ..) -> {
-          run_with_connection(parsed, driver_type, run_with_pool)
-        }
-
-        // Handle a command with cache access
-        CommandWithCache(run_with_cache:, driver_type:, ..) -> {
-          let cache_stores = cache.load()
-          use p, conn <- run_with_connection(parsed, driver_type)
-
-          run_with_cache(p, conn, cache_stores)
-        }
-      }
-    }
-    Error(_) -> Nil
-  }
 }
 
 /// Shared logic for CommandWithDb and CommandWithCache. Avoids
