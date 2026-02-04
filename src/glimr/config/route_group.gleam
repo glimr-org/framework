@@ -8,6 +8,7 @@
 
 import gleam/dict
 import gleam/list
+import glimr/config/config
 import glimr/http/kernel.{type MiddlewareGroup}
 import simplifile
 import tom
@@ -81,8 +82,8 @@ fn parse(content: String) -> List(RouteGroupConfig) {
 /// user-defined middleware stacks without framework changes.
 ///
 fn parse_group(name: String, toml: tom.Toml) -> RouteGroupConfig {
-  let prefix = get_string(toml, "prefix", "")
-  let middleware_str = get_string(toml, "middleware", "web")
+  let prefix = config.get_string(toml, "prefix", "")
+  let middleware_str = config.get_string(toml, "middleware", "web")
 
   let middleware = case middleware_str {
     "web" -> kernel.Web
@@ -91,22 +92,6 @@ fn parse_group(name: String, toml: tom.Toml) -> RouteGroupConfig {
   }
 
   RouteGroupConfig(name: name, prefix: prefix, middleware: middleware)
-}
-
-/// Provides a default for missing keys so configs stay minimal.
-/// Users only need to specify values that differ from defaults,
-/// reducing boilerplate in route_group.toml files.
-///
-fn get_string(toml: tom.Toml, key: String, default: String) -> String {
-  case toml {
-    tom.Table(table) -> {
-      case dict.get(table, key) {
-        Ok(tom.String(s)) -> s
-        _ -> default
-      }
-    }
-    _ -> default
-  }
 }
 
 // ------------------------------------------------------------- FFI Bindings
