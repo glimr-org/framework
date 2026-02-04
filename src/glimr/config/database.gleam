@@ -18,8 +18,8 @@ import tom
 // ------------------------------------------------------------- Public Functions
 
 /// Safe to call repeatedly from hot paths like request handlers
-/// since results are cached after first load. Returns empty 
-/// list on missing/invalid config to let apps start without a 
+/// since results are cached after first load. Returns empty
+/// list on missing/invalid config to let apps start without a
 /// database.
 ///
 pub fn load() -> List(Connection) {
@@ -31,6 +31,14 @@ pub fn load() -> List(Connection) {
       connections
     }
   }
+}
+
+/// Clears the cached database connections, forcing the next
+/// call to load() to re-read from config/database.toml. Useful
+/// for testing when you need to load different configurations.
+///
+pub fn clear_cache() -> Nil {
+  do_clear_cache()
 }
 
 // ------------------------------------------------------------- Private Functions
@@ -127,3 +135,10 @@ fn cache(connections: List(Connection)) -> Nil
 ///
 @external(erlang, "glimr_kernel_ffi", "get_cached_db_config")
 fn get_cached() -> Result(List(Connection), Nil)
+
+/// Removes the cached connections from persistent_term. This
+/// forces the next load() call to re-read the config file and
+/// re-parse environment variables for fresh values.
+///
+@external(erlang, "glimr_kernel_ffi", "clear_db_config")
+fn do_clear_cache() -> Nil

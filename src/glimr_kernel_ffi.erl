@@ -1,6 +1,6 @@
 -module(glimr_kernel_ffi).
 -export([store_commands/1, get_stored_commands/0]).
--export([cache_db_config/1, get_cached_db_config/0]).
+-export([cache_db_config/1, get_cached_db_config/0, clear_db_config/0]).
 -export([cache_route_groups/1, get_cached_route_groups/0]).
 -export([cache_cache_config/1, get_cached_cache_config/0]).
 
@@ -24,6 +24,10 @@ get_cached_db_config() ->
     catch
         error:badarg -> {error, nil}
     end.
+
+clear_db_config() ->
+    persistent_term:erase(glimr_db_config),
+    nil.
 
 cache_route_groups(Groups) ->
     persistent_term:put(glimr_route_groups, Groups),
