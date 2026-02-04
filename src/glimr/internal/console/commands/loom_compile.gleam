@@ -1,6 +1,6 @@
 import gleam/io
 import gleam/string
-import glimr/console/command.{type Command, type ParsedArgs, Flag, Option}
+import glimr/console/command.{type Command, type Args, Flag, Option}
 import glimr/console/console
 import glimr/internal/actions/compile_loom
 
@@ -31,7 +31,7 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-fn run(args: ParsedArgs) -> Nil {
+fn run(args: Args) -> Nil {
   let path = command.get_option(args, "path")
   let verbose = command.has_flag(args, "verbose")
 

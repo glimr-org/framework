@@ -1,6 +1,6 @@
 import gleam/io
 import gleam/list
-import glimr/console/command.{type Command, type ParsedArgs}
+import glimr/console/command.{type Command, type Args}
 import glimr/console/console
 import glimr/internal/actions/run_build
 import glimr/internal/actions/run_hooks
@@ -23,15 +23,8 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-fn run(_args: ParsedArgs) -> Nil {
+fn run(_args: Args) -> Nil {
   let cfg = config.load()
-
-  case list.is_empty(cfg.hooks.build_pre) {
-    True -> Nil
-    False -> {
-      io.println("")
-    }
-  }
 
   case run_hooks.run(cfg.hooks.build_pre) {
     Ok(_) -> {

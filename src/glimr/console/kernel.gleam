@@ -8,8 +8,6 @@ import gleam/list
 import glimr/cache/driver.{type CacheStore} as _cache_driver
 import glimr/console/command.{type Command}
 import glimr/console/console
-import glimr/db/db
-import glimr/db/driver.{type Connection}
 import glimr/internal/console/commands/build
 import glimr/internal/console/commands/glimr_greet
 import glimr/internal/console/commands/loom_compile
@@ -28,10 +26,8 @@ import glimr/internal/console/commands/setup_database
 // ------------------------------------------------------------- Public Functions
 
 /// Returns the list of internal Glimr framework commands.
-/// Commands are generic over ctx so they can be merged
-/// with user commands into a single unified list.
 ///
-pub fn commands(connections: List(Connection)) -> List(Command) {
+pub fn commands() -> List(Command) {
   [
     build.command(),
     run.command(),
@@ -46,7 +42,7 @@ pub fn commands(connections: List(Connection)) -> List(Command) {
     make_command.command(),
     make_model.command(),
     make_route_file.command(),
-    setup_database.command(connections),
+    setup_database.command(),
   ]
 }
 
@@ -57,12 +53,9 @@ pub fn commands(connections: List(Connection)) -> List(Command) {
 ///
 pub fn run(
   commands app_commands: List(Command),
-  db_connections db_connections: List(Connection),
   cache_stores cache_stores: List(CacheStore),
 ) {
-  db.validate_connections(db_connections)
-
-  let commands = list.append(commands(db_connections), app_commands)
+  let commands = list.append(commands(), app_commands)
   command.store_commands(commands)
 
   let args = command.get_args()
@@ -71,9 +64,7 @@ pub fn run(
     [] -> command.print_help(commands)
     ["-V"] | ["--version"] -> command.print_glimr_version()
     [name, ..rest] -> {
-      case
-        command.find_and_run(commands, db_connections, cache_stores, name, rest)
-      {
+      case command.find_and_run(commands, cache_stores, name, rest) {
         True -> Nil
         False -> {
           console.output()

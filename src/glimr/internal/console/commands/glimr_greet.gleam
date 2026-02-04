@@ -1,4 +1,4 @@
-import glimr/console/command.{type Command, type ParsedArgs}
+import glimr/console/command.{type Command, type Args}
 import glimr/console/console
 
 /// The name of the console command.
@@ -18,7 +18,7 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-fn run(_args: ParsedArgs) -> Nil {
+fn run(_args: Args) -> Nil {
   console.output()
   |> console.line("Hello! We hope you're enjoying Glimr")
   |> console.print()

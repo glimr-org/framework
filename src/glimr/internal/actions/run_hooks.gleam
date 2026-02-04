@@ -9,7 +9,7 @@ import gleam/dict
 import gleam/io
 import gleam/list
 import gleam/string
-import glimr/console/command.{type Command, Command, ParsedArgs}
+import glimr/console/command.{type Command, Command, Args}
 import shellout
 
 /// Runs a list of hook commands sequentially. Stops and returns
@@ -86,7 +86,7 @@ fn run_internal_command(cmd: String) -> Result(Nil, String) {
 
   case find_command(commands, name) {
     Ok(Command(handler:, ..)) -> {
-      let parsed_args = ParsedArgs(dict.new(), [], options)
+      let parsed_args = Args(dict.new(), [], options)
       handler(parsed_args)
       Ok(Nil)
     }
