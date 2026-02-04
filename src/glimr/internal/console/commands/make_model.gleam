@@ -1,6 +1,6 @@
 import gleam/list
 import gleam/string
-import glimr/console/command.{type Command, type ParsedArgs, Argument}
+import glimr/console/command.{type Command, type Args, Argument}
 import glimr/console/console
 import glimr/filesystem/filesystem
 import glimr/utils/string as glimr_string
@@ -26,7 +26,7 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-fn run(args: ParsedArgs) -> Nil {
+fn run(args: Args) -> Nil {
   let model_name_input = command.get_arg(args, "name")
   let connection = command.get_option(args, "database")
 

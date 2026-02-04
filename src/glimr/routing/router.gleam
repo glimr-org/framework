@@ -9,8 +9,8 @@ import gleam/http.{type Method}
 import gleam/http/response
 import gleam/list
 import gleam/string
-import glimr/http/kernel.{type MiddlewareGroup}
 import glimr/config/route_groups
+import glimr/http/kernel.{type MiddlewareGroup}
 import wisp.{type Request, type Response}
 
 /// Groups routes together with a shared middleware group and

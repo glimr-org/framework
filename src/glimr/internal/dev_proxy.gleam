@@ -28,14 +28,12 @@ import mist.{type Connection, type ResponseData}
 ///
 pub fn start(listen_port: Int, target_port: Int) -> Nil {
   console.output()
-  |> console.unpadded()
   |> console.line_success(
     "Dev proxy started on port "
     <> int.to_string(listen_port)
     <> " → "
     <> int.to_string(target_port),
   )
-  |> console.blank_line(1)
   |> console.print()
 
   let assert Ok(_) =

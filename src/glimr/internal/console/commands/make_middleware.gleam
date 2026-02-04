@@ -1,5 +1,5 @@
 import gleam/string
-import glimr/console/command.{type Command, type ParsedArgs, Argument}
+import glimr/console/command.{type Command, type Args, Argument}
 import glimr/console/console
 import glimr/filesystem/filesystem
 
@@ -23,7 +23,7 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-fn run(args: ParsedArgs) -> Nil {
+fn run(args: Args) -> Nil {
   let name = command.get_arg(args, "name")
 
   let module_name = string.lowercase(name)

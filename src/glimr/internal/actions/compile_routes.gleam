@@ -9,8 +9,8 @@
 import gleam/int
 import gleam/list
 import gleam/string
-import glimr/console/console
 import glimr/config/route_groups.{type RouteGroupConfig}
+import glimr/console/console
 import glimr/routing/annotation_parser
 import glimr/routing/compiler
 import simplifile
@@ -91,7 +91,6 @@ fn compile_controllers(
         True -> Nil
         False -> {
           console.output()
-          |> console.unpadded()
           |> console.line_warning("No routes found in controllers")
           |> console.print()
         }
@@ -212,7 +211,6 @@ fn compile_grouped_routes(
                       acc + list.length({ e.1 }.routes)
                     })
                   console.output()
-                  |> console.unpadded()
                   |> console.line(
                     "  "
                     <> group_name
@@ -246,7 +244,6 @@ fn compile_grouped_routes(
               })
             })
           console.output()
-          |> console.unpadded()
           |> console.line_success(
             "Compiled " <> int.to_string(total) <> " routes",
           )

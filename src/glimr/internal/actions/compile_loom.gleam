@@ -561,7 +561,6 @@ fn compile_file(
                   case verbose {
                     True ->
                       console.output()
-                      |> console.unpadded()
                       |> console.line(
                         "  " <> path <> " -> " <> console.success(output_file),
                       )

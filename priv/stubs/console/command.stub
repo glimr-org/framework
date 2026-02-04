@@ -1,4 +1,4 @@
-import glimr/console/command.{type Command, type ParsedArgs}
+import glimr/console/command.{type Command, type Args}
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#console-commands
 
@@ -19,6 +19,6 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-pub fn run(args: ParsedArgs) -> Nil {
+pub fn run(args: Args) -> Nil {
   todo
 }

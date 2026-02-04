@@ -1,5 +1,5 @@
 import gleam/io
-import glimr/console/command.{type Command, type ParsedArgs, Flag}
+import glimr/console/command.{type Command, type Args, Flag}
 import glimr/console/console
 import glimr/internal/actions/compile_routes
 
@@ -23,7 +23,7 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-fn run(args: ParsedArgs) -> Nil {
+fn run(args: Args) -> Nil {
   let verbose = command.has_flag(args, "verbose")
 
   case compile_routes.run(verbose) {

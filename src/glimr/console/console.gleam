@@ -14,7 +14,7 @@ import gleam/list
 /// the accumulated lines and a padding flag for formatting.
 ///
 pub type Output {
-  Output(lines: List(String), padded: Bool)
+  Output(lines: List(String))
 }
 
 // ------------------------------------------------------------- Private Constants
@@ -95,24 +95,7 @@ pub fn error(output: String) -> String {
 /// ```
 ///
 pub fn output() -> Output {
-  Output(lines: [], padded: True)
-}
-
-/// Disables padding (blank lines before/after) on the output.
-/// By default, output is padded with blank lines when printed.
-/// Use this when you want output without extra spacing.
-///
-/// *Example*
-///
-/// ```gleam
-/// console.output()
-/// |> console.unpadded()
-/// |> console.line("No blank lines around this")
-/// |> console.print()
-/// ```
-///
-pub fn unpadded(output: Output) -> Output {
-  Output(..output, padded: False)
+  Output(lines: [])
 }
 
 /// Adds a line of text to the output builder. Lines are
@@ -129,7 +112,7 @@ pub fn unpadded(output: Output) -> Output {
 /// ```
 ///
 pub fn line(output: Output, message: String) -> Output {
-  Output(..output, lines: list.append(output.lines, [message]))
+  Output(lines: list.append(output.lines, [message]))
 }
 
 /// Adds an empty line to the output builder. Useful for
@@ -149,7 +132,7 @@ pub fn line(output: Output, message: String) -> Output {
 pub fn blank_line(output: Output, amount: Int) -> Output {
   let empty_lines = list.repeat("", amount)
 
-  Output(..output, lines: list.append(output.lines, empty_lines))
+  Output(lines: list.append(output.lines, empty_lines))
 }
 
 /// Adds a line colored green (success) to the output.
@@ -213,11 +196,6 @@ pub fn line_warning(output: Output, message: String) -> Output {
 /// ```
 ///
 pub fn print(output: Output) -> Nil {
-  case output.padded {
-    True -> io.println("")
-    False -> Nil
-  }
-
   do_print(output.lines)
 }
 

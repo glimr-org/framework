@@ -1,7 +1,7 @@
-import glimr/console/command.{type Command, type ParsedArgs, Argument, Flag}
+import glimr/config/database
+import glimr/console/command.{type Command, type Args, Argument, Flag}
 import glimr/console/console
 import glimr/db/db
-import glimr/db/driver.{type Connection}
 import glimr/internal/actions/run_setup_db
 
 /// The name of the console command.
@@ -12,7 +12,7 @@ const description = "Set up a new database directory in src/data"
 
 /// Define the console command and its properties.
 ///
-pub fn command(connections: List(Connection)) -> Command {
+pub fn command() -> Command {
   command.new()
   |> command.name(name)
   |> command.description(description)
@@ -24,14 +24,15 @@ pub fn command(connections: List(Connection)) -> Command {
       description: "Creates a data.db file to be used as the sqlite db",
     ),
   ])
-  |> command.handler(fn(args: ParsedArgs) { run(args, connections) })
+  |> command.handler(run)
 }
 
 /// Execute the console command.
 ///
-fn run(args: ParsedArgs, connections: List(Connection)) -> Nil {
+fn run(args: Args) -> Nil {
   let name = command.get_arg(args, "name")
   let create_sqlite = command.has_flag(args, "sqlite")
+  let connections = database.load()
 
   // Validate that the connection exists in config
   case db.get_connection_safe(connections, name) {

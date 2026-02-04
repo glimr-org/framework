@@ -1,4 +1,4 @@
-import glimr/console/command.{type Command, type ParsedArgs}
+import glimr/console/command.{type Command, type Args}
 import glimr_postgres/console/command as command_postgres
 import glimr_postgres/db/pool.{type Pool}
 
@@ -21,6 +21,6 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-pub fn run(args: ParsedArgs, pool: Pool) -> Nil {
+pub fn run(args: Args, pool: Pool) -> Nil {
   todo
 }
