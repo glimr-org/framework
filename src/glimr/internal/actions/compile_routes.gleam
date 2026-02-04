@@ -9,7 +9,7 @@
 import gleam/int
 import gleam/list
 import gleam/string
-import glimr/config/route_groups.{type RouteGroupConfig}
+import glimr/config/route_group.{type RouteGroupConfig}
 import glimr/console/console
 import glimr/routing/annotation_parser
 import glimr/routing/compiler
@@ -32,7 +32,7 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
   // Ensure the output directory exists
   let _ = simplifile.create_directory_all("src/compiled/routes")
 
-  let groups = route_groups.load()
+  let groups = route_group.load()
   let controller_files = discover_controller_files("src/app/http/controllers")
   compile_controllers(controller_files, verbose, groups)
 }

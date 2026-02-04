@@ -9,7 +9,7 @@ import gleam/http.{type Method}
 import gleam/http/response
 import gleam/list
 import gleam/string
-import glimr/config/route_groups
+import glimr/config/route_group
 import glimr/http/kernel.{type MiddlewareGroup}
 import wisp.{type Request, type Response}
 
@@ -91,7 +91,7 @@ pub fn handle(
 }
 
 /// Registers route groups by loading config from
-/// config/route_groups.toml and attaching route handlers.
+/// config/route_group.toml and attaching route handlers.
 /// Takes a loader function that returns the routes function
 /// for each named group.
 ///
@@ -99,7 +99,7 @@ pub fn register(
   routes_for: fn(String) ->
     fn(List(String), Method, Request, context) -> Response,
 ) -> List(RouteGroup(context)) {
-  route_groups.load()
+  route_group.load()
   |> list.map(fn(group_config) {
     RouteGroup(
       prefix: group_config.prefix,
