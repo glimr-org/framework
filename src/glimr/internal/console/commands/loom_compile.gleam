@@ -35,7 +35,12 @@ fn run(args: Args) -> Nil {
     "" -> {
       case compile_loom.run(verbose) {
         Ok(_) -> Nil
-        Error(msg) -> io.println(console.error(msg))
+        Error(msg) -> {
+          io.println(console.error(msg))
+          io.println("")
+          io.println(console.error("Build failed"))
+          halt(1)
+        }
       }
     }
     _ -> {
@@ -47,17 +52,28 @@ fn run(args: Args) -> Nil {
           io.println(console.error(
             "Not a loom file: path must be in src/resources/views/ or src/app/loom/",
           ))
+          io.println("")
+          io.println(console.error("Build failed"))
+          halt(1)
         }
         True -> {
           case compile_loom.run_path(path, verbose) {
             Ok(_) -> Nil
-            Error(msg) -> io.println(console.error(msg))
+            Error(msg) -> {
+              io.println(console.error(msg))
+              io.println("")
+              io.println(console.error("Build failed"))
+              halt(1)
+            }
           }
         }
       }
     }
   }
 }
+
+@external(erlang, "erlang", "halt")
+fn halt(code: Int) -> Nil
 
 /// Console command's entry point
 ///

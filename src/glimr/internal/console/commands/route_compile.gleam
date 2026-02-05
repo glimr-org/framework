@@ -24,9 +24,17 @@ fn run(args: Args) -> Nil {
 
   case compile_routes.run(verbose) {
     Ok(_) -> Nil
-    Error(msg) -> io.println(console.error(msg))
+    Error(msg) -> {
+      io.println(console.error(msg))
+      io.println("")
+      io.println(console.error("Build failed"))
+      halt(1)
+    }
   }
 }
+
+@external(erlang, "erlang", "halt")
+fn halt(code: Int) -> Nil
 
 /// Console command's entry point
 ///
