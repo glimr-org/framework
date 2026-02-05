@@ -19,6 +19,16 @@ import glimr/internal/config.{type Config}
 import glimr/internal/dev_proxy
 import simplifile
 
+// ------------------------------------------------------------- Private Types
+
+/// Opaque type representing an Erlang port. Used to communicate
+/// with the spawned gleam run process for starting, stopping,
+/// and reading output.
+///
+type Port
+
+// ------------------------------------------------------------- Public Functions
+
 /// Starts the application with file watching. Monitors the src
 /// directory for changes and triggers hooks or restarts based
 /// on which files changed.
@@ -34,25 +44,45 @@ pub fn run(cfg: Config) -> Nil {
   let initial_mtimes = get_watched_file_mtimes("src")
   let port = start_gleam_run()
   start_output_reader(port)
-  watch_loop(initial_mtimes, port, cfg)
+  watch_loop(initial_mtimes, port, cfg, False)
 }
+
+// ------------------------------------------------------------- Private Functions
 
 /// Main file watching loop. Polls for file changes every
 /// second and triggers appropriate hooks or restarts based
-/// on which files were modified.
+/// on which files were modified. The had_compile_error flag
+/// tracks if the previous iteration had a compilation failure.
 ///
-fn watch_loop(last_mtimes: Dict(String, Int), port: Port, cfg: Config) -> Nil {
+fn watch_loop(
+  last_mtimes: Dict(String, Int),
+  port: Port,
+  cfg: Config,
+  had_compile_error: Bool,
+) -> Nil {
   process.sleep(1000)
 
   let current_mtimes = get_watched_file_mtimes("src")
   let changed_files = find_changed_files(last_mtimes, current_mtimes)
 
   case changed_files {
-    [] -> watch_loop(current_mtimes, port, cfg)
+    [] -> watch_loop(current_mtimes, port, cfg, False)
     files -> {
       let controller_changed =
         list.any(files, fn(f) {
           string.contains(f, "src/app/http/controllers/")
+        })
+
+      let validator_changed =
+        list.any(files, fn(f) {
+          string.contains(f, "src/app/http/validators/")
+          && string.ends_with(f, ".gleam")
+        })
+
+      let middleware_changed =
+        list.any(files, fn(f) {
+          string.contains(f, "src/app/http/middleware/")
+          && string.ends_with(f, ".gleam")
         })
 
       let loom_source_changed =
@@ -68,35 +98,37 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, cfg: Config) -> Nil {
         })
 
       let only_compiled_files =
-        list.all(files, fn(f) {
-          string.contains(f, "src/compiled/routes/")
-          || string.contains(f, "src/compiled/loom/")
-        })
+        list.all(files, fn(f) { string.contains(f, "src/compiled/") })
 
-      case controller_changed, loom_source_changed, command_changed {
+      let routes_trigger =
+        controller_changed || validator_changed || middleware_changed
+
+      case routes_trigger, loom_source_changed, command_changed {
         True, _, _ -> {
           case cfg.routes.auto_compile {
             True -> {
-              let controller_files =
+              let route_related_files =
                 list.filter(files, fn(f) {
                   string.contains(f, "src/app/http/controllers/")
+                  || string.contains(f, "src/app/http/validators/")
+                  || string.contains(f, "src/app/http/middleware/")
                 })
 
               io.println("")
-              io.println(console.warning("Controller changes detected:"))
-              list.each(controller_files, fn(f) { io.println("  " <> f) })
+              io.println(console.warning("Route-related changes detected:"))
+              list.each(route_related_files, fn(f) { io.println("  " <> f) })
               io.println("")
 
-              // Recompile all routes when any controller changes
+              // Recompile all routes when controllers or validators change
               case compile_routes.run(False) {
-                Ok(_) -> watch_loop(current_mtimes, port, cfg)
+                Ok(_) -> watch_loop(current_mtimes, port, cfg, False)
                 Error(msg) -> {
                   io.println(console.error(msg))
-                  watch_loop(current_mtimes, port, cfg)
+                  watch_loop(current_mtimes, port, cfg, True)
                 }
               }
             }
-            False -> watch_loop(current_mtimes, port, cfg)
+            False -> watch_loop(current_mtimes, port, cfg, False)
           }
         }
         _, True, _ -> {
@@ -114,14 +146,20 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, cfg: Config) -> Nil {
               io.println("")
 
               // Compile changed loom files
-              list.each(loom_files, fn(path) {
-                let _ = compile_loom.run_path(path, False)
-                Nil
-              })
+              let loom_had_error =
+                list.any(loom_files, fn(path) {
+                  case compile_loom.run_path(path, False) {
+                    Ok(_) -> False
+                    Error(msg) -> {
+                      io.println(console.error(msg))
+                      True
+                    }
+                  }
+                })
 
-              watch_loop(current_mtimes, port, cfg)
+              watch_loop(current_mtimes, port, cfg, loom_had_error)
             }
-            False -> watch_loop(current_mtimes, port, cfg)
+            False -> watch_loop(current_mtimes, port, cfg, False)
           }
         }
         _, _, True -> {
@@ -139,70 +177,75 @@ fn watch_loop(last_mtimes: Dict(String, Int), port: Port, cfg: Config) -> Nil {
               io.println("")
 
               // Regenerate command registry
-              let _ = compile_commands.run(False)
-              watch_loop(current_mtimes, port, cfg)
+              let cmd_had_error = case compile_commands.run(False) {
+                Ok(_) -> False
+                Error(msg) -> {
+                  io.println(console.error(msg))
+                  True
+                }
+              }
+              watch_loop(current_mtimes, port, cfg, cmd_had_error)
             }
-            False -> watch_loop(current_mtimes, port, cfg)
+            False -> watch_loop(current_mtimes, port, cfg, False)
           }
         }
         False, False, False -> {
-          case only_compiled_files {
-            True -> Nil
+          // Skip restart if only compiled files changed after a compile error
+          case only_compiled_files && had_compile_error {
+            True -> watch_loop(current_mtimes, port, cfg, False)
             False -> {
-              io.println("")
-              io.println(console.warning("File changes detected:"))
-              list.each(files, fn(f) { io.println("  " <> f) })
-              io.println("")
-            }
-          }
-
-          case list.is_empty(cfg.hooks.run_reload_pre) {
-            True -> Nil
-            False -> {
-              io.println("")
-              io.println(console.warning("Running pre-reload hooks..."))
-              case run_hooks.run(cfg.hooks.run_reload_pre) {
-                Ok(_) -> Nil
-                Error(msg) -> {
-                  io.println(console.error(msg))
+              // Don't print "File changes detected" for compiled files
+              case only_compiled_files {
+                True -> Nil
+                False -> {
+                  io.println("")
+                  io.println(console.warning("File changes detected:"))
+                  list.each(files, fn(f) { io.println("  " <> f) })
+                  io.println("")
                 }
               }
-            }
-          }
 
-          case list.is_empty(cfg.hooks.run_reload_post_modified) {
-            True -> Nil
-            False -> {
-              io.println("")
-              io.println(console.warning("Running post-modified hooks..."))
-              case run_hooks.run(cfg.hooks.run_reload_post_modified) {
-                Ok(_) -> Nil
-                Error(msg) -> {
-                  io.println(console.error(msg))
+              case list.is_empty(cfg.hooks.run_reload_pre) {
+                True -> Nil
+                False -> {
+                  io.println("")
+                  io.println(console.warning("Running pre-reload hooks..."))
+                  case run_hooks.run(cfg.hooks.run_reload_pre) {
+                    Ok(_) -> Nil
+                    Error(msg) -> {
+                      io.println(console.error(msg))
+                    }
+                  }
                 }
               }
+
+              case list.is_empty(cfg.hooks.run_reload_post_modified) {
+                True -> Nil
+                False -> {
+                  io.println("")
+                  io.println(console.warning("Running post-modified hooks..."))
+                  case run_hooks.run(cfg.hooks.run_reload_post_modified) {
+                    Ok(_) -> Nil
+                    Error(msg) -> {
+                      io.println(console.error(msg))
+                    }
+                  }
+                }
+              }
+
+              io.println("")
+              io.println(console.warning("Restarting application... ✨"))
+              stop_port(port)
+              let new_port = start_gleam_run()
+              start_output_reader(new_port)
+              watch_loop(current_mtimes, new_port, cfg, False)
             }
           }
-
-          io.println("")
-          io.println(console.warning("Restarting application... ✨"))
-          stop_port(port)
-          let new_port = start_gleam_run()
-          start_output_reader(new_port)
-          watch_loop(current_mtimes, new_port, cfg)
         }
       }
     }
   }
 }
-
-// ------------------------------------------------------------- Private Types
-
-/// Opaque type representing an Erlang port. Used to communicate
-/// with the spawned gleam run process for starting, stopping,
-/// and reading output.
-///
-type Port
 
 // ------------------------------------------------------------- FFI Bindings
 

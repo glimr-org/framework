@@ -61,6 +61,7 @@ pub type CompileResult {
     routes_code: String,
     used_methods: List(String),
     uses_middleware: Bool,
+    uses_validator: Bool,
     uses_req: Bool,
     uses_ctx: Bool,
     line_to_route: Dict(Int, String),
@@ -101,6 +102,7 @@ pub fn compile_routes(
   let imports = generate_imports(controller_routes, routes)
   let used_methods = collect_used_methods(routes)
   let uses_middleware = check_uses_middleware(routes)
+  let uses_validator = check_uses_validator(routes)
   let uses_req = check_uses_request(routes)
   let uses_ctx = check_uses_context(routes)
 
@@ -117,6 +119,7 @@ pub fn compile_routes(
     routes_code:,
     used_methods:,
     uses_middleware:,
+    uses_validator:,
     uses_req:,
     uses_ctx:,
     line_to_route:,
@@ -251,6 +254,20 @@ fn check_uses_context(routes: List(ParsedRoute)) -> Bool {
     case r {
       ParsedRoute(params:, ..) -> list.any(params, is_context_param)
       ParsedRedirect(..) -> False
+    }
+  })
+}
+
+/// Checks if any route uses a validator. Used to determine
+/// whether to use `req`/`ctx` or `_req`/`_ctx` in the
+/// generated routes function signature, since validators
+/// need access to req and ctx.
+///
+fn check_uses_validator(routes: List(ParsedRoute)) -> Bool {
+  list.any(routes, fn(r) {
+    case r {
+      ParsedRoute(validator: option.Some(_), ..) -> True
+      _ -> False
     }
   })
 }
@@ -1094,7 +1111,23 @@ fn generate_handler_call(
         |> list.map(middleware_path_to_call)
         |> string.join(", ")
       let middleware_list = "[" <> middleware_calls <> "]"
-      "{\n          use req, ctx <- middleware.apply("
+      // Check if handler or validator uses req/ctx to avoid unused warnings
+      let handler_uses_req = list.any(fn_params, is_request_param)
+      let handler_uses_ctx = list.any(fn_params, is_context_param)
+      let has_validator = option.is_some(validator)
+      let mw_req = case handler_uses_req || has_validator {
+        True -> "req"
+        False -> "_req"
+      }
+      let mw_ctx = case handler_uses_ctx || has_validator {
+        True -> "ctx"
+        False -> "_ctx"
+      }
+      "{\n          use "
+      <> mw_req
+      <> ", "
+      <> mw_ctx
+      <> " <- middleware.apply("
       <> middleware_list
       <> ", req, ctx)\n          "
       <> with_validator
@@ -1254,11 +1287,20 @@ pub fn write_compiled_file(
     False -> ""
   }
 
-  let req_arg = case compile_result.uses_req {
+  // Middleware and validators need req/ctx even if handlers don't use them directly
+  let needs_req =
+    compile_result.uses_req
+    || compile_result.uses_middleware
+    || compile_result.uses_validator
+  let needs_ctx =
+    compile_result.uses_ctx
+    || compile_result.uses_middleware
+    || compile_result.uses_validator
+  let req_arg = case needs_req {
     True -> "req"
     False -> "_req"
   }
-  let ctx_arg = case compile_result.uses_ctx {
+  let ctx_arg = case needs_ctx {
     True -> "ctx"
     False -> "_ctx"
   }
