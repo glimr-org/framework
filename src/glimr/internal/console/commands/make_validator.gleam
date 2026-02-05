@@ -6,7 +6,7 @@ import glimr/filesystem/filesystem
 /// The console command description.
 const description = "Create a new form validator"
 
-/// Define the Command and it's properties.
+/// Define the Command and its properties.
 ///
 pub fn command() -> Command {
   command.new()
