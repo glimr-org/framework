@@ -5,12 +5,18 @@ import gleeunit/should
 import glimr/routing/annotation_parser.{ParsedRedirect, ParsedRoute}
 import glimr/routing/compiler
 
-// Helper to compile controller routes
+// Standard imports for test sources
+const standard_imports = "
+import wisp.{type Request}
+import app/http/context/ctx.{type Context}
+"
+
+// Helper to compile controller routes with standard imports
 fn compile_controller(
   module: String,
   source: String,
 ) -> Result(compiler.CompileResult, String) {
-  let assert Ok(result) = annotation_parser.parse(source)
+  let result = annotation_parser.parse(standard_imports <> source)
   compiler.compile_routes([#(module, result)])
 }
 
@@ -257,8 +263,7 @@ pub fn dashboard(_req: Request, _ctx: Context) {
 // ------------------------------------------------------------- Import Generation Tests
 
 pub fn generates_controller_imports_test() {
-  let source1 =
-    "
+  let source1 = standard_imports <> "
 /// @get \"/\"
 ///
 pub fn show(_req: Request, _ctx: Context) {
@@ -266,8 +271,7 @@ pub fn show(_req: Request, _ctx: Context) {
 }
 "
 
-  let source2 =
-    "
+  let source2 = standard_imports <> "
 /// @get \"/users\"
 ///
 pub fn index(_req: Request, _ctx: Context) {
@@ -275,8 +279,8 @@ pub fn index(_req: Request, _ctx: Context) {
 }
 "
 
-  let assert Ok(result1) = annotation_parser.parse(source1)
-  let assert Ok(result2) = annotation_parser.parse(source2)
+  let result1 = annotation_parser.parse(source1)
+  let result2 = annotation_parser.parse(source2)
 
   let assert Ok(compiled) =
     compiler.compile_routes([
@@ -294,8 +298,7 @@ pub fn index(_req: Request, _ctx: Context) {
 }
 
 pub fn nested_controller_uses_unique_alias_test() {
-  let source1 =
-    "
+  let source1 = standard_imports <> "
 /// @get \"/\"
 ///
 pub fn index(_req: Request, _ctx: Context) {
@@ -303,8 +306,7 @@ pub fn index(_req: Request, _ctx: Context) {
 }
 "
 
-  let source2 =
-    "
+  let source2 = standard_imports <> "
 /// @get \"/api\"
 ///
 pub fn index(_req: Request, _ctx: Context) {
@@ -312,8 +314,8 @@ pub fn index(_req: Request, _ctx: Context) {
 }
 "
 
-  let assert Ok(result1) = annotation_parser.parse(source1)
-  let assert Ok(result2) = annotation_parser.parse(source2)
+  let result1 = annotation_parser.parse(source1)
+  let result2 = annotation_parser.parse(source2)
 
   let assert Ok(compiled) =
     compiler.compile_routes([
@@ -453,7 +455,7 @@ pub fn store(_req: Request, _ctx: Context) {
 }
 "
 
-  let assert Ok(result) = annotation_parser.parse(source)
+  let result = annotation_parser.parse(source)
 
   result.routes
   |> list.length
@@ -473,7 +475,7 @@ pub fn index(_req: Request, _ctx: Context) {
 }
 "
 
-  let assert Ok(result) = annotation_parser.parse(source)
+  let result = annotation_parser.parse(source)
 
   result.group_middleware
   |> should.equal(["auth", "logging"])
@@ -490,7 +492,7 @@ pub fn index(_req: Request, _ctx: Context) {
 }
 "
 
-  let assert Ok(result) = annotation_parser.parse(source)
+  let result = annotation_parser.parse(source)
 
   case result.routes {
     [ParsedRoute(middleware: mw, ..)] -> {
@@ -513,7 +515,7 @@ pub fn index(_req: Request, _ctx: Context) {
 }
 "
 
-  let assert Ok(result) = annotation_parser.parse(source)
+  let result = annotation_parser.parse(source)
 
   case result.routes {
     [ParsedRoute(middleware: mw, ..)] -> {
@@ -535,7 +537,7 @@ pub fn show(_req: Request, _ctx: Context) {
 }
 "
 
-  let assert Ok(result) = annotation_parser.parse(source)
+  let result = annotation_parser.parse(source)
 
   result.routes
   |> list.length
@@ -730,6 +732,8 @@ pub fn index(_req: Request, _ctx: Context) {
 pub fn parse_route_with_validator_test() {
   let source =
     "
+import app/http/validators/user_validator.{type Data}
+
 /// @post \"/users\"
 /// @validator \"user_validator\"
 ///
@@ -753,6 +757,8 @@ pub fn store(_req: Request, _ctx: Context, validated: Data) {
 pub fn parse_route_with_validator_and_path_params_test() {
   let source =
     "
+import app/http/validators/user_validator.{type Data}
+
 /// @post \"/users/:id\"
 /// @validator \"user_validator\"
 ///
@@ -777,6 +783,8 @@ pub fn update(_req: Request, _ctx: Context, id: String, validated: Data) {
 pub fn parse_route_with_validator_and_middleware_test() {
   let source =
     "
+import app/http/validators/user_validator.{type Data}
+
 /// @post \"/users\"
 /// @middleware \"auth\"
 /// @validator \"user_validator\"
@@ -838,7 +846,7 @@ pub fn store(_req: Request, _ctx: Context, validated: Data) {
 }
 "
 
-  let assert Ok(result) = annotation_parser.parse(source)
+  let result = annotation_parser.parse(source)
 
   case result.routes {
     [ParsedRoute(validator: option.Some(v), ..)] -> {
