@@ -135,6 +135,9 @@ fn group_routes_by_prefix(
               annotation_parser.ParseResult(
                 group_middleware: parse_result.group_middleware,
                 routes: matching_routes,
+                has_wisp_request_import: parse_result.has_wisp_request_import,
+                has_ctx_context_import: parse_result.has_ctx_context_import,
+                validator_data_imports: parse_result.validator_data_imports,
               ),
             ))
         }
@@ -265,7 +268,7 @@ fn parse_controller(
     Ok(content) -> {
       case annotation_parser.module_from_path(path) {
         Ok(module) -> {
-          let assert Ok(result) = annotation_parser.parse(content)
+          let result = annotation_parser.parse(content)
           Ok(#(module, result))
         }
         Error(_) -> Error("Failed to extract module path from: " <> path)
