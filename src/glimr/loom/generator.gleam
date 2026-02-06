@@ -6,6 +6,7 @@
 ////
 
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
@@ -92,6 +93,627 @@ pub fn extract_slot_info(template: Template) -> ComponentSlotInfo {
   )
 }
 
+/// Validates that all variables used in the template are defined.
+/// Checks against Data type fields, slot variables, and loop variables.
+/// Returns Ok(Nil) if valid, Error with message if undefined variable found.
+///
+pub fn validate_template(
+  template: Template,
+  view_file: Option(ParsedViewFile),
+  source_path: String,
+) -> Result(Nil, String) {
+  // Get available variables from Data type (with types for validation)
+  let data_fields = case view_file {
+    Some(vf) -> dict.from_list(vf.fields)
+    None -> dict.new()
+  }
+
+  // Slot variables are always available (slot, slot_xxx)
+  let slot_vars =
+    collect_named_slots(template.nodes, set.new())
+    |> set.to_list
+    |> list.map(fn(name) { "slot_" <> to_field_name(name) })
+    |> set.from_list
+    |> set.insert("slot")
+
+  // Check all nodes for undefined variables
+  validate_nodes(template.nodes, data_fields, slot_vars, set.new(), source_path)
+}
+
+/// Validates nodes recursively, tracking scoped loop variables.
+///
+fn validate_nodes(
+  nodes: List(Node),
+  data_fields: Dict(String, String),
+  slot_vars: Set(String),
+  loop_vars: Set(String),
+  source_path: String,
+) -> Result(Nil, String) {
+  case nodes {
+    [] -> Ok(Nil)
+    [node, ..rest] -> {
+      case validate_node(node, data_fields, slot_vars, loop_vars, source_path) {
+        Error(e) -> Error(e)
+        Ok(_) ->
+          validate_nodes(rest, data_fields, slot_vars, loop_vars, source_path)
+      }
+    }
+  }
+}
+
+/// Validates a single node for undefined variables.
+///
+fn validate_node(
+  node: Node,
+  data_fields: Dict(String, String),
+  slot_vars: Set(String),
+  loop_vars: Set(String),
+  source_path: String,
+) -> Result(Nil, String) {
+  case node {
+    parser.VariableNode(expr, line) ->
+      validate_expression(
+        expr,
+        data_fields,
+        slot_vars,
+        loop_vars,
+        source_path,
+        line,
+      )
+
+    parser.RawVariableNode(expr, line) ->
+      validate_expression(
+        expr,
+        data_fields,
+        slot_vars,
+        loop_vars,
+        source_path,
+        line,
+      )
+
+    parser.IfNode(branches) ->
+      validate_if_branches(
+        branches,
+        data_fields,
+        slot_vars,
+        loop_vars,
+        source_path,
+      )
+
+    parser.EachNode(collection, items, loop_var, body, line) -> {
+      // First validate the collection is defined
+      case
+        validate_expression(
+          collection,
+          data_fields,
+          slot_vars,
+          loop_vars,
+          source_path,
+          line,
+        )
+      {
+        Error(e) -> Error(e)
+        Ok(_) -> {
+          // Check tuple arity if destructuring
+          case
+            validate_tuple_arity(
+              collection,
+              items,
+              data_fields,
+              source_path,
+              line,
+            )
+          {
+            Error(e) -> Error(e)
+            Ok(_) -> {
+              // Add loop variables to scope for body validation
+              let new_loop_vars =
+                items
+                |> list.fold(loop_vars, fn(acc, item) { set.insert(acc, item) })
+              let new_loop_vars = case loop_var {
+                Some(lv) -> set.insert(new_loop_vars, lv)
+                None -> new_loop_vars
+              }
+              validate_nodes(
+                body,
+                data_fields,
+                slot_vars,
+                new_loop_vars,
+                source_path,
+              )
+            }
+          }
+        }
+      }
+    }
+
+    parser.ComponentNode(_, attrs, children) -> {
+      case
+        validate_attrs(attrs, data_fields, slot_vars, loop_vars, source_path)
+      {
+        Error(e) -> Error(e)
+        Ok(_) ->
+          validate_nodes(
+            children,
+            data_fields,
+            slot_vars,
+            loop_vars,
+            source_path,
+          )
+      }
+    }
+
+    parser.ElementNode(_, attrs, children) -> {
+      case
+        validate_attrs(attrs, data_fields, slot_vars, loop_vars, source_path)
+      {
+        Error(e) -> Error(e)
+        Ok(_) ->
+          validate_nodes(
+            children,
+            data_fields,
+            slot_vars,
+            loop_vars,
+            source_path,
+          )
+      }
+    }
+
+    parser.SlotNode(_, fallback) ->
+      validate_nodes(fallback, data_fields, slot_vars, loop_vars, source_path)
+
+    parser.SlotDefNode(_, children) ->
+      validate_nodes(children, data_fields, slot_vars, loop_vars, source_path)
+
+    parser.TextNode(_) | parser.AttributesNode(_) -> Ok(Nil)
+  }
+}
+
+/// Validates tuple destructuring arity in l-for loops.
+/// If the collection's element type is a tuple, checks that the number
+/// of destructuring variables matches the tuple arity.
+///
+fn validate_tuple_arity(
+  collection: String,
+  items: List(String),
+  data_fields: Dict(String, String),
+  source_path: String,
+  line: Int,
+) -> Result(Nil, String) {
+  // Only validate if we have multiple destructuring variables (tuple pattern)
+  case list.length(items) {
+    1 -> Ok(Nil)
+    destructure_count -> {
+      // Get the root variable name (e.g., "items" from "items" or "user.posts" -> "user")
+      let root = case string.split(collection, ".") {
+        [first, ..] -> first
+        [] -> collection
+      }
+
+      // Look up the type in data_fields
+      case dict.get(data_fields, root) {
+        Error(_) -> Ok(Nil)
+        // Can't validate if we don't know the type
+        Ok(type_str) -> {
+          // For dotted access, we can't easily infer the nested type, skip validation
+          case string.contains(collection, ".") {
+            True -> Ok(Nil)
+            False -> {
+              // Try to extract tuple arity from type like "List(#(String, String, String))"
+              case extract_tuple_arity_from_list_type(type_str) {
+                None -> Ok(Nil)
+                // Not a List of tuples, skip validation
+                Some(tuple_arity) -> {
+                  case destructure_count == tuple_arity {
+                    True -> Ok(Nil)
+                    False -> {
+                      Error(
+                        "Tuple destructuring mismatch in "
+                        <> source_path
+                        <> ":"
+                        <> int.to_string(line)
+                        <> "\n\nl-for expected "
+                        <> int.to_string(tuple_arity)
+                        <> " variables but got "
+                        <> int.to_string(destructure_count)
+                        <> " ("
+                        <> string.join(items, ", ")
+                        <> ")\nThe type '"
+                        <> type_str
+                        <> "' has "
+                        <> int.to_string(tuple_arity)
+                        <> "-element tuples.",
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/// Extracts the tuple arity from a List type containing tuples.
+/// For example: "List(#(String, String, String))" -> Some(3)
+/// Returns None if not a List of tuples.
+///
+fn extract_tuple_arity_from_list_type(type_str: String) -> Option(Int) {
+  let trimmed = string.trim(type_str)
+
+  // Check if it starts with "List("
+  case string.starts_with(trimmed, "List(") {
+    False -> None
+    True -> {
+      // Remove "List(" prefix and ")" suffix
+      let inner =
+        trimmed
+        |> string.drop_start(5)
+        |> string.drop_end(1)
+        |> string.trim
+
+      // Check if inner type is a tuple "#(...)"
+      case string.starts_with(inner, "#(") {
+        False -> None
+        True -> {
+          // Extract the contents of the tuple and count elements
+          let tuple_inner =
+            inner
+            |> string.drop_start(2)
+            |> string.drop_end(1)
+
+          // Count elements by splitting on commas at depth 0
+          Some(count_tuple_elements(tuple_inner))
+        }
+      }
+    }
+  }
+}
+
+/// Counts elements in a tuple type string by counting commas at depth 0.
+/// Handles nested types like "List(String), #(Int, Int)" correctly.
+///
+fn count_tuple_elements(tuple_inner: String) -> Int {
+  count_tuple_elements_helper(tuple_inner, 0, 1)
+}
+
+fn count_tuple_elements_helper(input: String, depth: Int, count: Int) -> Int {
+  case string.pop_grapheme(input) {
+    Error(_) -> count
+    Ok(#(char, rest)) -> {
+      case char {
+        "(" -> count_tuple_elements_helper(rest, depth + 1, count)
+        ")" -> count_tuple_elements_helper(rest, depth - 1, count)
+        "," if depth == 0 -> count_tuple_elements_helper(rest, 0, count + 1)
+        _ -> count_tuple_elements_helper(rest, depth, count)
+      }
+    }
+  }
+}
+
+/// Validates if/elseif/else branches.
+///
+fn validate_if_branches(
+  branches: List(#(Option(String), Int, List(Node))),
+  data_fields: Dict(String, String),
+  slot_vars: Set(String),
+  loop_vars: Set(String),
+  source_path: String,
+) -> Result(Nil, String) {
+  case branches {
+    [] -> Ok(Nil)
+    [#(condition, line, body), ..rest] -> {
+      // Validate condition expression if present
+      case condition {
+        Some(cond) -> {
+          case
+            validate_condition(
+              cond,
+              data_fields,
+              slot_vars,
+              loop_vars,
+              source_path,
+              line,
+            )
+          {
+            Error(e) -> Error(e)
+            Ok(_) -> {
+              case
+                validate_nodes(
+                  body,
+                  data_fields,
+                  slot_vars,
+                  loop_vars,
+                  source_path,
+                )
+              {
+                Error(e) -> Error(e)
+                Ok(_) ->
+                  validate_if_branches(
+                    rest,
+                    data_fields,
+                    slot_vars,
+                    loop_vars,
+                    source_path,
+                  )
+              }
+            }
+          }
+        }
+        None -> {
+          // else branch - no condition to validate
+          case
+            validate_nodes(body, data_fields, slot_vars, loop_vars, source_path)
+          {
+            Error(e) -> Error(e)
+            Ok(_) ->
+              validate_if_branches(
+                rest,
+                data_fields,
+                slot_vars,
+                loop_vars,
+                source_path,
+              )
+          }
+        }
+      }
+    }
+  }
+}
+
+/// Validates a condition expression from l-if/l-else-if.
+/// Conditions can be simple variables or comparisons.
+///
+fn validate_condition(
+  condition: String,
+  data_fields: Dict(String, String),
+  slot_vars: Set(String),
+  loop_vars: Set(String),
+  source_path: String,
+  line: Int,
+) -> Result(Nil, String) {
+  let trimmed = string.trim(condition)
+
+  // Handle slot references specially
+  case trimmed {
+    "slot" -> Ok(Nil)
+    _ -> {
+      case string.starts_with(trimmed, "slot.") {
+        True -> Ok(Nil)
+        False -> {
+          // Extract variable names from the condition
+          // Simple heuristic: split on common operators and check each token
+          let vars = extract_vars_from_condition(trimmed)
+          validate_var_list(
+            vars,
+            data_fields,
+            slot_vars,
+            loop_vars,
+            source_path,
+            line,
+          )
+        }
+      }
+    }
+  }
+}
+
+/// Extracts potential variable names from a condition string.
+/// Splits on operators and filters to valid identifiers.
+///
+fn extract_vars_from_condition(condition: String) -> List(String) {
+  condition
+  |> string.replace("==", " ")
+  |> string.replace("!=", " ")
+  |> string.replace(">=", " ")
+  |> string.replace("<=", " ")
+  |> string.replace(">", " ")
+  |> string.replace("<", " ")
+  |> string.replace("&&", " ")
+  |> string.replace("||", " ")
+  |> string.replace("!", " ")
+  |> string.replace("(", " ")
+  |> string.replace(")", " ")
+  |> string.split(" ")
+  |> list.filter(fn(token) {
+    let t = string.trim(token)
+    // Filter out empty, numbers, booleans, and strings
+    t != ""
+    && !is_number(t)
+    && t != "True"
+    && t != "False"
+    && !string.starts_with(t, "\"")
+  })
+}
+
+/// Validates a list of variable names.
+///
+fn validate_var_list(
+  vars: List(String),
+  data_fields: Dict(String, String),
+  slot_vars: Set(String),
+  loop_vars: Set(String),
+  source_path: String,
+  line: Int,
+) -> Result(Nil, String) {
+  case vars {
+    [] -> Ok(Nil)
+    [var, ..rest] -> {
+      case
+        validate_expression(
+          var,
+          data_fields,
+          slot_vars,
+          loop_vars,
+          source_path,
+          line,
+        )
+      {
+        Error(e) -> Error(e)
+        Ok(_) ->
+          validate_var_list(
+            rest,
+            data_fields,
+            slot_vars,
+            loop_vars,
+            source_path,
+            line,
+          )
+      }
+    }
+  }
+}
+
+/// Checks if a string looks like a number.
+///
+fn is_number(s: String) -> Bool {
+  case string.first(s) {
+    Ok(c) ->
+      c == "0"
+      || c == "1"
+      || c == "2"
+      || c == "3"
+      || c == "4"
+      || c == "5"
+      || c == "6"
+      || c == "7"
+      || c == "8"
+      || c == "9"
+    Error(_) -> False
+  }
+}
+
+/// Validates element/component attributes for undefined variables.
+///
+fn validate_attrs(
+  attrs: List(lexer.ComponentAttr),
+  data_fields: Dict(String, String),
+  slot_vars: Set(String),
+  loop_vars: Set(String),
+  source_path: String,
+) -> Result(Nil, String) {
+  case attrs {
+    [] -> Ok(Nil)
+    [attr, ..rest] -> {
+      case attr {
+        lexer.ExprAttr(_, value) -> {
+          case
+            validate_expression(
+              value,
+              data_fields,
+              slot_vars,
+              loop_vars,
+              source_path,
+              0,
+            )
+          {
+            Error(e) -> Error(e)
+            Ok(_) ->
+              validate_attrs(
+                rest,
+                data_fields,
+                slot_vars,
+                loop_vars,
+                source_path,
+              )
+          }
+        }
+        lexer.LmIf(cond, line) | lexer.LmElseIf(cond, line) -> {
+          case
+            validate_condition(
+              cond,
+              data_fields,
+              slot_vars,
+              loop_vars,
+              source_path,
+              line,
+            )
+          {
+            Error(e) -> Error(e)
+            Ok(_) ->
+              validate_attrs(
+                rest,
+                data_fields,
+                slot_vars,
+                loop_vars,
+                source_path,
+              )
+          }
+        }
+        lexer.LmFor(collection, _, _, line) -> {
+          case
+            validate_expression(
+              collection,
+              data_fields,
+              slot_vars,
+              loop_vars,
+              source_path,
+              line,
+            )
+          {
+            Error(e) -> Error(e)
+            Ok(_) ->
+              validate_attrs(
+                rest,
+                data_fields,
+                slot_vars,
+                loop_vars,
+                source_path,
+              )
+          }
+        }
+        _ ->
+          validate_attrs(rest, data_fields, slot_vars, loop_vars, source_path)
+      }
+    }
+  }
+}
+
+/// Validates a single expression (variable reference).
+/// Handles dotted access like user.name by checking the root.
+///
+fn validate_expression(
+  expr: String,
+  data_fields: Dict(String, String),
+  slot_vars: Set(String),
+  loop_vars: Set(String),
+  source_path: String,
+  line: Int,
+) -> Result(Nil, String) {
+  let trimmed = string.trim(expr)
+
+  // Handle dotted access - get the root variable
+  let root = case string.split_once(trimmed, ".") {
+    Ok(#(root, _)) -> root
+    Error(_) -> trimmed
+  }
+
+  // Check if it's a known variable
+  let is_data_field = dict.has_key(data_fields, root)
+  let is_slot_var = set.contains(slot_vars, root)
+  let is_loop_var = set.contains(loop_vars, root)
+
+  case is_data_field || is_slot_var || is_loop_var {
+    True -> Ok(Nil)
+    False ->
+      Error(
+        "Undefined variable '"
+        <> root
+        <> "' in "
+        <> source_path
+        <> ":"
+        <> int.to_string(line)
+        <> "\n\nThe variable {{ "
+        <> root
+        <> " }} is used in the template but not defined.\n"
+        <> "Add it to your Data type in the corresponding view file.\n\n"
+        <> "https://github.com/glimr-org/glimr?tab=readme-ov-file#variables",
+      )
+  }
+}
+
 // ------------------------------------------------------------- Private Functions
 
 /// Generates the complete module source code. Combines the
@@ -136,6 +758,19 @@ fn generate_imports(
 ) -> String {
   let base_imports = ["import glimr/loom/runtime"]
 
+  // Add int/bool imports only if the template uses those loop properties
+  let #(uses_int_props, uses_bool_props) =
+    get_loop_property_usage(template.nodes, set.new())
+  let int_import = case uses_int_props {
+    True -> ["import gleam/int"]
+    False -> []
+  }
+  let bool_import = case uses_bool_props {
+    True -> ["import gleam/bool"]
+    False -> []
+  }
+  let loop_imports = list.flatten([int_import, bool_import])
+
   // Copy user imports for custom types (filter out glimr/bootstrap imports)
   let user_imports = case view_file {
     Some(vf) ->
@@ -157,9 +792,64 @@ fn generate_imports(
     })
 
   string.join(
-    list.flatten([base_imports, user_imports, component_imports]),
+    list.flatten([base_imports, loop_imports, user_imports, component_imports]),
     "\n",
   )
+}
+
+/// Scans the template to find which loop property types are used.
+/// Returns (uses_int_properties, uses_bool_properties) to determine
+/// which imports are needed.
+///
+fn get_loop_property_usage(
+  nodes: List(Node),
+  loop_vars: Set(String),
+) -> #(Bool, Bool) {
+  list.fold(nodes, #(False, False), fn(acc, node) {
+    let #(uses_int, uses_bool) = acc
+    let #(node_int, node_bool) = case node {
+      parser.EachNode(_, _, loop_var, body, _) -> {
+        // Add loop variable to set and check body
+        let new_loop_vars = case loop_var {
+          Some(lv) -> set.insert(loop_vars, lv)
+          None -> loop_vars
+        }
+        get_loop_property_usage(body, new_loop_vars)
+      }
+      parser.VariableNode(expr, _) | parser.RawVariableNode(expr, _) ->
+        check_expr_loop_props(expr, loop_vars)
+      parser.IfNode(branches) ->
+        list.fold(branches, #(False, False), fn(b_acc, branch) {
+          let #(b_int, b_bool) = get_loop_property_usage(branch.2, loop_vars)
+          #(b_acc.0 || b_int, b_acc.1 || b_bool)
+        })
+      parser.ComponentNode(_, _, children) ->
+        get_loop_property_usage(children, loop_vars)
+      parser.SlotDefNode(_, children) ->
+        get_loop_property_usage(children, loop_vars)
+      parser.SlotNode(_, fallback) ->
+        get_loop_property_usage(fallback, loop_vars)
+      parser.ElementNode(_, _, children) ->
+        get_loop_property_usage(children, loop_vars)
+      _ -> #(False, False)
+    }
+    #(uses_int || node_int, uses_bool || node_bool)
+  })
+}
+
+/// Checks if an expression uses Int or Bool loop properties.
+///
+fn check_expr_loop_props(expr: String, loop_vars: Set(String)) -> #(Bool, Bool) {
+  case get_loop_property(expr, loop_vars) {
+    Some(#(_loop_var, property)) -> {
+      case property {
+        "index" | "iteration" | "count" | "remaining" -> #(True, False)
+        "first" | "last" | "even" | "odd" -> #(False, True)
+        _ -> #(False, False)
+      }
+    }
+    None -> #(False, False)
+  }
 }
 
 /// Recursively collects all component names from the AST.
@@ -175,9 +865,9 @@ fn collect_component_names(nodes: List(Node), acc: Set(String)) -> Set(String) {
       }
       parser.IfNode(branches) ->
         list.fold(branches, acc, fn(acc, branch) {
-          collect_component_names(branch.1, acc)
+          collect_component_names(branch.2, acc)
         })
-      parser.EachNode(_, _, _, body) -> collect_component_names(body, acc)
+      parser.EachNode(_, _, _, body, _) -> collect_component_names(body, acc)
       parser.SlotDefNode(_, children) -> collect_component_names(children, acc)
       parser.ElementNode(_, _, children) ->
         collect_component_names(children, acc)
@@ -200,9 +890,9 @@ fn collect_named_slots(nodes: List(Node), acc: Set(String)) -> Set(String) {
       parser.SlotNode(None, fallback) -> collect_named_slots(fallback, acc)
       parser.IfNode(branches) ->
         list.fold(branches, acc, fn(acc, branch) {
-          collect_named_slots(branch.1, acc)
+          collect_named_slots(branch.2, acc)
         })
-      parser.EachNode(_, _, _, body) -> collect_named_slots(body, acc)
+      parser.EachNode(_, _, _, body, _) -> collect_named_slots(body, acc)
       parser.ComponentNode(_, _, children) -> collect_named_slots(children, acc)
       parser.SlotDefNode(_, children) -> collect_named_slots(children, acc)
       parser.ElementNode(_, _, children) -> collect_named_slots(children, acc)
@@ -298,8 +988,8 @@ fn has_default_slot(nodes: List(Node)) -> Bool {
       parser.SlotNode(None, _) -> True
       parser.SlotNode(Some(_), fallback) -> has_default_slot(fallback)
       parser.IfNode(branches) ->
-        list.any(branches, fn(branch) { has_default_slot(branch.1) })
-      parser.EachNode(_, _, _, body) -> has_default_slot(body)
+        list.any(branches, fn(branch) { has_default_slot(branch.2) })
+      parser.EachNode(_, _, _, body, _) -> has_default_slot(body)
       parser.ComponentNode(_, _, children) -> has_default_slot(children)
       parser.SlotDefNode(_, children) -> has_default_slot(children)
       parser.ElementNode(_, _, children) -> has_default_slot(children)
@@ -361,9 +1051,35 @@ fn generate_nodes_code(
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
 ) -> String {
+  generate_nodes_code_with_loop_vars(
+    nodes,
+    indent,
+    component_data,
+    component_slots,
+    set.new(),
+  )
+}
+
+/// Generates code for a list of nodes with loop variable tracking.
+/// Loop variables are tracked so we can generate proper type conversions
+/// for loop properties like loop.index (Int) and loop.first (Bool).
+///
+fn generate_nodes_code_with_loop_vars(
+  nodes: List(Node),
+  indent: Int,
+  component_data: ComponentDataMap,
+  component_slots: ComponentSlotMap,
+  loop_vars: Set(String),
+) -> String {
   nodes
   |> list.map(fn(node) {
-    generate_node_code(node, indent, component_data, component_slots)
+    generate_node_code_with_loop_vars(
+      node,
+      indent,
+      component_data,
+      component_slots,
+      loop_vars,
+    )
   })
   |> string.join("")
 }
@@ -372,11 +1088,12 @@ fn generate_nodes_code(
 /// types: text, variables, slots, conditionals, loops,
 /// and component invocations.
 ///
-fn generate_node_code(
+fn generate_node_code_with_loop_vars(
   node: Node,
   indent: Int,
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
+  loop_vars: Set(String),
 ) -> String {
   let pad = string.repeat("  ", indent)
 
@@ -386,14 +1103,16 @@ fn generate_node_code(
       pad <> "<> \"" <> escaped <> "\"\n"
     }
 
-    parser.VariableNode(expr) -> {
-      // Expression is passed through directly (e.g., "title", "user.name")
-      pad <> "<> runtime.escape(" <> expr <> ")\n"
+    parser.VariableNode(expr, _line) -> {
+      // Check if this is a loop variable property that needs type conversion
+      let converted_expr = convert_loop_var_expr(expr, loop_vars)
+      pad <> "<> " <> converted_expr <> "\n"
     }
 
-    parser.RawVariableNode(expr) -> {
-      // Expression is passed through directly
-      pad <> "<> " <> expr <> "\n"
+    parser.RawVariableNode(expr, _line) -> {
+      // For raw variables, we still need to convert loop properties to strings
+      let converted_expr = convert_loop_var_expr_raw(expr, loop_vars)
+      pad <> "<> " <> converted_expr <> "\n"
     }
 
     parser.SlotNode(None, []) -> {
@@ -404,11 +1123,12 @@ fn generate_node_code(
     parser.SlotNode(None, fallback) -> {
       // <slot>fallback</slot> - output fallback if slot is empty
       let fallback_code =
-        generate_nodes_code(
+        generate_nodes_code_with_loop_vars(
           fallback,
           indent + 1,
           component_data,
           component_slots,
+          loop_vars,
         )
       pad
       <> "|> runtime.append_if(slot == \"\", fn(acc) {\n"
@@ -430,11 +1150,12 @@ fn generate_node_code(
       // <slot name="x">fallback</slot>
       let slot_var = "slot_" <> to_field_name(name)
       let fallback_code =
-        generate_nodes_code(
+        generate_nodes_code_with_loop_vars(
           fallback,
           indent + 1,
           component_data,
           component_slots,
+          loop_vars,
         )
       pad
       <> "|> runtime.append_if("
@@ -462,13 +1183,14 @@ fn generate_node_code(
       // Generate case expression for if/elseif/else
       let branches_code =
         list.map(branches, fn(branch) {
-          let #(condition, body) = branch
+          let #(condition, _line, body) = branch
           let body_code =
-            generate_nodes_code(
+            generate_nodes_code_with_loop_vars(
               body,
               indent + 4,
               component_data,
               component_slots,
+              loop_vars,
             )
           case condition {
             Some(cond) -> {
@@ -514,19 +1236,39 @@ fn generate_node_code(
       pad <> "<> case Nil {\n" <> final_branches <> pad <> "  }\n"
     }
 
-    parser.EachNode(collection, items, loop_var, body) -> {
+    parser.EachNode(collection, items, loop_var, body, _line) -> {
       // Collection is passed through directly (e.g., "items")
+      // Add loop variable to the set so we can generate proper type conversions
+      let new_loop_vars = case loop_var {
+        Some(lv) -> set.insert(loop_vars, lv)
+        None -> loop_vars
+      }
       let body_code =
-        generate_nodes_code(body, indent + 2, component_data, component_slots)
-      let items_pattern = format_each_items_pattern(items)
+        generate_nodes_code_with_loop_vars(
+          body,
+          indent + 2,
+          component_data,
+          component_slots,
+          new_loop_vars,
+        )
+      // For tuple destructuring, we need to use a temp var and let binding
+      // since Gleam doesn't allow pattern matching in fn parameters
+      let #(param_name, destructure_code) = case items {
+        [single] -> #(single, "")
+        multiple -> {
+          let pattern = "#(" <> string.join(multiple, ", ") <> ")"
+          #("item__", pad <> "  let " <> pattern <> " = item__\n")
+        }
+      }
       case loop_var {
         None ->
           pad
           <> "|> runtime.append_each("
           <> collection
           <> ", fn(acc, "
-          <> items_pattern
+          <> param_name
           <> ") {\n"
+          <> destructure_code
           <> pad
           <> "  acc\n"
           <> body_code
@@ -537,10 +1279,11 @@ fn generate_node_code(
           <> "|> runtime.append_each_with_loop("
           <> collection
           <> ", fn(acc, "
-          <> items_pattern
+          <> param_name
           <> ", "
           <> loop_name
           <> ") {\n"
+          <> destructure_code
           <> pad
           <> "  acc\n"
           <> body_code
@@ -555,12 +1298,13 @@ fn generate_node_code(
       let #(props_code, extra_attrs_code) =
         generate_component_attrs(name, attributes, indent + 2, component_data)
       let named_slots_code =
-        generate_component_named_slots(
+        generate_component_named_slots_with_loop_vars(
           name,
           named_slots,
           indent + 2,
           component_data,
           component_slots,
+          loop_vars,
         )
 
       // Check if the component has a default slot
@@ -575,11 +1319,12 @@ fn generate_node_code(
       let slot_code = case component_has_slot {
         True -> {
           let default_slot_code =
-            generate_nodes_code(
+            generate_nodes_code_with_loop_vars(
               default_children,
               indent + 2,
               component_data,
               component_slots,
+              loop_vars,
             )
           pad
           <> "    slot: {\n"
@@ -623,7 +1368,13 @@ fn generate_node_code(
     parser.ElementNode(tag, attributes, children) -> {
       let attrs_code = generate_element_attrs_code(attributes)
       let children_code =
-        generate_nodes_code(children, indent, component_data, component_slots)
+        generate_nodes_code_with_loop_vars(
+          children,
+          indent,
+          component_data,
+          component_slots,
+          loop_vars,
+        )
 
       // Self-closing tags
       case is_void_element(tag) {
@@ -721,8 +1472,10 @@ fn generate_component_attrs(
         lexer.StringAttr(_, _) -> Error(Nil)
         lexer.ClassAttr(_) -> Error(Nil)
         lexer.StyleAttr(_) -> Error(Nil)
-        lexer.LmIf(_) | lexer.LmElseIf(_) | lexer.LmElse | lexer.LmFor(_, _, _) ->
-          Error(Nil)
+        lexer.LmIf(_, _)
+        | lexer.LmElseIf(_, _)
+        | lexer.LmElse
+        | lexer.LmFor(_, _, _, _) -> Error(Nil)
       }
     })
     |> string.join("")
@@ -806,8 +1559,10 @@ fn generate_component_attrs(
             <> transform_style_list(value)
             <> "))",
           )
-        lexer.LmIf(_) | lexer.LmElseIf(_) | lexer.LmElse | lexer.LmFor(_, _, _) ->
-          Error(Nil)
+        lexer.LmIf(_, _)
+        | lexer.LmElseIf(_, _)
+        | lexer.LmElse
+        | lexer.LmFor(_, _, _, _) -> Error(Nil)
       }
     })
 
@@ -881,16 +1636,15 @@ fn is_html_boolean_attribute(name: String) -> Bool {
   }
 }
 
-/// Generates named slot arguments for a component call. Each
-/// slot definition becomes an inline block expression that
-/// renders the slot content.
+/// Generates named slot arguments with loop variable tracking.
 ///
-fn generate_component_named_slots(
+fn generate_component_named_slots_with_loop_vars(
   component_name: String,
   named_slots: List(#(Option(String), List(Node))),
   indent: Int,
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
+  loop_vars: Set(String),
 ) -> String {
   let pad = string.repeat("  ", indent)
 
@@ -919,11 +1673,12 @@ fn generate_component_named_slots(
     |> list.map(fn(slot) {
       let #(name, children) = slot
       let slot_code =
-        generate_nodes_code(
+        generate_nodes_code_with_loop_vars(
           children,
           indent + 2,
           component_data,
           component_slots,
+          loop_vars,
         )
       pad
       <> "slot_"
@@ -993,10 +1748,10 @@ fn generate_element_attrs_code(attrs: List(lexer.ComponentAttr)) -> String {
                 <> "))",
               )
             // l-* attributes should already be filtered out by parser
-            lexer.LmIf(_)
-            | lexer.LmElseIf(_)
+            lexer.LmIf(_, _)
+            | lexer.LmElseIf(_, _)
             | lexer.LmElse
-            | lexer.LmFor(_, _, _) -> Error(Nil)
+            | lexer.LmFor(_, _, _, _) -> Error(Nil)
           }
         })
 
@@ -1067,8 +1822,10 @@ fn generate_base_attrs_code(attrs: List(lexer.ComponentAttr)) -> String {
             <> transform_style_list(value)
             <> "))",
           )
-        lexer.LmIf(_) | lexer.LmElseIf(_) | lexer.LmElse | lexer.LmFor(_, _, _) ->
-          Error(Nil)
+        lexer.LmIf(_, _)
+        | lexer.LmElseIf(_, _)
+        | lexer.LmElse
+        | lexer.LmFor(_, _, _, _) -> Error(Nil)
       }
     })
 
@@ -1084,8 +1841,8 @@ fn has_attributes_node(nodes: List(Node)) -> Bool {
     case node {
       parser.AttributesNode(_) -> True
       parser.IfNode(branches) ->
-        list.any(branches, fn(branch) { has_attributes_node(branch.1) })
-      parser.EachNode(_, _, _, body) -> has_attributes_node(body)
+        list.any(branches, fn(branch) { has_attributes_node(branch.2) })
+      parser.EachNode(_, _, _, body, _) -> has_attributes_node(body)
       parser.SlotDefNode(_, children) -> has_attributes_node(children)
       parser.ComponentNode(_, _, children) -> has_attributes_node(children)
       parser.ElementNode(_, _, children) -> has_attributes_node(children)
@@ -1143,18 +1900,18 @@ fn inject_attributes_helper(
       }
     }
     // Recurse into EachNode to find first element inside loops
-    False, [parser.EachNode(collection, items, loop_var, body), ..rest] -> {
+    False, [parser.EachNode(collection, items, loop_var, body, line), ..rest] -> {
       let #(new_body, did_inject) = inject_attributes_helper(body, False)
       case did_inject {
         True -> #(
-          [parser.EachNode(collection, items, loop_var, new_body), ..rest],
+          [parser.EachNode(collection, items, loop_var, new_body, line), ..rest],
           True,
         )
         False -> {
           let #(rest_nodes, rest_inject) = inject_attributes_helper(rest, False)
           #(
             [
-              parser.EachNode(collection, items, loop_var, new_body),
+              parser.EachNode(collection, items, loop_var, new_body, line),
               ..rest_nodes
             ],
             rest_inject,
@@ -1179,16 +1936,16 @@ fn inject_attributes_helper(
 /// and returns updated branches with injection status.
 ///
 fn inject_attributes_into_branches(
-  branches: List(#(Option(String), List(Node))),
+  branches: List(#(Option(String), Int, List(Node))),
   injected: Bool,
-) -> #(List(#(Option(String), List(Node))), Bool) {
+) -> #(List(#(Option(String), Int, List(Node))), Bool) {
   case branches {
     [] -> #([], injected)
-    [#(condition, body), ..rest] -> {
+    [#(condition, line, body), ..rest] -> {
       let #(new_body, did_inject) = inject_attributes_helper(body, injected)
       let #(rest_branches, rest_inject) =
         inject_attributes_into_branches(rest, did_inject)
-      #([#(condition, new_body), ..rest_branches], rest_inject)
+      #([#(condition, line, new_body), ..rest_branches], rest_inject)
     }
   }
 }
@@ -1430,17 +2187,6 @@ fn component_module_alias(name: String) -> String {
   |> string.replace("-", "_")
 }
 
-/// Formats the items pattern for an each loop. Single items
-/// are returned as-is, while multiple items are wrapped in
-/// a tuple pattern like #(key, value).
-///
-fn format_each_items_pattern(items: List(String)) -> String {
-  case items {
-    [single] -> single
-    multiple -> "#(" <> string.join(multiple, ", ") <> ")"
-  }
-}
-
 /// Transforms string literals in a :class list to use the
 /// runtime.class() helper. Converts ["foo", #("bar", cond)]
 /// to [runtime.class("foo"), #("bar", cond)].
@@ -1593,5 +2339,71 @@ fn transform_list_chars(
     False, [c, ..rest] -> {
       transform_list_chars(rest, wrapper, depth, False, current <> c, result)
     }
+  }
+}
+
+/// Converts a loop variable expression to the appropriate string representation.
+/// Loop properties like loop.index (Int) need int.to_string, while regular
+/// strings need runtime.escape.
+///
+fn convert_loop_var_expr(expr: String, loop_vars: Set(String)) -> String {
+  case get_loop_property(expr, loop_vars) {
+    Some(#(_loop_var, property)) -> {
+      case property {
+        // Int properties need int.to_string
+        "index" | "iteration" | "count" | "remaining" ->
+          "int.to_string(" <> expr <> ")"
+        // Bool properties need bool.to_string for display
+        "first" | "last" | "even" | "odd" -> "bool.to_string(" <> expr <> ")"
+        // Unknown property, treat as string
+        _ -> "runtime.escape(" <> expr <> ")"
+      }
+    }
+    None -> "runtime.escape(" <> expr <> ")"
+  }
+}
+
+/// Converts a loop variable expression for raw output (no escaping).
+/// Still needs type conversion for Int/Bool properties.
+///
+fn convert_loop_var_expr_raw(expr: String, loop_vars: Set(String)) -> String {
+  case get_loop_property(expr, loop_vars) {
+    Some(#(_loop_var, property)) -> {
+      case property {
+        // Int properties need int.to_string
+        "index" | "iteration" | "count" | "remaining" ->
+          "int.to_string(" <> expr <> ")"
+        // Bool properties need bool.to_string for display
+        "first" | "last" | "even" | "odd" -> "bool.to_string(" <> expr <> ")"
+        // Unknown property, pass through as-is
+        _ -> expr
+      }
+    }
+    None -> expr
+  }
+}
+
+/// Checks if an expression is accessing a loop variable property.
+/// Returns Some(#(loop_var_name, property_name)) if it is, None otherwise.
+///
+fn get_loop_property(
+  expr: String,
+  loop_vars: Set(String),
+) -> Option(#(String, String)) {
+  case string.split_once(expr, ".") {
+    Ok(#(root, rest)) -> {
+      case set.contains(loop_vars, root) {
+        True -> {
+          // It's a loop variable, extract just the immediate property
+          let property = case string.split_once(rest, ".") {
+            Ok(#(prop, _)) -> prop
+            Error(_) -> rest
+          }
+          Some(#(root, property))
+        }
+        False -> None
+      }
+    }
+    Error(_) -> None
   }
 }

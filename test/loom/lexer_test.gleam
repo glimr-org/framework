@@ -19,42 +19,42 @@ pub fn tokenize_variable_test() {
   let assert Ok(tokens) = lexer.tokenize("{{ name }}")
 
   tokens
-  |> should.equal([Variable("name")])
+  |> should.equal([Variable("name", 1)])
 }
 
 pub fn tokenize_variable_no_spaces_test() {
   let assert Ok(tokens) = lexer.tokenize("{{name}}")
 
   tokens
-  |> should.equal([Variable("name")])
+  |> should.equal([Variable("name", 1)])
 }
 
 pub fn tokenize_raw_variable_test() {
   let assert Ok(tokens) = lexer.tokenize("{{{ html }}}")
 
   tokens
-  |> should.equal([RawVariable("html")])
+  |> should.equal([RawVariable("html", 1)])
 }
 
 pub fn tokenize_text_with_variable_test() {
   let assert Ok(tokens) = lexer.tokenize("Hello, {{ name }}!")
 
   tokens
-  |> should.equal([Text("Hello, "), Variable("name"), Text("!")])
+  |> should.equal([Text("Hello, "), Variable("name", 1), Text("!")])
 }
 
 pub fn tokenize_multiple_variables_test() {
   let assert Ok(tokens) = lexer.tokenize("{{ first }} and {{ second }}")
 
   tokens
-  |> should.equal([Variable("first"), Text(" and "), Variable("second")])
+  |> should.equal([Variable("first", 1), Text(" and "), Variable("second", 1)])
 }
 
 pub fn tokenize_dotted_variable_test() {
   let assert Ok(tokens) = lexer.tokenize("{{ user.name }}")
 
   tokens
-  |> should.equal([Variable("user.name")])
+  |> should.equal([Variable("user.name", 1)])
 }
 
 // ------------------------------------------------------------- l-if Tests
@@ -64,7 +64,7 @@ pub fn tokenize_lm_if_test() {
 
   tokens
   |> should.equal([
-    Element("p", [LmIf("show")], False),
+    Element("p", [LmIf("show", 1)], False),
     Text("visible"),
     ElementEnd("p"),
   ])
@@ -75,7 +75,7 @@ pub fn tokenize_lm_if_with_single_quotes_test() {
 
   tokens
   |> should.equal([
-    Element("p", [LmIf("show")], False),
+    Element("p", [LmIf("show", 1)], False),
     Text("visible"),
     ElementEnd("p"),
   ])
@@ -86,7 +86,7 @@ pub fn tokenize_lm_if_with_condition_test() {
 
   tokens
   |> should.equal([
-    Element("p", [LmIf("count > 0")], False),
+    Element("p", [LmIf("count > 0", 1)], False),
     Text("has items"),
     ElementEnd("p"),
   ])
@@ -96,7 +96,7 @@ pub fn tokenize_lm_if_self_closing_test() {
   let assert Ok(tokens) = lexer.tokenize("<br l-if=\"show\" />")
 
   tokens
-  |> should.equal([Element("br", [LmIf("show")], True)])
+  |> should.equal([Element("br", [LmIf("show", 1)], True)])
 }
 
 // ------------------------------------------------------------- l-else-if and l-else Tests
@@ -107,7 +107,7 @@ pub fn tokenize_lm_else_test() {
 
   tokens
   |> should.equal([
-    Element("p", [LmIf("show")], False),
+    Element("p", [LmIf("show", 1)], False),
     Text("yes"),
     ElementEnd("p"),
     Element("p", [LmElse], False),
@@ -122,10 +122,10 @@ pub fn tokenize_lm_else_if_test() {
 
   tokens
   |> should.equal([
-    Element("p", [LmIf("a")], False),
+    Element("p", [LmIf("a", 1)], False),
     Text("A"),
     ElementEnd("p"),
-    Element("p", [LmElseIf("b")], False),
+    Element("p", [LmElseIf("b", 1)], False),
     Text("B"),
     ElementEnd("p"),
     Element("p", [LmElse], False),
@@ -142,13 +142,13 @@ pub fn tokenize_multiple_lm_else_if_test() {
 
   tokens
   |> should.equal([
-    Element("p", [LmIf("a")], False),
+    Element("p", [LmIf("a", 1)], False),
     Text("A"),
     ElementEnd("p"),
-    Element("p", [LmElseIf("b")], False),
+    Element("p", [LmElseIf("b", 1)], False),
     Text("B"),
     ElementEnd("p"),
-    Element("p", [LmElseIf("c")], False),
+    Element("p", [LmElseIf("c", 1)], False),
     Text("C"),
     ElementEnd("p"),
     Element("p", [LmElse], False),
@@ -165,8 +165,8 @@ pub fn tokenize_lm_for_test() {
 
   tokens
   |> should.equal([
-    Element("li", [LmFor("items", ["item"], None)], False),
-    Variable("item"),
+    Element("li", [LmFor("items", ["item"], None, 1)], False),
+    Variable("item", 1),
     ElementEnd("li"),
   ])
 }
@@ -177,8 +177,8 @@ pub fn tokenize_lm_for_with_single_quotes_test() {
 
   tokens
   |> should.equal([
-    Element("li", [LmFor("items", ["item"], None)], False),
-    Variable("item"),
+    Element("li", [LmFor("items", ["item"], None, 1)], False),
+    Variable("item", 1),
     ElementEnd("li"),
   ])
 }
@@ -191,10 +191,10 @@ pub fn tokenize_lm_for_tuple_destructuring_test() {
 
   tokens
   |> should.equal([
-    Element("li", [LmFor("items", ["key", "value"], None)], False),
-    Variable("key"),
+    Element("li", [LmFor("items", ["key", "value"], None, 1)], False),
+    Variable("key", 1),
     Text(": "),
-    Variable("value"),
+    Variable("value", 1),
     ElementEnd("li"),
   ])
 }
@@ -207,10 +207,10 @@ pub fn tokenize_lm_for_with_loop_var_test() {
 
   tokens
   |> should.equal([
-    Element("li", [LmFor("items", ["item"], Some("loop"))], False),
-    Variable("loop.index"),
+    Element("li", [LmFor("items", ["item"], Some("loop"), 1)], False),
+    Variable("loop.index", 1),
     Text(": "),
-    Variable("item"),
+    Variable("item", 1),
     ElementEnd("li"),
   ])
 }
@@ -223,10 +223,10 @@ pub fn tokenize_lm_for_tuple_with_loop_var_test() {
 
   tokens
   |> should.equal([
-    Element("li", [LmFor("pairs", ["key", "value"], Some("idx"))], False),
-    Variable("idx.iteration"),
+    Element("li", [LmFor("pairs", ["key", "value"], Some("idx"), 1)], False),
+    Variable("idx.iteration", 1),
     Text(": "),
-    Variable("key"),
+    Variable("key", 1),
     ElementEnd("li"),
   ])
 }
@@ -239,7 +239,7 @@ pub fn tokenize_lm_for_self_closing_test() {
   |> should.equal([
     Element(
       "img",
-      [LmFor("images", ["img"], None), ExprAttr("src", "img.url")],
+      [LmFor("images", ["img"], None, 1), ExprAttr("src", "img.url")],
       True,
     ),
   ])
@@ -254,7 +254,7 @@ pub fn tokenize_element_expr_attr_single_quotes_test() {
   |> should.equal([
     Element(
       "input",
-      [LmIf("show"), ExprAttr("disabled", "status == \"locked\"")],
+      [LmIf("show", 1), ExprAttr("disabled", "status == \"locked\"")],
       True,
     ),
   ])
@@ -268,7 +268,7 @@ pub fn tokenize_lm_if_with_class_test() {
 
   tokens
   |> should.equal([
-    Element("p", [LmIf("show"), StringAttr("class", "message")], False),
+    Element("p", [LmIf("show", 1), StringAttr("class", "message")], False),
     Text("Hello"),
     ElementEnd("p"),
   ])
@@ -285,13 +285,13 @@ pub fn tokenize_lm_for_with_multiple_attrs_test() {
     Element(
       "li",
       [
-        LmFor("items", ["item"], None),
+        LmFor("items", ["item"], None, 1),
         StringAttr("class", "item"),
         ExprAttr("id", "item.id"),
       ],
       False,
     ),
-    Variable("item.name"),
+    Variable("item.name", 1),
     ElementEnd("li"),
   ])
 }
@@ -306,8 +306,12 @@ pub fn tokenize_component_with_lm_if_test() {
 
   tokens
   |> should.equal([
-    Component("alert", [LmIf("show_error"), StringAttr("type", "error")], False),
-    Variable("message"),
+    Component(
+      "alert",
+      [LmIf("show_error", 1), StringAttr("type", "error")],
+      False,
+    ),
+    Variable("message", 1),
     ComponentEnd("alert"),
   ])
 }
@@ -322,10 +326,10 @@ pub fn tokenize_component_with_lm_for_test() {
   |> should.equal([
     Component(
       "card",
-      [LmFor("cards", ["card"], None), ExprAttr("title", "card.title")],
+      [LmFor("cards", ["card"], None, 1), ExprAttr("title", "card.title")],
       False,
     ),
-    Variable("card.body"),
+    Variable("card.body", 1),
     ComponentEnd("card"),
   ])
 }
@@ -336,7 +340,7 @@ pub fn tokenize_component_self_closing_with_lm_if_test() {
 
   tokens
   |> should.equal([
-    Component("icon", [LmIf("show"), StringAttr("name", "check")], True),
+    Component("icon", [LmIf("show", 1), StringAttr("name", "check")], True),
   ])
 }
 
@@ -350,7 +354,7 @@ pub fn tokenize_template_element_test() {
 
   tokens
   |> should.equal([
-    Element("template", [LmIf("show")], False),
+    Element("template", [LmIf("show", 1)], False),
     Text("<p>First</p><p>Second</p>"),
     ElementEnd("template"),
   ])

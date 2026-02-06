@@ -21,7 +21,7 @@ fn t(nodes: List(Node)) -> Template {
 
 // Helper to create a simple if node (single branch, no else)
 fn if_node(condition: String, body: List(Node)) -> Node {
-  IfNode([#(Some(condition), body)])
+  IfNode([#(Some(condition), 1, body)])
 }
 
 // Helper to create an if/else node
@@ -30,7 +30,7 @@ fn if_else_node(
   if_body: List(Node),
   else_body: List(Node),
 ) -> Node {
-  IfNode([#(Some(condition), if_body), #(None, else_body)])
+  IfNode([#(Some(condition), 1, if_body), #(None, 0, else_body)])
 }
 
 // Helper to create an if/elseif/else node
@@ -40,8 +40,8 @@ fn if_elseif_else_node(
 ) -> Node {
   let if_branches =
     branches
-    |> list.map(fn(b) { #(Some(b.0), b.1) })
-  IfNode(list.append(if_branches, [#(None, else_body)]))
+    |> list.map(fn(b) { #(Some(b.0), 1, b.1) })
+  IfNode(list.append(if_branches, [#(None, 0, else_body)]))
 }
 
 // ------------------------------------------------------------- Basic Parsing Tests
@@ -62,30 +62,30 @@ pub fn parse_text_only_test() {
 }
 
 pub fn parse_variable_test() {
-  let tokens = [Variable("name")]
+  let tokens = [Variable("name", 1)]
   let assert Ok(template) = parser.parse(tokens)
 
   template
-  |> should.equal(t([VariableNode("name")]))
+  |> should.equal(t([VariableNode("name", 1)]))
 }
 
 pub fn parse_raw_variable_test() {
-  let tokens = [RawVariable("html")]
+  let tokens = [RawVariable("html", 1)]
   let assert Ok(template) = parser.parse(tokens)
 
   template
-  |> should.equal(t([RawVariableNode("html")]))
+  |> should.equal(t([RawVariableNode("html", 1)]))
 }
 
 pub fn parse_multiple_nodes_test() {
-  let tokens = [Text("Hello, "), Variable("name"), Text("!")]
+  let tokens = [Text("Hello, "), Variable("name", 1), Text("!")]
   let assert Ok(template) = parser.parse(tokens)
 
   template
   |> should.equal(
     t([
       TextNode("Hello, "),
-      VariableNode("name"),
+      VariableNode("name", 1),
       TextNode("!"),
     ]),
   )
@@ -125,7 +125,7 @@ pub fn parse_named_slot_test() {
 
 pub fn parse_lm_if_test() {
   let tokens = [
-    Element("p", [LmIf("show")], False),
+    Element("p", [LmIf("show", 1)], False),
     Text("visible"),
     ElementEnd("p"),
   ]
@@ -138,7 +138,7 @@ pub fn parse_lm_if_test() {
 }
 
 pub fn parse_lm_if_self_closing_test() {
-  let tokens = [Element("br", [LmIf("show")], True)]
+  let tokens = [Element("br", [LmIf("show", 1)], True)]
   let assert Ok(template) = parser.parse(tokens)
 
   template
@@ -147,7 +147,7 @@ pub fn parse_lm_if_self_closing_test() {
 
 pub fn parse_lm_if_with_attrs_test() {
   let tokens = [
-    Element("p", [LmIf("show"), StringAttr("class", "message")], False),
+    Element("p", [LmIf("show", 1), StringAttr("class", "message")], False),
     Text("Hello"),
     ElementEnd("p"),
   ]
@@ -167,7 +167,7 @@ pub fn parse_lm_if_with_attrs_test() {
 
 pub fn parse_lm_if_else_test() {
   let tokens = [
-    Element("p", [LmIf("show")], False),
+    Element("p", [LmIf("show", 1)], False),
     Text("yes"),
     ElementEnd("p"),
     Element("p", [LmElse], False),
@@ -188,10 +188,10 @@ pub fn parse_lm_if_else_test() {
 
 pub fn parse_lm_if_elseif_else_test() {
   let tokens = [
-    Element("p", [LmIf("a")], False),
+    Element("p", [LmIf("a", 1)], False),
     Text("A"),
     ElementEnd("p"),
-    Element("p", [LmElseIf("b")], False),
+    Element("p", [LmElseIf("b", 1)], False),
     Text("B"),
     ElementEnd("p"),
     Element("p", [LmElse], False),
@@ -216,16 +216,16 @@ pub fn parse_lm_if_elseif_else_test() {
 
 pub fn parse_multiple_lm_elseif_test() {
   let tokens = [
-    Element("p", [LmIf("a")], False),
+    Element("p", [LmIf("a", 1)], False),
     Text("A"),
     ElementEnd("p"),
-    Element("p", [LmElseIf("b")], False),
+    Element("p", [LmElseIf("b", 1)], False),
     Text("B"),
     ElementEnd("p"),
-    Element("p", [LmElseIf("c")], False),
+    Element("p", [LmElseIf("c", 1)], False),
     Text("C"),
     ElementEnd("p"),
-    Element("p", [LmElseIf("d")], False),
+    Element("p", [LmElseIf("d", 1)], False),
     Text("D"),
     ElementEnd("p"),
     Element("p", [LmElse], False),
@@ -253,7 +253,7 @@ pub fn parse_multiple_lm_elseif_test() {
 pub fn parse_lm_if_without_else_test() {
   // l-if followed by non-conditional element should end the chain
   let tokens = [
-    Element("p", [LmIf("show")], False),
+    Element("p", [LmIf("show", 1)], False),
     Text("visible"),
     ElementEnd("p"),
     Text("always shown"),
@@ -273,8 +273,8 @@ pub fn parse_lm_if_without_else_test() {
 
 pub fn parse_lm_for_test() {
   let tokens = [
-    Element("li", [LmFor("items", ["item"], None)], False),
-    Variable("item"),
+    Element("li", [LmFor("items", ["item"], None, 1)], False),
+    Variable("item", 1),
     ElementEnd("li"),
   ]
   let assert Ok(template) = parser.parse(tokens)
@@ -282,17 +282,23 @@ pub fn parse_lm_for_test() {
   template
   |> should.equal(
     t([
-      EachNode("items", ["item"], None, [
-        ElementNode("li", [], [VariableNode("item")]),
-      ]),
+      EachNode(
+        "items",
+        ["item"],
+        None,
+        [
+          ElementNode("li", [], [VariableNode("item", 1)]),
+        ],
+        1,
+      ),
     ]),
   )
 }
 
 pub fn parse_lm_for_with_loop_var_test() {
   let tokens = [
-    Element("li", [LmFor("items", ["item"], Some("loop"))], False),
-    Variable("loop.index"),
+    Element("li", [LmFor("items", ["item"], Some("loop"), 1)], False),
+    Variable("loop.index", 1),
     ElementEnd("li"),
   ]
   let assert Ok(template) = parser.parse(tokens)
@@ -300,19 +306,25 @@ pub fn parse_lm_for_with_loop_var_test() {
   template
   |> should.equal(
     t([
-      EachNode("items", ["item"], Some("loop"), [
-        ElementNode("li", [], [VariableNode("loop.index")]),
-      ]),
+      EachNode(
+        "items",
+        ["item"],
+        Some("loop"),
+        [
+          ElementNode("li", [], [VariableNode("loop.index", 1)]),
+        ],
+        1,
+      ),
     ]),
   )
 }
 
 pub fn parse_lm_for_tuple_test() {
   let tokens = [
-    Element("li", [LmFor("pairs", ["key", "value"], None)], False),
-    Variable("key"),
+    Element("li", [LmFor("pairs", ["key", "value"], None, 1)], False),
+    Variable("key", 1),
     Text(": "),
-    Variable("value"),
+    Variable("value", 1),
     ElementEnd("li"),
   ]
   let assert Ok(template) = parser.parse(tokens)
@@ -320,13 +332,19 @@ pub fn parse_lm_for_tuple_test() {
   template
   |> should.equal(
     t([
-      EachNode("pairs", ["key", "value"], None, [
-        ElementNode("li", [], [
-          VariableNode("key"),
-          TextNode(": "),
-          VariableNode("value"),
-        ]),
-      ]),
+      EachNode(
+        "pairs",
+        ["key", "value"],
+        None,
+        [
+          ElementNode("li", [], [
+            VariableNode("key", 1),
+            TextNode(": "),
+            VariableNode("value", 1),
+          ]),
+        ],
+        1,
+      ),
     ]),
   )
 }
@@ -335,7 +353,7 @@ pub fn parse_lm_for_self_closing_test() {
   let tokens = [
     Element(
       "img",
-      [LmFor("images", ["img"], None), ExprAttr("src", "img.url")],
+      [LmFor("images", ["img"], None, 1), ExprAttr("src", "img.url")],
       True,
     ),
   ]
@@ -344,9 +362,15 @@ pub fn parse_lm_for_self_closing_test() {
   template
   |> should.equal(
     t([
-      EachNode("images", ["img"], None, [
-        ElementNode("img", [ExprAttr("src", "img.url")], []),
-      ]),
+      EachNode(
+        "images",
+        ["img"],
+        None,
+        [
+          ElementNode("img", [ExprAttr("src", "img.url")], []),
+        ],
+        1,
+      ),
     ]),
   )
 }
@@ -356,9 +380,9 @@ pub fn parse_lm_for_self_closing_test() {
 pub fn parse_lm_for_with_lm_if_inside_test() {
   let tokens = [
     Element("ul", [], False),
-    Element("li", [LmFor("items", ["item"], None)], False),
-    Element("span", [LmIf("item.active")], False),
-    Variable("item.name"),
+    Element("li", [LmFor("items", ["item"], None, 1)], False),
+    Element("span", [LmIf("item.active", 1)], False),
+    Variable("item.name", 1),
     ElementEnd("span"),
     ElementEnd("li"),
     ElementEnd("ul"),
@@ -369,7 +393,7 @@ pub fn parse_lm_for_with_lm_if_inside_test() {
   case template.nodes {
     [ElementNode("ul", [], children)] -> {
       case children {
-        [EachNode("items", ["item"], None, loop_children)] -> {
+        [EachNode("items", ["item"], None, loop_children, _line)] -> {
           case loop_children {
             [ElementNode("li", [], li_children)] -> {
               case li_children {
@@ -391,8 +415,12 @@ pub fn parse_lm_for_with_lm_if_inside_test() {
 
 pub fn parse_component_with_lm_if_test() {
   let tokens = [
-    Component("alert", [LmIf("show_error"), StringAttr("type", "error")], False),
-    Variable("message"),
+    Component(
+      "alert",
+      [LmIf("show_error", 1), StringAttr("type", "error")],
+      False,
+    ),
+    Variable("message", 1),
     ComponentEnd("alert"),
   ]
   let assert Ok(template) = parser.parse(tokens)
@@ -402,7 +430,7 @@ pub fn parse_component_with_lm_if_test() {
     t([
       if_node("show_error", [
         ComponentNode("alert", [StringAttr("type", "error")], [
-          VariableNode("message"),
+          VariableNode("message", 1),
         ]),
       ]),
     ]),
@@ -413,10 +441,10 @@ pub fn parse_component_with_lm_for_test() {
   let tokens = [
     Component(
       "card",
-      [LmFor("cards", ["card"], None), ExprAttr("title", "card.title")],
+      [LmFor("cards", ["card"], None, 1), ExprAttr("title", "card.title")],
       False,
     ),
-    Variable("card.body"),
+    Variable("card.body", 1),
     ComponentEnd("card"),
   ]
   let assert Ok(template) = parser.parse(tokens)
@@ -424,18 +452,24 @@ pub fn parse_component_with_lm_for_test() {
   template
   |> should.equal(
     t([
-      EachNode("cards", ["card"], None, [
-        ComponentNode("card", [ExprAttr("title", "card.title")], [
-          VariableNode("card.body"),
-        ]),
-      ]),
+      EachNode(
+        "cards",
+        ["card"],
+        None,
+        [
+          ComponentNode("card", [ExprAttr("title", "card.title")], [
+            VariableNode("card.body", 1),
+          ]),
+        ],
+        1,
+      ),
     ]),
   )
 }
 
 pub fn parse_component_self_closing_with_lm_if_test() {
   let tokens = [
-    Component("icon", [LmIf("show"), StringAttr("name", "check")], True),
+    Component("icon", [LmIf("show", 1), StringAttr("name", "check")], True),
   ]
   let assert Ok(template) = parser.parse(tokens)
 
@@ -462,13 +496,13 @@ pub fn parse_slot_with_fallback_test() {
 
 pub fn parse_slot_with_variable_fallback_test() {
   // At top level, slot with variable fallback creates SlotNode with fallback
-  let tokens = [SlotDef(Some("footer")), Variable("copyright"), SlotDefEnd]
+  let tokens = [SlotDef(Some("footer")), Variable("copyright", 1), SlotDefEnd]
   let assert Ok(template) = parser.parse(tokens)
 
   template
   |> should.equal(
     t([
-      SlotNode(Some("footer"), [VariableNode("copyright")]),
+      SlotNode(Some("footer"), [VariableNode("copyright", 1)]),
     ]),
   )
 }
@@ -617,7 +651,7 @@ pub fn error_unexpected_lm_else_test() {
 
 pub fn error_unexpected_lm_elseif_test() {
   let tokens = [
-    Element("p", [LmElseIf("condition")], False),
+    Element("p", [LmElseIf("condition", 1)], False),
     Text("no if before this"),
     ElementEnd("p"),
   ]
@@ -629,7 +663,7 @@ pub fn error_unexpected_lm_elseif_test() {
 
 pub fn error_lm_else_after_lm_else_test() {
   let tokens = [
-    Element("p", [LmIf("a")], False),
+    Element("p", [LmIf("a", 1)], False),
     Text("A"),
     ElementEnd("p"),
     Element("p", [LmElse], False),
@@ -647,13 +681,13 @@ pub fn error_lm_else_after_lm_else_test() {
 
 pub fn error_lm_elseif_after_lm_else_test() {
   let tokens = [
-    Element("p", [LmIf("a")], False),
+    Element("p", [LmIf("a", 1)], False),
     Text("A"),
     ElementEnd("p"),
     Element("p", [LmElse], False),
     Text("B"),
     ElementEnd("p"),
-    Element("p", [LmElseIf("c")], False),
+    Element("p", [LmElseIf("c", 1)], False),
     Text("C"),
     ElementEnd("p"),
   ]
@@ -689,7 +723,7 @@ pub fn error_unexpected_element_end_test() {
 
 pub fn error_unclosed_element_test() {
   let tokens = [
-    Element("div", [LmIf("show")], False),
+    Element("div", [LmIf("show", 1)], False),
     Text("content"),
   ]
   let result = parser.parse(tokens)

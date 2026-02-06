@@ -25,8 +25,8 @@ pub type Template {
 ///
 pub type Node {
   TextNode(String)
-  VariableNode(name: String)
-  RawVariableNode(name: String)
+  VariableNode(name: String, line: Int)
+  RawVariableNode(name: String, line: Int)
   /// SlotNode outputs slot content with optional fallback.
   /// Used in component templates: <slot />, <slot>fallback</slot>
   SlotNode(name: Option(String), fallback: List(Node))
@@ -35,12 +35,13 @@ pub type Node {
   SlotDefNode(name: Option(String), children: List(Node))
   /// AttributesNode holds optional base attributes that will be merged with props.attributes
   AttributesNode(base_attributes: List(ComponentAttr))
-  IfNode(branches: List(#(Option(String), List(Node))))
+  IfNode(branches: List(#(Option(String), Int, List(Node))))
   EachNode(
     collection: String,
     items: List(String),
     loop_var: Option(String),
     body: List(Node),
+    line: Int,
   )
   ComponentNode(
     name: String,
@@ -93,8 +94,9 @@ pub fn parse(tokens: List(Token)) -> Result(Template, ParserError) {
 type PendingIf {
   PendingIf(
     first_condition: String,
+    first_line: Int,
     first_body: List(Node),
-    branches: List(#(Option(String), List(Node))),
+    branches: List(#(Option(String), Int, List(Node))),
     has_else: Bool,
   )
 }
@@ -121,14 +123,14 @@ fn parse_nodes(
       parse_nodes(rest, [TextNode(content), ..acc], None)
     }
 
-    [lexer.Variable(name), ..rest] -> {
+    [lexer.Variable(name, line), ..rest] -> {
       let acc = flush_pending_if(acc, pending_if)
-      parse_nodes(rest, [VariableNode(name), ..acc], None)
+      parse_nodes(rest, [VariableNode(name, line), ..acc], None)
     }
 
-    [lexer.RawVariable(name), ..rest] -> {
+    [lexer.RawVariable(name, line), ..rest] -> {
       let acc = flush_pending_if(acc, pending_if)
-      parse_nodes(rest, [RawVariableNode(name), ..acc], None)
+      parse_nodes(rest, [RawVariableNode(name, line), ..acc], None)
     }
 
     [lexer.Slot(name), ..rest] -> {
@@ -217,7 +219,7 @@ fn flush_pending_if(
   case pending_if {
     None -> acc
     Some(p) -> {
-      let first_branch = #(Some(p.first_condition), p.first_body)
+      let first_branch = #(Some(p.first_condition), p.first_line, p.first_body)
       // Branches are accumulated in reverse order, so reverse them
       // Then prepend first_branch to get correct order
       let all_branches = [first_branch, ..list.reverse(p.branches)]
@@ -257,8 +259,8 @@ fn parse_component_with_attrs(
 
   // Wrap with l-for if present
   let wrapped_node = case lm_for {
-    Some(#(collection, items, loop_var)) ->
-      EachNode(collection, items, loop_var, [base_node])
+    Some(#(collection, items, loop_var, line)) ->
+      EachNode(collection, items, loop_var, [base_node], line)
     None -> base_node
   }
 
@@ -320,8 +322,8 @@ fn parse_element_with_attrs(
 
   // Wrap with l-for if present
   let wrapped_nodes = case lm_for {
-    Some(#(collection, items, loop_var)) -> [
-      EachNode(collection, items, loop_var, base_nodes),
+    Some(#(collection, items, loop_var, line)) -> [
+      EachNode(collection, items, loop_var, base_nodes, line),
     ]
     None -> base_nodes
   }
@@ -350,21 +352,22 @@ fn parse_element_with_attrs(
 ///
 fn handle_conditional_chain(
   node: Node,
-  lm_if: Option(String),
-  lm_else_if: Option(String),
+  lm_if: Option(#(String, Int)),
+  lm_else_if: Option(#(String, Int)),
   has_lm_else: Bool,
   pending_if: Option(PendingIf),
   remaining: List(Token),
 ) -> Result(#(Option(Node), List(Token), Option(PendingIf)), ParserError) {
   case lm_if, lm_else_if, has_lm_else, pending_if {
     // l-if: start new chain
-    Some(condition), _, _, _ -> {
+    Some(#(condition, line)), _, _, _ -> {
       // If there's a pending chain, it will be flushed by caller
       Ok(#(
         None,
         remaining,
         Some(PendingIf(
           first_condition: condition,
+          first_line: line,
           first_body: [node],
           branches: [],
           has_else: False,
@@ -373,15 +376,16 @@ fn handle_conditional_chain(
     }
 
     // l-else-if: add to existing chain
-    _, Some(condition), _, Some(p) -> {
+    _, Some(#(condition, line)), _, Some(p) -> {
       case p.has_else {
         True -> Error(LmElseIfAfterLmElse)
         False -> {
           // Keep first as-is, append new branch
-          let new_branch = #(Some(condition), [node])
+          let new_branch = #(Some(condition), line, [node])
           let new_pending =
             PendingIf(
               first_condition: p.first_condition,
+              first_line: p.first_line,
               first_body: p.first_body,
               branches: [new_branch, ..p.branches],
               has_else: False,
@@ -394,16 +398,17 @@ fn handle_conditional_chain(
     // l-else-if without pending chain
     _, Some(_), _, None -> Error(UnexpectedLmElseIf)
 
-    // l-else: add else branch
+    // l-else: add else branch (line 0 since there's no condition to validate)
     _, _, True, Some(p) -> {
       case p.has_else {
         True -> Error(LmElseAfterLmElse)
         False -> {
           // Add else branch - first_condition/first_body stay as the "head"
-          let else_branch = #(None, [node])
+          let else_branch = #(None, 0, [node])
           let new_pending =
             PendingIf(
               first_condition: p.first_condition,
+              first_line: p.first_line,
               first_body: p.first_body,
               branches: [else_branch, ..p.branches],
               has_else: True,
@@ -425,10 +430,10 @@ fn handle_conditional_chain(
 /// the condition string if present, None otherwise. Used to
 /// detect the start of a conditional chain.
 ///
-fn find_lm_if(attrs: List(ComponentAttr)) -> Option(String) {
+fn find_lm_if(attrs: List(ComponentAttr)) -> Option(#(String, Int)) {
   list.find_map(attrs, fn(attr) {
     case attr {
-      lexer.LmIf(condition) -> Ok(condition)
+      lexer.LmIf(condition, line) -> Ok(#(condition, line))
       _ -> Error(Nil)
     }
   })
@@ -439,10 +444,10 @@ fn find_lm_if(attrs: List(ComponentAttr)) -> Option(String) {
 /// Returns the condition string if present, None otherwise.
 /// Used to continue a conditional chain.
 ///
-fn find_lm_else_if(attrs: List(ComponentAttr)) -> Option(String) {
+fn find_lm_else_if(attrs: List(ComponentAttr)) -> Option(#(String, Int)) {
   list.find_map(attrs, fn(attr) {
     case attr {
-      lexer.LmElseIf(condition) -> Ok(condition)
+      lexer.LmElseIf(condition, line) -> Ok(#(condition, line))
       _ -> Error(Nil)
     }
   })
@@ -468,11 +473,11 @@ fn has_lm_else(attrs: List(ComponentAttr)) -> Bool {
 ///
 fn find_lm_for(
   attrs: List(ComponentAttr),
-) -> Option(#(String, List(String), Option(String))) {
+) -> Option(#(String, List(String), Option(String), Int)) {
   list.find_map(attrs, fn(attr) {
     case attr {
-      lexer.LmFor(collection, items, loop_var) ->
-        Ok(#(collection, items, loop_var))
+      lexer.LmFor(collection, items, loop_var, line) ->
+        Ok(#(collection, items, loop_var, line))
       _ -> Error(Nil)
     }
   })
@@ -486,8 +491,10 @@ fn find_lm_for(
 fn filter_lm_attrs(attrs: List(ComponentAttr)) -> List(ComponentAttr) {
   list.filter(attrs, fn(attr) {
     case attr {
-      lexer.LmIf(_) | lexer.LmElseIf(_) | lexer.LmElse | lexer.LmFor(_, _, _) ->
-        False
+      lexer.LmIf(_, _)
+      | lexer.LmElseIf(_, _)
+      | lexer.LmElse
+      | lexer.LmFor(_, _, _, _) -> False
       _ -> True
     }
   })
@@ -523,22 +530,22 @@ fn parse_component_body(
       )
     }
 
-    [lexer.Variable(name), ..rest] -> {
+    [lexer.Variable(name, line), ..rest] -> {
       let acc = flush_pending_if(acc, pending_if)
       parse_component_body(
         rest,
         component_name,
-        [VariableNode(name), ..acc],
+        [VariableNode(name, line), ..acc],
         None,
       )
     }
 
-    [lexer.RawVariable(name), ..rest] -> {
+    [lexer.RawVariable(name, line), ..rest] -> {
       let acc = flush_pending_if(acc, pending_if)
       parse_component_body(
         rest,
         component_name,
-        [RawVariableNode(name), ..acc],
+        [RawVariableNode(name, line), ..acc],
         None,
       )
     }
@@ -652,17 +659,22 @@ fn parse_element_body(
       parse_element_body(rest, element_tag, [TextNode(content), ..acc], None)
     }
 
-    [lexer.Variable(name), ..rest] -> {
-      let acc = flush_pending_if(acc, pending_if)
-      parse_element_body(rest, element_tag, [VariableNode(name), ..acc], None)
-    }
-
-    [lexer.RawVariable(name), ..rest] -> {
+    [lexer.Variable(name, line), ..rest] -> {
       let acc = flush_pending_if(acc, pending_if)
       parse_element_body(
         rest,
         element_tag,
-        [RawVariableNode(name), ..acc],
+        [VariableNode(name, line), ..acc],
+        None,
+      )
+    }
+
+    [lexer.RawVariable(name, line), ..rest] -> {
+      let acc = flush_pending_if(acc, pending_if)
+      parse_element_body(
+        rest,
+        element_tag,
+        [RawVariableNode(name, line), ..acc],
         None,
       )
     }
@@ -745,11 +757,17 @@ fn parse_slot_fallback_body(
     [lexer.Text(content), ..rest] ->
       parse_slot_fallback_body(rest, slot_name, [TextNode(content), ..acc])
 
-    [lexer.Variable(name), ..rest] ->
-      parse_slot_fallback_body(rest, slot_name, [VariableNode(name), ..acc])
+    [lexer.Variable(name, line), ..rest] ->
+      parse_slot_fallback_body(rest, slot_name, [
+        VariableNode(name, line),
+        ..acc
+      ])
 
-    [lexer.RawVariable(name), ..rest] ->
-      parse_slot_fallback_body(rest, slot_name, [RawVariableNode(name), ..acc])
+    [lexer.RawVariable(name, line), ..rest] ->
+      parse_slot_fallback_body(rest, slot_name, [
+        RawVariableNode(name, line),
+        ..acc
+      ])
 
     [lexer.Attributes, ..rest] ->
       parse_slot_fallback_body(rest, slot_name, [AttributesNode([]), ..acc])

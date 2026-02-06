@@ -18,8 +18,8 @@ import glimr/utils/string as string_utils
 ///
 pub type Token {
   Text(String)
-  Variable(name: String)
-  RawVariable(name: String)
+  Variable(name: String, line: Int)
+  RawVariable(name: String, line: Int)
   Slot(name: Option(String))
   SlotDef(name: Option(String))
   SlotDefEnd
@@ -41,10 +41,15 @@ pub type ComponentAttr {
   BoolAttr(name: String)
   ClassAttr(value: String)
   StyleAttr(value: String)
-  LmIf(condition: String)
-  LmElseIf(condition: String)
+  LmIf(condition: String, line: Int)
+  LmElseIf(condition: String, line: Int)
   LmElse
-  LmFor(collection: String, items: List(String), loop_var: Option(String))
+  LmFor(
+    collection: String,
+    items: List(String),
+    loop_var: Option(String),
+    line: Int,
+  )
 }
 
 /// Errors that can occur during lexical analysis. Includes
@@ -68,18 +73,20 @@ pub type LexerError {
 /// and returning errors for malformed constructs.
 ///
 pub fn tokenize(input: String) -> Result(List(Token), LexerError) {
-  do_tokenize(input, 0, [])
+  do_tokenize(input, 0, 1, [])
 }
 
 // ------------------------------------------------------------- Private Functions
 
 /// Main tokenization loop. Pattern matches on input prefixes
 /// to identify token types and delegates to specialized
-/// parsers for complex constructs.
+/// parsers for complex constructs. Tracks line numbers for
+/// error reporting.
 ///
 fn do_tokenize(
   input: String,
   position: Int,
+  line: Int,
   tokens: List(Token),
 ) -> Result(List(Token), LexerError) {
   case input {
@@ -92,7 +99,11 @@ fn do_tokenize(
           case is_valid_variable_name(name) {
             True -> {
               let new_pos = position + 6 + string.length(name)
-              do_tokenize(remaining, new_pos, [RawVariable(name), ..tokens])
+              let new_line = line + count_newlines("{{{" <> name <> "}}}")
+              do_tokenize(remaining, new_pos, new_line, [
+                RawVariable(name, line),
+                ..tokens
+              ])
             }
             False -> Error(InvalidVariableName(name, position))
           }
@@ -108,7 +119,11 @@ fn do_tokenize(
           case is_valid_variable_name(name) {
             True -> {
               let new_pos = position + 4 + string.length(name)
-              do_tokenize(remaining, new_pos, [Variable(name), ..tokens])
+              let new_line = line + count_newlines("{{" <> name <> "}}")
+              do_tokenize(remaining, new_pos, new_line, [
+                Variable(name, line),
+                ..tokens
+              ])
             }
             False -> Error(InvalidVariableName(name, position))
           }
@@ -118,22 +133,39 @@ fn do_tokenize(
     }
 
     "@attributes" <> rest ->
-      parse_simple_directive(rest, "@attributes", Attributes, position, tokens)
+      parse_simple_directive(
+        rest,
+        "@attributes",
+        Attributes,
+        position,
+        line,
+        tokens,
+      )
 
-    "<slot" <> rest -> parse_slot_element(rest, position, tokens)
+    "<slot" <> rest -> parse_slot_element(rest, position, line, tokens)
 
-    "</slot>" <> rest -> do_tokenize(rest, position + 7, [SlotDefEnd, ..tokens])
+    "</slot>" <> rest ->
+      do_tokenize(rest, position + 7, line, [SlotDefEnd, ..tokens])
 
-    "<x-" <> rest -> parse_component(rest, position, tokens)
+    "<x-" <> rest -> parse_component(rest, position, line, tokens)
 
-    "</x-" <> rest -> parse_component_end(rest, position, tokens)
+    "</x-" <> rest -> parse_component_end(rest, position, line, tokens)
 
-    "</" <> rest -> parse_element_end(rest, position, tokens)
+    "</" <> rest -> parse_element_end(rest, position, line, tokens)
 
-    "<" <> rest -> try_parse_element(rest, position, tokens, input)
+    "<" <> rest -> try_parse_element(rest, position, line, tokens, input)
 
-    _ -> consume_text(input, position, tokens)
+    _ -> consume_text(input, position, line, tokens)
   }
+}
+
+/// Counts newline characters in a string.
+///
+fn count_newlines(s: String) -> Int {
+  s
+  |> string.to_graphemes
+  |> list.filter(fn(c) { c == "\n" })
+  |> list.length
 }
 
 /// Parses a component opening tag starting after "<x-".
@@ -143,13 +175,18 @@ fn do_tokenize(
 fn parse_component(
   input: String,
   position: Int,
+  line: Int,
   tokens: List(Token),
 ) -> Result(List(Token), LexerError) {
-  case parse_component_tag(input) {
+  case parse_component_tag(input, line) {
     Ok(#(name, attrs, self_closing, rest)) -> {
       let token = Component(name, attrs, self_closing)
+      let consumed =
+        "<x-"
+        <> string.slice(input, 0, string.length(input) - string.length(rest))
       let len = string.length(input) - string.length(rest) + 3
-      do_tokenize(rest, position + len, [token, ..tokens])
+      let new_line = line + count_newlines(consumed)
+      do_tokenize(rest, position + len, new_line, [token, ..tokens])
     }
     Error(_) -> Error(UnterminatedComponent(position))
   }
@@ -162,13 +199,14 @@ fn parse_component(
 fn parse_component_end(
   input: String,
   position: Int,
+  line: Int,
   tokens: List(Token),
 ) -> Result(List(Token), LexerError) {
   case string.split_once(input, ">") {
     Ok(#(name, rest)) -> {
       let name = string.trim(name)
       let len = string.length(name) + 5
-      do_tokenize(rest, position + len, [ComponentEnd(name), ..tokens])
+      do_tokenize(rest, position + len, line, [ComponentEnd(name), ..tokens])
     }
     Error(_) -> Error(UnterminatedComponent(position))
   }
@@ -181,29 +219,38 @@ fn parse_component_end(
 fn try_parse_element(
   input: String,
   position: Int,
+  line: Int,
   tokens: List(Token),
   _full_input: String,
 ) -> Result(List(Token), LexerError) {
-  case parse_element_tag(input) {
+  case parse_element_tag(input, line) {
     Ok(#(tag, attrs, self_closing, rest)) -> {
       // Check if element has any dynamic attributes (l-*, :class, :style, :*)
       case has_dynamic_attrs(attrs) {
         True -> {
           let token = Element(tag, attrs, self_closing)
           // Calculate length: full_input starts with "<", input starts after "<"
+          let consumed =
+            "<"
+            <> string.slice(
+              input,
+              0,
+              string.length(input) - string.length(rest),
+            )
           let len = string.length(input) - string.length(rest) + 1
-          do_tokenize(rest, position + len, [token, ..tokens])
+          let new_line = line + count_newlines(consumed)
+          do_tokenize(rest, position + len, new_line, [token, ..tokens])
         }
         False -> {
           // No l-* attributes - just emit "<" and let text scanning
           // handle the rest so @attributes/@slot can be detected
           case tokens {
             [Text(prev), ..rest_tokens] ->
-              do_tokenize(input, position + 1, [
+              do_tokenize(input, position + 1, line, [
                 Text(prev <> "<"),
                 ..rest_tokens
               ])
-            _ -> do_tokenize(input, position + 1, [Text("<"), ..tokens])
+            _ -> do_tokenize(input, position + 1, line, [Text("<"), ..tokens])
           }
         }
       }
@@ -212,8 +259,11 @@ fn try_parse_element(
       // Not a valid element, just consume the "<" and continue
       case tokens {
         [Text(prev), ..rest_tokens] ->
-          do_tokenize(input, position + 1, [Text(prev <> "<"), ..rest_tokens])
-        _ -> do_tokenize(input, position + 1, [Text("<"), ..tokens])
+          do_tokenize(input, position + 1, line, [
+            Text(prev <> "<"),
+            ..rest_tokens
+          ])
+        _ -> do_tokenize(input, position + 1, line, [Text("<"), ..tokens])
       }
     }
   }
@@ -225,6 +275,7 @@ fn try_parse_element(
 fn parse_element_end(
   input: String,
   position: Int,
+  line: Int,
   tokens: List(Token),
 ) -> Result(List(Token), LexerError) {
   case string.split_once(input, ">") {
@@ -234,7 +285,7 @@ fn parse_element_end(
       case has_matching_element(tag, tokens) {
         True -> {
           let len = string.length(tag) + 3
-          do_tokenize(rest, position + len, [ElementEnd(tag), ..tokens])
+          do_tokenize(rest, position + len, line, [ElementEnd(tag), ..tokens])
         }
         False -> {
           // No matching Element, emit as text (merge with previous)
@@ -242,18 +293,18 @@ fn parse_element_end(
           let len = string.length(text)
           case tokens {
             [Text(prev), ..rest_tokens] ->
-              do_tokenize(rest, position + len, [
+              do_tokenize(rest, position + len, line, [
                 Text(prev <> text),
                 ..rest_tokens
               ])
-            _ -> do_tokenize(rest, position + len, [Text(text), ..tokens])
+            _ -> do_tokenize(rest, position + len, line, [Text(text), ..tokens])
           }
         }
       }
     }
     Error(_) -> {
       // Invalid closing tag, treat as text
-      consume_text("</" <> input, position, tokens)
+      consume_text("</" <> input, position, line, tokens)
     }
   }
 }
@@ -284,7 +335,7 @@ fn has_matching_element(tag: String, tokens: List(Token)) -> Bool {
 fn has_dynamic_attrs(attrs: List(ComponentAttr)) -> Bool {
   list.any(attrs, fn(attr) {
     case attr {
-      LmIf(_) | LmElseIf(_) | LmElse | LmFor(_, _, _) -> True
+      LmIf(_, _) | LmElseIf(_, _) | LmElse | LmFor(_, _, _, _) -> True
       ClassAttr(_) | StyleAttr(_) | ExprAttr(_, _) -> True
       _ -> False
     }
@@ -297,6 +348,7 @@ fn has_dynamic_attrs(attrs: List(ComponentAttr)) -> Bool {
 ///
 fn parse_element_tag(
   input: String,
+  line: Int,
 ) -> Result(#(String, List(ComponentAttr), Bool, String), Nil) {
   let #(tag, rest) = take_component_name(input, "")
   case tag {
@@ -304,7 +356,7 @@ fn parse_element_tag(
     // Don't parse x- prefixed tags as elements (they're components)
     "x-" <> _ -> Error(Nil)
     _ -> {
-      let #(attrs, rest) = parse_element_attrs(rest, [])
+      let #(attrs, rest) = parse_element_attrs(rest, [], line)
       let rest = skip_whitespace(rest)
       case rest {
         "/>" <> remaining -> Ok(#(tag, attrs, True, remaining))
@@ -322,6 +374,7 @@ fn parse_element_tag(
 fn parse_element_attrs(
   input: String,
   acc: List(ComponentAttr),
+  line: Int,
 ) -> #(List(ComponentAttr), String) {
   let input = skip_whitespace(input)
   case input {
@@ -330,41 +383,48 @@ fn parse_element_attrs(
     "" -> #(list.reverse(acc), input)
     ":" <> rest -> {
       case parse_expr_attr(rest) {
-        Ok(#(attr, remaining)) -> parse_element_attrs(remaining, [attr, ..acc])
+        Ok(#(attr, remaining)) ->
+          parse_element_attrs(remaining, [attr, ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
     "l-if=" <> rest -> {
       case parse_lm_condition_attr(rest) {
         Ok(#(condition, remaining)) ->
-          parse_element_attrs(remaining, [LmIf(condition), ..acc])
+          parse_element_attrs(remaining, [LmIf(condition, line), ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
     "l-else-if=" <> rest -> {
       case parse_lm_condition_attr(rest) {
         Ok(#(condition, remaining)) ->
-          parse_element_attrs(remaining, [LmElseIf(condition), ..acc])
+          parse_element_attrs(
+            remaining,
+            [LmElseIf(condition, line), ..acc],
+            line,
+          )
         Error(_) -> #(list.reverse(acc), input)
       }
     }
     "l-else" <> rest -> {
       let rest = skip_whitespace(rest)
-      parse_element_attrs(rest, [LmElse, ..acc])
+      parse_element_attrs(rest, [LmElse, ..acc], line)
     }
     "l-for=" <> rest -> {
       case parse_lm_for_attr(rest) {
         Ok(#(collection, items, loop_var, remaining)) ->
-          parse_element_attrs(remaining, [
-            LmFor(collection, items, loop_var),
-            ..acc
-          ])
+          parse_element_attrs(
+            remaining,
+            [LmFor(collection, items, loop_var, line), ..acc],
+            line,
+          )
         Error(_) -> #(list.reverse(acc), input)
       }
     }
     _ -> {
       case parse_string_or_bool_attr(input) {
-        Ok(#(attr, remaining)) -> parse_element_attrs(remaining, [attr, ..acc])
+        Ok(#(attr, remaining)) ->
+          parse_element_attrs(remaining, [attr, ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
@@ -513,12 +573,13 @@ fn take_until_quote(
 ///
 fn parse_component_tag(
   input: String,
+  line: Int,
 ) -> Result(#(String, List(ComponentAttr), Bool, String), Nil) {
   let #(name, rest) = take_component_name(input, "")
   case name {
     "" -> Error(Nil)
     _ -> {
-      let #(attrs, rest) = parse_component_attrs(rest, [])
+      let #(attrs, rest) = parse_component_attrs(rest, [], line)
       let rest = skip_whitespace(rest)
       case rest {
         "/>" <> remaining -> Ok(#(name, attrs, True, remaining))
@@ -552,6 +613,7 @@ fn take_component_name(input: String, acc: String) -> #(String, String) {
 fn parse_component_attrs(
   input: String,
   acc: List(ComponentAttr),
+  line: Int,
 ) -> #(List(ComponentAttr), String) {
   let input = skip_whitespace(input)
   case input {
@@ -561,42 +623,47 @@ fn parse_component_attrs(
     ":" <> rest -> {
       case parse_expr_attr(rest) {
         Ok(#(attr, remaining)) ->
-          parse_component_attrs(remaining, [attr, ..acc])
+          parse_component_attrs(remaining, [attr, ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
     "l-if=" <> rest -> {
       case parse_lm_condition_attr(rest) {
         Ok(#(condition, remaining)) ->
-          parse_component_attrs(remaining, [LmIf(condition), ..acc])
+          parse_component_attrs(remaining, [LmIf(condition, line), ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
     "l-else-if=" <> rest -> {
       case parse_lm_condition_attr(rest) {
         Ok(#(condition, remaining)) ->
-          parse_component_attrs(remaining, [LmElseIf(condition), ..acc])
+          parse_component_attrs(
+            remaining,
+            [LmElseIf(condition, line), ..acc],
+            line,
+          )
         Error(_) -> #(list.reverse(acc), input)
       }
     }
     "l-else" <> rest -> {
       let rest = skip_whitespace(rest)
-      parse_component_attrs(rest, [LmElse, ..acc])
+      parse_component_attrs(rest, [LmElse, ..acc], line)
     }
     "l-for=" <> rest -> {
       case parse_lm_for_attr(rest) {
         Ok(#(collection, items, loop_var, remaining)) ->
-          parse_component_attrs(remaining, [
-            LmFor(collection, items, loop_var),
-            ..acc
-          ])
+          parse_component_attrs(
+            remaining,
+            [LmFor(collection, items, loop_var, line), ..acc],
+            line,
+          )
         Error(_) -> #(list.reverse(acc), input)
       }
     }
     _ -> {
       case parse_string_or_bool_attr(input) {
         Ok(#(attr, remaining)) ->
-          parse_component_attrs(remaining, [attr, ..acc])
+          parse_component_attrs(remaining, [attr, ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
@@ -719,21 +786,26 @@ fn parse_simple_directive(
   directive: String,
   token: Token,
   position: Int,
+  line: Int,
   tokens: List(Token),
 ) -> Result(List(Token), LexerError) {
   let directive_len = string.length(directive)
   case rest {
-    "" -> do_tokenize("", position + directive_len, [token, ..tokens])
+    "" -> do_tokenize("", position + directive_len, line, [token, ..tokens])
     _ -> {
       case string.first(rest) {
         Ok(c) -> {
           case string_utils.is_alphanumeric(c) {
-            True -> consume_text(directive <> rest, position, tokens)
+            True -> consume_text(directive <> rest, position, line, tokens)
             False ->
-              do_tokenize(rest, position + directive_len, [token, ..tokens])
+              do_tokenize(rest, position + directive_len, line, [
+                token,
+                ..tokens
+              ])
           }
         }
-        _ -> do_tokenize(rest, position + directive_len, [token, ..tokens])
+        _ ->
+          do_tokenize(rest, position + directive_len, line, [token, ..tokens])
       }
     }
   }
@@ -748,6 +820,7 @@ fn parse_simple_directive(
 fn parse_slot_element(
   input: String,
   position: Int,
+  line: Int,
   tokens: List(Token),
 ) -> Result(List(Token), LexerError) {
   // Input starts after "<slot", could be " ", ">", or "/"
@@ -756,16 +829,16 @@ fn parse_slot_element(
     "/>" <> rest -> {
       let len = 7
       // position + len for "<slot/>"
-      do_tokenize(rest, position + len, [Slot(None), ..tokens])
+      do_tokenize(rest, position + len, line, [Slot(None), ..tokens])
     }
     // Opening without attributes: <slot>
     ">" <> rest -> {
       let len = 6
       // position + len for "<slot>"
-      do_tokenize(rest, position + len, [SlotDef(None), ..tokens])
+      do_tokenize(rest, position + len, line, [SlotDef(None), ..tokens])
     }
     // Has attributes (space after <slot)
-    " " <> rest -> parse_slot_with_attrs(rest, position, tokens)
+    " " <> rest -> parse_slot_with_attrs(rest, position, line, tokens)
     // Invalid
     _ -> Error(UnterminatedComponent(position))
   }
@@ -778,6 +851,7 @@ fn parse_slot_element(
 fn parse_slot_with_attrs(
   input: String,
   position: Int,
+  line: Int,
   tokens: List(Token),
 ) -> Result(List(Token), LexerError) {
   // Find the end of the tag (either /> or >)
@@ -794,8 +868,9 @@ fn parse_slot_with_attrs(
           False -> 1
         }
       case self_closing {
-        True -> do_tokenize(rest, position + len, [Slot(name), ..tokens])
-        False -> do_tokenize(rest, position + len, [SlotDef(name), ..tokens])
+        True -> do_tokenize(rest, position + len, line, [Slot(name), ..tokens])
+        False ->
+          do_tokenize(rest, position + len, line, [SlotDef(name), ..tokens])
       }
     }
     Error(_) -> Error(UnterminatedComponent(position))
@@ -867,6 +942,7 @@ fn extract_slot_name(attrs: String) -> Option(String) {
 fn consume_text(
   input: String,
   position: Int,
+  line: Int,
   tokens: List(Token),
 ) -> Result(List(Token), LexerError) {
   let #(text, rest) = take_until_special(input, "")
@@ -875,14 +951,22 @@ fn consume_text(
     "" -> {
       case string.pop_grapheme(input) {
         Ok(#(char, remaining)) -> {
+          let new_line = case char {
+            "\n" -> line + 1
+            _ -> line
+          }
           // Merge with previous text token if exists
           case tokens {
             [Text(prev), ..rest_tokens] ->
-              do_tokenize(remaining, position + 1, [
+              do_tokenize(remaining, position + 1, new_line, [
                 Text(prev <> char),
                 ..rest_tokens
               ])
-            _ -> do_tokenize(remaining, position + 1, [Text(char), ..tokens])
+            _ ->
+              do_tokenize(remaining, position + 1, new_line, [
+                Text(char),
+                ..tokens
+              ])
           }
         }
         Error(_) -> Ok(list.reverse(tokens))
@@ -890,11 +974,15 @@ fn consume_text(
     }
     _ -> {
       let new_pos = position + string.length(text)
+      let new_line = line + count_newlines(text)
       // Merge with previous text token if exists
       case tokens {
         [Text(prev), ..rest_tokens] ->
-          do_tokenize(rest, new_pos, [Text(prev <> text), ..rest_tokens])
-        _ -> do_tokenize(rest, new_pos, [Text(text), ..tokens])
+          do_tokenize(rest, new_pos, new_line, [
+            Text(prev <> text),
+            ..rest_tokens
+          ])
+        _ -> do_tokenize(rest, new_pos, new_line, [Text(text), ..tokens])
       }
     }
   }

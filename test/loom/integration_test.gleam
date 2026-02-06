@@ -74,7 +74,7 @@ pub fn pipeline_variable_interpolation_test() {
   parsed.nodes
   |> should.equal([
     parser.TextNode("Hello, "),
-    parser.VariableNode("name"),
+    parser.VariableNode("name", 1),
     parser.TextNode("!"),
   ])
 }
@@ -87,7 +87,7 @@ pub fn pipeline_conditional_test() {
   parsed.nodes
   |> should.equal([
     parser.IfNode([
-      #(Some("show"), [
+      #(Some("show"), 1, [
         parser.ElementNode("span", [], [parser.TextNode("visible")]),
       ]),
     ]),
@@ -101,9 +101,15 @@ pub fn pipeline_loop_test() {
 
   parsed.nodes
   |> should.equal([
-    parser.EachNode("items", ["item"], None, [
-      parser.ElementNode("span", [], [parser.VariableNode("item")]),
-    ]),
+    parser.EachNode(
+      "items",
+      ["item"],
+      None,
+      [
+        parser.ElementNode("span", [], [parser.VariableNode("item", 1)]),
+      ],
+      1,
+    ),
   ])
 }
 
@@ -331,7 +337,7 @@ pub fn pipeline_nested_structure_test() {
 
   // Should parse without error - structure validation
   case parsed.nodes {
-    [parser.IfNode([#(Some("a"), _), ..])] -> Nil
+    [parser.IfNode([#(Some("a"), _, _), ..])] -> Nil
     _ -> panic as "Expected outer if node with condition 'a'"
   }
 }
@@ -600,5 +606,143 @@ pub fn merge_mixed_attributes_at_runtime_test() {
       data_attr |> should.equal(runtime.Attribute("data-testid", "button"))
     }
     _ -> panic as "Expected 4 attributes"
+  }
+}
+
+// ------------------------------------------------------------- Line Number Tracking Tests
+
+pub fn pipeline_tracks_variable_line_numbers_test() {
+  // Multi-line template with variables at different lines
+  let template =
+    "line 1
+{{ first_var }}
+line 3
+line 4
+{{ second_var }}"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+
+  // Verify the parsed nodes have correct line numbers
+  case parsed.nodes {
+    [
+      parser.TextNode("line 1\n"),
+      parser.VariableNode("first_var", line1),
+      parser.TextNode("\nline 3\nline 4\n"),
+      parser.VariableNode("second_var", line2),
+    ] -> {
+      line1 |> should.equal(2)
+      line2 |> should.equal(5)
+    }
+    _ -> panic as "Unexpected node structure"
+  }
+}
+
+pub fn pipeline_tracks_lm_if_line_numbers_test() {
+  // Template with l-if at a specific line (using span which gets parsed as Element)
+  let template =
+    "line 1
+line 2
+<span l-if=\"show\">conditional</span>"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+
+  // Find the IfNode and verify its line number
+  case parsed.nodes {
+    [parser.TextNode(_), parser.IfNode([#(Some("show"), line, _)])] -> {
+      line |> should.equal(3)
+    }
+    _ -> panic as "Expected TextNode followed by IfNode"
+  }
+}
+
+pub fn pipeline_tracks_lm_for_line_numbers_test() {
+  // Template with l-for at a specific line
+  let template =
+    "line 1
+line 2
+<li l-for=\"item in items\">{{ item }}</li>"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+
+  // Find the EachNode and verify its line number
+  case parsed.nodes {
+    [parser.TextNode(_), parser.EachNode("items", ["item"], None, _, line)] -> {
+      line |> should.equal(3)
+    }
+    _ -> panic as "Expected TextNode followed by EachNode"
+  }
+}
+
+pub fn pipeline_tracks_mixed_line_numbers_test() {
+  // Complex template with variables and directives at various lines
+  let template =
+    "{{ header }}
+<div l-if=\"show_content\">
+  {{ body }}
+  <ul l-for=\"item in items\">
+    {{ item }}
+  </ul>
+</div>"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+
+  // Verify header variable is on line 1
+  case parsed.nodes {
+    [parser.VariableNode("header", header_line), ..rest] -> {
+      header_line |> should.equal(1)
+
+      // Verify the IfNode condition is on line 2
+      case rest {
+        [
+          parser.TextNode(_),
+          parser.IfNode([#(Some("show_content"), if_line, if_body)]),
+        ] -> {
+          if_line |> should.equal(2)
+
+          // Find the body variable and EachNode inside the if body
+          case if_body {
+            [parser.ElementNode("div", _, div_children)] -> {
+              case div_children {
+                [
+                  parser.TextNode(_),
+                  parser.VariableNode("body", body_line),
+                  parser.TextNode(_),
+                  parser.EachNode("items", ["item"], None, each_body, each_line),
+                  ..
+                ] -> {
+                  body_line |> should.equal(3)
+                  each_line |> should.equal(4)
+
+                  // Verify the item variable inside the loop is on line 5
+                  case each_body {
+                    [parser.ElementNode("ul", _, ul_children)] -> {
+                      case ul_children {
+                        [
+                          parser.TextNode(_),
+                          parser.VariableNode("item", item_line),
+                          ..
+                        ] -> {
+                          item_line |> should.equal(5)
+                        }
+                        _ -> panic as "Expected item variable in ul"
+                      }
+                    }
+                    _ -> panic as "Expected ul element in each body"
+                  }
+                }
+                _ -> panic as "Unexpected div children structure"
+              }
+            }
+            _ -> panic as "Expected ElementNode div in if body"
+          }
+        }
+        _ -> panic as "Expected IfNode after header"
+      }
+    }
+    _ -> panic as "Expected header variable first"
   }
 }
