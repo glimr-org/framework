@@ -36,11 +36,33 @@ pub type ParsedRoute {
 }
 
 /// Result of parsing a controller file. Contains group-level
-/// middleware that applies to all routes, and the list of
-/// parsed routes.
+/// middleware that applies to all routes, the list of parsed
+/// routes, and import validation flags.
 ///
 pub type ParseResult {
-  ParseResult(group_middleware: List(String), routes: List(ParsedRoute))
+  ParseResult(
+    group_middleware: List(String),
+    routes: List(ParsedRoute),
+    has_wisp_request_import: Bool,
+    has_ctx_context_import: Bool,
+    validator_data_imports: List(String),
+  )
+}
+
+// ------------------------------------------------------------- Private Types
+
+/// Annotations accumulate across multiple doc comment lines
+/// before a function declaration. This state tracks all the
+/// annotations seen so far until a pub fn completes the route.
+///
+type AnnotationState {
+  AnnotationState(
+    method: Option(String),
+    path: Option(String),
+    middleware: List(String),
+    validator: Option(String),
+    redirects: List(#(String, Int)),
+  )
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -49,18 +71,27 @@ pub type ParseResult {
 /// group middleware from file-level comments and routes from
 /// doc comments preceding handler functions.
 ///
-pub fn parse(content: String) -> Result(ParseResult, String) {
+pub fn parse(content: String) -> ParseResult {
   let group_middleware = extract_group_middleware(content)
   let routes = extract_routes(content, group_middleware)
+  let has_wisp_request_import = check_wisp_request_import(content)
+  let has_ctx_context_import = check_ctx_context_import(content)
+  let validator_data_imports = extract_validator_data_imports(content)
 
-  Ok(ParseResult(group_middleware:, routes:))
+  ParseResult(
+    group_middleware:,
+    routes:,
+    has_wisp_request_import:,
+    has_ctx_context_import:,
+    validator_data_imports:,
+  )
 }
 
 // ------------------------------------------------------------- Private Functions
 
-/// Extracts group middleware from file-level comments. Looks
-/// for `// @group_middleware "path"` at the top of the file
-/// before any function definitions.
+/// Group middleware applies to all routes in a controller.
+/// This allows common authentication or logging middleware
+/// to be declared once at the file level rather than per-route.
 ///
 fn extract_group_middleware(content: String) -> List(String) {
   content
@@ -79,9 +110,9 @@ fn extract_group_middleware(content: String) -> List(String) {
   })
 }
 
-/// Extracts routes from doc comments in the content. Scans
-/// for `/// @method "path"` patterns followed by `pub fn`
-/// declarations.
+/// Routes are defined via doc comments before handler functions.
+/// This convention keeps route metadata close to the handler
+/// code while allowing compile-time generation of dispatch code.
 ///
 fn extract_routes(
   content: String,
@@ -91,9 +122,9 @@ fn extract_routes(
   parse_lines(lines, group_middleware, None, [])
 }
 
-/// Extracts a quoted string argument from an annotation.
-/// Parses `@annotation "value"` to get just the value.
-/// Returns Error if no valid quoted string is found.
+/// Annotation values are quoted to allow paths with spaces
+/// or special characters. The quotes must be properly matched
+/// for the annotation to be considered valid.
 ///
 fn extract_quoted_arg(line: String, prefix: String) -> Result(String, Nil) {
   let after_prefix = string.drop_start(line, string.length(prefix))
@@ -110,23 +141,10 @@ fn extract_quoted_arg(line: String, prefix: String) -> Result(String, Nil) {
   }
 }
 
-/// State for tracking annotations while parsing lines.
-/// Accumulates method, path, middleware, validator, and
-/// redirects until a pub fn declaration completes the route.
-///
-type AnnotationState {
-  AnnotationState(
-    method: Option(String),
-    path: Option(String),
-    middleware: List(String),
-    validator: Option(String),
-    redirects: List(#(String, Int)),
-  )
-}
-
-/// Recursively parses lines to extract routes. Accumulates
-/// annotations from doc comments and creates routes when
-/// a pub fn declaration is found.
+/// Annotations can span multiple doc comment lines before the
+/// function declaration. State accumulates until we hit a pub 
+/// fn, at which point we create the route and reset for the 
+/// next.
 ///
 fn parse_lines(
   lines: List(String),
@@ -199,9 +217,9 @@ fn parse_lines(
   }
 }
 
-/// Collects the full function signature which may span multiple 
-/// lines. Continues reading until the closing brace { is found
-/// indicating the end of of the function signature.
+/// Function signatures in Gleam can span multiple lines when
+/// there are many parameters. We need the complete signature
+/// to extract all parameter names and types for validation.
 ///
 fn collect_signature(
   current_line: String,
@@ -222,99 +240,113 @@ fn collect_signature(
   }
 }
 
-/// Parses a single annotation line and updates state. Handles
-/// method annotations, middleware, validators, and redirects.
-/// Returns updated state with any new annotation values added.
+/// Each annotation type (@get, @middleware, etc) has its own
+/// parser. We try each parser in sequence and use the first
+/// that succeeds, preserving existing state if none match.
 ///
 fn parse_annotation_line(
   line: String,
   state: AnnotationState,
 ) -> AnnotationState {
-  let after_slashes = string.drop_start(line, 3) |> string.trim_start
+  let content = string.drop_start(line, 3) |> string.trim_start
 
-  // Check for HTTP method annotations
+  try_parse_method(content, state)
+  |> result.lazy_or(fn() { try_parse_middleware(content, state) })
+  |> result.lazy_or(fn() { try_parse_validator(content, state) })
+  |> result.lazy_or(fn() { try_parse_redirect(content, state) })
+  |> result.unwrap(state)
+}
+
+/// Route methods like @get, @post define which HTTP verb 
+/// handles the route. The method is required for a valid route 
+/// annotation and determines how the route matches incoming 
+/// requests.
+///
+fn try_parse_method(
+  content: String,
+  state: AnnotationState,
+) -> Result(AnnotationState, Nil) {
   let methods = ["get", "post", "put", "patch", "delete", "head", "options"]
-  let method_match =
-    list.find(methods, fn(method) {
-      string.starts_with(after_slashes, "@" <> method <> " ")
-    })
 
-  case method_match {
-    Ok(method) -> {
-      let prefix = "@" <> method <> " "
-      case extract_quoted_arg(after_slashes, prefix) {
-        Ok(path) ->
+  list.find_map(methods, fn(method) {
+    let prefix = "@" <> method <> " "
+    case string.starts_with(content, prefix) {
+      True ->
+        extract_quoted_arg(content, prefix)
+        |> result.map(fn(path) {
           AnnotationState(..state, method: Some(method), path: Some(path))
-        Error(_) -> state
-      }
+        })
+      False -> Error(Nil)
     }
-    Error(_) -> {
-      // Check for middleware
-      case string.starts_with(after_slashes, "@middleware ") {
-        True -> {
-          case extract_quoted_arg(after_slashes, "@middleware ") {
-            Ok(mw) ->
-              AnnotationState(
-                ..state,
-                middleware: list.append(state.middleware, [mw]),
-              )
-            Error(_) -> state
-          }
-        }
-        False -> {
-          // Check for validator
-          case string.starts_with(after_slashes, "@validator ") {
-            True -> {
-              case extract_quoted_arg(after_slashes, "@validator ") {
-                Ok(v) -> AnnotationState(..state, validator: Some(v))
-                Error(_) -> state
-              }
-            }
-            False -> {
-              // Check for redirect_permanent
-              case string.starts_with(after_slashes, "@redirect_permanent ") {
-                True -> {
-                  case
-                    extract_quoted_arg(after_slashes, "@redirect_permanent ")
-                  {
-                    Ok(path) ->
-                      AnnotationState(
-                        ..state,
-                        redirects: list.append(state.redirects, [#(path, 308)]),
-                      )
-                    Error(_) -> state
-                  }
-                }
-                False -> {
-                  // Check for redirect
-                  case string.starts_with(after_slashes, "@redirect ") {
-                    True -> {
-                      case extract_quoted_arg(after_slashes, "@redirect ") {
-                        Ok(path) ->
-                          AnnotationState(
-                            ..state,
-                            redirects: list.append(state.redirects, [
-                              #(path, 303),
-                            ]),
-                          )
-                        Error(_) -> state
-                      }
-                    }
-                    False -> state
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+  })
+}
+
+/// Route-level middleware allows specific routes to have
+/// additional processing like rate limiting or caching that
+/// doesn't apply to all routes in the controller.
+///
+fn try_parse_middleware(
+  content: String,
+  state: AnnotationState,
+) -> Result(AnnotationState, Nil) {
+  case string.starts_with(content, "@middleware ") {
+    True ->
+      extract_quoted_arg(content, "@middleware ")
+      |> result.map(fn(mw) {
+        AnnotationState(..state, middleware: [mw, ..state.middleware])
+      })
+    False -> Error(Nil)
   }
 }
 
-/// Extracts the function name from a pub fn declaration.
-/// Parses `pub fn name(` to get just the name portion.
-/// Trims whitespace and stops at the opening parenthesis.
+/// Validators handle form data parsing and validation before
+/// the handler runs. Associating a validator with a route
+/// generates the validation call in the compiled dispatcher.
+///
+fn try_parse_validator(
+  content: String,
+  state: AnnotationState,
+) -> Result(AnnotationState, Nil) {
+  case string.starts_with(content, "@validator ") {
+    True ->
+      extract_quoted_arg(content, "@validator ")
+      |> result.map(fn(v) { AnnotationState(..state, validator: Some(v)) })
+    False -> Error(Nil)
+  }
+}
+
+/// Redirects allow old URLs to point to new handlers without
+/// duplicating route logic. Permanent redirects (308) tell
+/// browsers to cache the redirect, while temporary (303) don't.
+///
+fn try_parse_redirect(
+  content: String,
+  state: AnnotationState,
+) -> Result(AnnotationState, Nil) {
+  case string.starts_with(content, "@redirect_permanent ") {
+    True ->
+      extract_quoted_arg(content, "@redirect_permanent ")
+      |> result.map(fn(path) {
+        AnnotationState(..state, redirects: [#(path, 308), ..state.redirects])
+      })
+    False ->
+      case string.starts_with(content, "@redirect ") {
+        True ->
+          extract_quoted_arg(content, "@redirect ")
+          |> result.map(fn(path) {
+            AnnotationState(..state, redirects: [
+              #(path, 303),
+              ..state.redirects
+            ])
+          })
+        False -> Error(Nil)
+      }
+  }
+}
+
+/// The function name links annotations to their handler in
+/// the generated dispatch code. We strip everything except
+/// the identifier between `pub fn` and the opening paren.
 ///
 fn extract_fn_name(line: String) -> String {
   let after_pub_fn = string.drop_start(line, 7)
@@ -324,9 +356,9 @@ fn extract_fn_name(line: String) -> String {
   }
 }
 
-/// Extracts function parameters from a function signature.
-/// Parses `pub fn name(param1: Type1, param2: Type2) -> ReturnType`
-/// and returns a list of FunctionParam with name and type.
+/// Handler parameters determine what arguments the compiler
+/// passes when calling the function. We need both names (for
+/// route params) and types (for Request/Context/Data matching).
 ///
 fn extract_fn_params(signature: String) -> List(FunctionParam) {
   // Extract content between first ( and last ) before ->
@@ -340,10 +372,9 @@ fn extract_fn_params(signature: String) -> List(FunctionParam) {
   }
 }
 
-/// Extracts the parameters string by finding matching closing
-/// paren. Handles nested parentheses in types like 
-/// Option(String). Returns the accumulated string up to the 
-/// matching close paren.
+/// Types like `Option(String)` contain parentheses that aren't
+/// parameter delimiters. Tracking depth ensures we find the
+/// actual closing paren of the function signature.
 ///
 fn extract_params_string(s: String, depth: Int, acc: String) -> String {
   case string.pop_grapheme(s) {
@@ -359,10 +390,9 @@ fn extract_params_string(s: String, depth: Int, acc: String) -> String {
   }
 }
 
-/// Parses a comma-separated parameter string into 
-/// FunctionParams. Handles types with commas in generics like 
-/// Dict(String, Int). Filters out empty parameter strings from 
-/// the result.
+/// After extracting the raw parameter string, we need to
+/// split it into individual parameters while respecting
+/// commas inside generic types like `Dict(String, Int)`.
 ///
 fn parse_params_string(params_str: String) -> List(FunctionParam) {
   split_params(params_str, 0, "", [])
@@ -375,9 +405,9 @@ fn parse_params_string(params_str: String) -> List(FunctionParam) {
   })
 }
 
-/// Splits parameters by comma, respecting nested parentheses.
-/// Only splits on commas at depth zero to preserve generic types.
-/// Example: "a: Int, b: Option(String)" -> ["a: Int", "b: ..."]
+/// Generic types contain commas that aren't parameter 
+/// separators. Tracking parenthesis depth ensures we only split 
+/// on commas at the top level of the parameter list.
 ///
 fn split_params(
   s: String,
@@ -399,9 +429,9 @@ fn split_params(
   }
 }
 
-/// Parses a single parameter like "name: Type" or "_name: Type".
-/// Returns the parameter name and type as a FunctionParam 
-/// record. Returns Error for empty parameter strings.
+/// Parameters may have type annotations or be untyped. Both
+/// the name and type are needed for the compiler to determine
+/// how to pass arguments (Request vs Context vs route params).
 ///
 fn parse_single_param(param: String) -> Result(FunctionParam, Nil) {
   case string.split_once(param, ":") {
@@ -421,9 +451,9 @@ fn parse_single_param(param: String) -> Result(FunctionParam, Nil) {
   }
 }
 
-/// Creates routes from accumulated annotation state. Generates
-/// the main route and any redirect routes pointing to it.
-/// Combines group middleware with route-specific middleware.
+/// Once we hit a pub fn, we have all annotations for that route.
+/// This combines group and route middleware, creates the main
+/// route, and generates any redirect routes pointing to it.
 ///
 fn create_routes_from_state(
   state: AnnotationState,
@@ -433,7 +463,9 @@ fn create_routes_from_state(
 ) -> List(ParsedRoute) {
   case state.method, state.path {
     Some(method), Some(path) -> {
-      let all_middleware = list.append(group_middleware, state.middleware)
+      // Reverse middleware since it was accumulated via prepending
+      let route_middleware = list.reverse(state.middleware)
+      let all_middleware = list.append(group_middleware, route_middleware)
       let main_route =
         ParsedRoute(
           method:,
@@ -444,9 +476,11 @@ fn create_routes_from_state(
           params:,
         )
 
-      // Create redirect routes
+      // Create redirect routes (reverse since accumulated via prepending)
       let redirect_routes =
-        list.map(state.redirects, fn(r) {
+        state.redirects
+        |> list.reverse
+        |> list.map(fn(r) {
           let #(from, status) = r
           ParsedRedirect(from:, to: path, status:)
         })
@@ -457,13 +491,105 @@ fn create_routes_from_state(
   }
 }
 
-/// Extracts the module name from a controller file path.
-/// Converts `src/app/http/controllers/user_controller.gleam`
-/// to `app/http/controllers/user_controller`.
+/// File paths from glob need to be converted to module paths
+/// for generating import statements. The src/ prefix and .gleam
+/// extension aren't part of the Gleam module path.
 ///
 pub fn module_from_path(path: String) -> Result(String, Nil) {
   path
   |> string.replace(".gleam", "")
   |> string.split_once("src/")
   |> result.map(fn(parts) { parts.1 })
+}
+
+/// Types can be imported with or without the `type` keyword.
+/// Both `import mod.{type Foo}` and `import mod.{Foo}` make
+/// the type available, so we need to check for both patterns.
+///
+fn import_contains_type(line: String, type_name: String) -> Bool {
+  case string.split_once(line, "{") {
+    Ok(#(_, after_brace)) ->
+      case string.split_once(after_brace, "}") {
+        Ok(#(imports, _)) ->
+          imports
+          |> string.split(",")
+          |> list.any(fn(imp) {
+            let clean = string.trim(imp)
+            clean == "type " <> type_name || clean == type_name
+          })
+        Error(_) -> False
+      }
+    Error(_) -> False
+  }
+}
+
+/// Handlers can use `Request` as a type if it's imported from
+/// wisp. Without the import, the compiler would fail with a
+/// confusing error, so we validate this early for better DX.
+///
+fn check_wisp_request_import(content: String) -> Bool {
+  content
+  |> string.split("\n")
+  |> list.any(fn(line) {
+    let trimmed = string.trim(line)
+    case string.starts_with(trimmed, "//") {
+      True -> False
+      False ->
+        string.starts_with(trimmed, "import wisp.{")
+        && import_contains_type(trimmed, "Request")
+    }
+  })
+}
+
+/// Handlers with validators can use `Data` as a type if they
+/// import it from the validator module. We track which 
+/// validators have Data imported to validate handler parameters.
+///
+fn extract_validator_data_imports(content: String) -> List(String) {
+  content
+  |> string.split("\n")
+  |> list.filter_map(fn(line) {
+    let trimmed = string.trim(line)
+    case string.starts_with(trimmed, "//") {
+      True -> Error(Nil)
+      False ->
+        case
+          string.starts_with(trimmed, "import ")
+          && string.contains(trimmed, "/validators/")
+          && string.contains(trimmed, ".{")
+          && import_contains_type(trimmed, "Data")
+        {
+          True ->
+            case string.split_once(trimmed, "/validators/") {
+              Ok(#(_, after_validators)) ->
+                case string.split_once(after_validators, ".{") {
+                  Ok(#(validator_name, _)) -> Ok(validator_name)
+                  Error(_) -> Error(Nil)
+                }
+              Error(_) -> Error(Nil)
+            }
+          False -> Error(Nil)
+        }
+    }
+  })
+}
+
+/// Handlers can use `Context` as a type if it's imported from
+/// the ctx module. Without the import, the compiler would fail
+/// with a confusing error, so we validate this early for better
+/// DX.
+///
+fn check_ctx_context_import(content: String) -> Bool {
+  content
+  |> string.split("\n")
+  |> list.any(fn(line) {
+    let trimmed = string.trim(line)
+    case string.starts_with(trimmed, "//") {
+      True -> False
+      False ->
+        string.starts_with(trimmed, "import ")
+        && string.contains(trimmed, "/ctx.{")
+        && import_contains_type(trimmed, "Context")
+    }
+  })
 }
