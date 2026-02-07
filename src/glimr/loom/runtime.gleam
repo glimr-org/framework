@@ -4,9 +4,6 @@
 //// Handles string concatenation, conditional rendering, loops,
 //// HTML escaping, and attribute management.
 
-import gleam/bool
-import gleam/float
-import gleam/int
 import gleam/list
 import gleam/string
 import houdini
@@ -110,25 +107,25 @@ pub fn escape(value: String) -> String {
   houdini.escape(value)
 }
 
-/// Displays a boolean value as "true" or "false" string.
-/// Use in templates for Bool fields: {{ display_bool(item.active) }}
+/// Converts any value to a string for display. Handles all types
+/// automatically - strings, bools, ints, floats, and custom types
+/// are all converted via string.inspect().
 ///
-pub fn display_bool(value: Bool) -> String {
-  bool.to_string(value)
+pub fn to_string(value: a) -> String {
+  let s = string.inspect(value)
+  // string.inspect wraps strings in quotes - strip them
+  case string.starts_with(s, "\"") && string.ends_with(s, "\"") {
+    True -> string.slice(s, 1, string.length(s) - 2)
+    False -> s
+  }
 }
 
-/// Displays an integer value as a string.
-/// Use in templates for Int fields: {{ display_int(item.count) }}
+/// Converts any value to a string and escapes it for HTML display.
+/// Handles all types automatically - strings, bools, ints, floats,
+/// and custom types are all converted via string.inspect().
 ///
-pub fn display_int(value: Int) -> String {
-  int.to_string(value)
-}
-
-/// Displays a float value as a string.
-/// Use in templates for Float fields: {{ display_float(item.price) }}
-///
-pub fn display_float(value: Float) -> String {
-  float.to_string(value)
+pub fn display(value: a) -> String {
+  to_string(value) |> escape
 }
 
 /// Builds a class string from conditional class entries. Takes
