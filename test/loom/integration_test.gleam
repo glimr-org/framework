@@ -94,6 +94,41 @@ pub fn pipeline_conditional_test() {
   ])
 }
 
+pub fn l_for_and_l_if_on_same_element_test() {
+  // l-for should introduce loop variables before l-if is evaluated
+  let template =
+    "@props(items: List(Item))\n<span l-for=\"item in items, loop\" l-if=\"item.active\">{{ item.name }}</span>"
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+
+  // Validation should pass - item is in scope from l-for
+  generator.validate_template(parsed, "test.loom.html")
+  |> should.be_ok
+}
+
+pub fn template_element_is_phantom_wrapper_test() {
+  // <template> should NOT output its own tags, only its children
+  let template = "<template l-if=\"show\"><p>content</p></template>"
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+  let generated =
+    generator.generate(parsed, "test", False, dict.new(), dict.new())
+
+  // Should NOT contain <template> tags in output
+  generated.code
+  |> string.contains("<template")
+  |> should.be_false
+
+  generated.code
+  |> string.contains("</template>")
+  |> should.be_false
+
+  // Should contain the inner content
+  generated.code
+  |> string.contains("<p")
+  |> should.be_true
+}
+
 pub fn pipeline_loop_test() {
   let template = "<span l-for=\"item in items\">{{ item }}</span>"
   let assert Ok(tokens) = lexer.tokenize(template)
@@ -203,7 +238,7 @@ pub fn compile_component_template_test() {
 
   // Should access variables directly
   generated.code
-  |> string.contains("runtime.escape(type)")
+  |> string.contains("runtime.display(type)")
   |> should.be_true
 
   generated.code
@@ -281,13 +316,7 @@ pub fn compile_template_with_each_and_component_test() {
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
   let generated =
-    generator.generate(
-      parsed,
-      "alerts_page",
-      False,
-      dict.new(),
-      dict.new(),
-    )
+    generator.generate(parsed, "alerts_page", False, dict.new(), dict.new())
 
   // Should pass through data.alerts
   generated.code

@@ -94,9 +94,11 @@ pub type ParserError {
 ///
 pub fn parse(tokens: List(Token)) -> Result(Template, ParserError) {
   // First extract @import and @props directives from the beginning
-  use #(imports, props, remaining_tokens) <- try_parse(
-    extract_directives(tokens, [], None),
-  )
+  use #(imports, props, remaining_tokens) <- try_parse(extract_directives(
+    tokens,
+    [],
+    None,
+  ))
   // Then parse the content nodes
   use nodes <- try_parse(parse_nodes(remaining_tokens, [], None))
   Ok(Template(imports: imports, props: props, nodes: nodes))
@@ -120,11 +122,7 @@ fn extract_directives(
         True -> extract_directives(rest, imports_acc, props_acc)
         False ->
           // Non-whitespace text - directives phase is over
-          Ok(#(
-            list.reverse(imports_acc),
-            option.unwrap(props_acc, []),
-            tokens,
-          ))
+          Ok(#(list.reverse(imports_acc), option.unwrap(props_acc, []), tokens))
       }
     }
 
@@ -150,7 +148,6 @@ fn is_whitespace_only(s: String) -> Bool {
   |> string.to_graphemes
   |> list.all(fn(c) { c == " " || c == "\n" || c == "\t" || c == "\r" })
 }
-
 
 // ------------------------------------------------------------- Private Functions
 
@@ -394,30 +391,44 @@ fn parse_element_with_attrs(
     _, _ -> [base_node]
   }
 
-  // Wrap with l-for if present
-  let wrapped_nodes = case lm_for {
-    Some(#(collection, items, loop_var, line)) -> [
-      EachNode(collection, items, loop_var, base_nodes, line),
-    ]
-    None -> base_nodes
+  // When both l-for and l-if are on the same element, l-if goes INSIDE the loop
+  // so it can access loop variables (e.g., l-for="item in items" l-if="item.active")
+  case lm_for, lm_if {
+    Some(#(collection, items, loop_var, for_line)), Some(#(condition, if_line)) -> {
+      // Create: EachNode(IfNode(base_nodes))
+      let if_node = IfNode([#(Some(condition), if_line, base_nodes)])
+      let each_node = EachNode(collection, items, loop_var, [if_node], for_line)
+      Ok(#(Some(each_node), remaining, pending_if))
+    }
+    Some(#(collection, items, loop_var, line)), None -> {
+      // Just l-for, no l-if
+      let each_node = EachNode(collection, items, loop_var, base_nodes, line)
+      // Handle any l-else-if/l-else (shouldn't happen but be safe)
+      handle_conditional_chain(
+        each_node,
+        None,
+        lm_else_if,
+        has_lm_else,
+        pending_if,
+        remaining,
+      )
+    }
+    None, _ -> {
+      // No l-for, handle conditional chain normally
+      let wrapped_node = case base_nodes {
+        [single] -> single
+        multiple -> ElementNode("template", [], multiple)
+      }
+      handle_conditional_chain(
+        wrapped_node,
+        lm_if,
+        lm_else_if,
+        has_lm_else,
+        pending_if,
+        remaining,
+      )
+    }
   }
-
-  // For simplicity, take first node for conditional handling
-  // (l-for wraps, so there's always just one)
-  let wrapped_node = case wrapped_nodes {
-    [single] -> single
-    multiple -> ElementNode("template", [], multiple)
-  }
-
-  // Handle conditional chain
-  handle_conditional_chain(
-    wrapped_node,
-    lm_if,
-    lm_else_if,
-    has_lm_else,
-    pending_if,
-    remaining,
-  )
 }
 
 /// Handles conditional chain logic for an element or component.

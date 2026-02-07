@@ -91,7 +91,7 @@ pub fn generate_variable_test() {
 
   // Should pass through the expression directly
   result.code
-  |> string.contains("runtime.escape(data.name)")
+  |> string.contains("runtime.display(data.name)")
   |> should.be_true
 }
 
@@ -106,7 +106,7 @@ pub fn generate_raw_variable_test() {
 
   // Should NOT escape raw variables
   result.code
-  |> string.contains("runtime.escape(data.html)")
+  |> string.contains("runtime.display(data.html)")
   |> should.be_false
 }
 
@@ -433,11 +433,11 @@ pub fn generate_each_tuple_destructuring_test() {
 
   // Should use destructured variables
   result.code
-  |> string.contains("runtime.escape(key)")
+  |> string.contains("runtime.display(key)")
   |> should.be_true
 
   result.code
-  |> string.contains("runtime.escape(value)")
+  |> string.contains("runtime.display(value)")
   |> should.be_true
 }
 
@@ -583,7 +583,7 @@ pub fn generate_component_test() {
 
   // Should access title directly (variable from template)
   result.code
-  |> string.contains("runtime.escape(title)")
+  |> string.contains("runtime.display(title)")
   |> should.be_true
 
   // Should use slot argument directly
@@ -1210,17 +1210,20 @@ pub fn generate_class_attr_only_conditionals_unchanged_test() {
 // ------------------------------------------------------------- Validation Tests
 
 pub fn validate_template_with_defined_variable_test() {
-  let tmpl = template_with_props([#("title", "String")], [VariableNode("title", 1)])
+  let tmpl =
+    template_with_props([#("title", "String")], [VariableNode("title", 1)])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_template_with_undefined_variable_test() {
-  let tmpl = template_with_props([#("title", "String")], [VariableNode("undefined_var", 5)])
+  let tmpl =
+    template_with_props([#("title", "String")], [
+      VariableNode("undefined_var", 5),
+    ])
 
-  let result =
-    generator.validate_template(tmpl, "test.loom.html")
+  let result = generator.validate_template(tmpl, "test.loom.html")
 
   result
   |> should.be_error
@@ -1237,7 +1240,8 @@ pub fn validate_template_with_undefined_variable_test() {
 
 pub fn validate_template_with_dotted_access_test() {
   // user.name should validate the root "user"
-  let tmpl = template_with_props([#("user", "User")], [VariableNode("user.name", 1)])
+  let tmpl =
+    template_with_props([#("user", "User")], [VariableNode("user.name", 1)])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
@@ -1245,7 +1249,8 @@ pub fn validate_template_with_dotted_access_test() {
 
 pub fn validate_template_with_undefined_dotted_access_test() {
   // user.name where "user" is not defined
-  let tmpl = template_with_props([#("title", "String")], [VariableNode("user.name", 1)])
+  let tmpl =
+    template_with_props([#("title", "String")], [VariableNode("user.name", 1)])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_error
@@ -1254,10 +1259,9 @@ pub fn validate_template_with_undefined_dotted_access_test() {
 pub fn validate_template_with_loop_variable_test() {
   // Loop variables should be valid inside the loop
   let tmpl =
-    template_with_props(
-      [#("items", "List(Item)")],
-      [EachNode("items", ["item"], None, [VariableNode("item.name", 1)], 1)],
-    )
+    template_with_props([#("items", "List(Item)")], [
+      EachNode("items", ["item"], None, [VariableNode("item.name", 1)], 1),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
@@ -1266,13 +1270,10 @@ pub fn validate_template_with_loop_variable_test() {
 pub fn validate_template_with_loop_var_outside_scope_test() {
   // Loop variable used outside the loop should fail
   let tmpl =
-    template_with_props(
-      [#("items", "List(Item)")],
-      [
-        EachNode("items", ["item"], None, [TextNode("in loop")], 1),
-        VariableNode("item", 1),
-      ],
-    )
+    template_with_props([#("items", "List(Item)")], [
+      EachNode("items", ["item"], None, [TextNode("in loop")], 1),
+      VariableNode("item", 1),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_error
@@ -1281,21 +1282,18 @@ pub fn validate_template_with_loop_var_outside_scope_test() {
 pub fn validate_template_with_tuple_destructuring_test() {
   // Tuple destructuring in l-for should make both vars available
   let tmpl =
-    template_with_props(
-      [#("pairs", "List(#(String, String))")],
-      [
-        EachNode(
-          "pairs",
-          ["key", "value"],
-          None,
-          [
-            VariableNode("key", 1),
-            VariableNode("value", 1),
-          ],
-          1,
-        ),
-      ],
-    )
+    template_with_props([#("pairs", "List(#(String, String))")], [
+      EachNode(
+        "pairs",
+        ["key", "value"],
+        None,
+        [
+          VariableNode("key", 1),
+          VariableNode("value", 1),
+        ],
+        1,
+      ),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
@@ -1304,18 +1302,15 @@ pub fn validate_template_with_tuple_destructuring_test() {
 pub fn validate_template_with_loop_index_test() {
   // Loop index variable should be available
   let tmpl =
-    template_with_props(
-      [#("items", "List(Item)")],
-      [
-        EachNode(
-          "items",
-          ["item"],
-          Some("loop"),
-          [VariableNode("loop.index", 1)],
-          1,
-        ),
-      ],
-    )
+    template_with_props([#("items", "List(Item)")], [
+      EachNode(
+        "items",
+        ["item"],
+        Some("loop"),
+        [VariableNode("loop.index", 1)],
+        1,
+      ),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
@@ -1344,10 +1339,9 @@ pub fn validate_template_with_named_slot_variable_test() {
 pub fn validate_template_with_if_condition_test() {
   // Variables in l-if conditions should be validated
   let tmpl =
-    template_with_props(
-      [#("is_visible", "Bool")],
-      [IfNode([#(Some("is_visible"), 1, [TextNode("visible")])])],
-    )
+    template_with_props([#("is_visible", "Bool")], [
+      IfNode([#(Some("is_visible"), 1, [TextNode("visible")])]),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
@@ -1356,10 +1350,9 @@ pub fn validate_template_with_if_condition_test() {
 pub fn validate_template_with_undefined_if_condition_test() {
   // Undefined variable in l-if should fail
   let tmpl =
-    template_with_props(
-      [#("title", "String")],
-      [IfNode([#(Some("undefined"), 1, [TextNode("text")])])],
-    )
+    template_with_props([#("title", "String")], [
+      IfNode([#(Some("undefined"), 1, [TextNode("text")])]),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_error
@@ -1368,10 +1361,9 @@ pub fn validate_template_with_undefined_if_condition_test() {
 pub fn validate_template_with_raw_variable_test() {
   // Raw variables should also be validated
   let tmpl =
-    template_with_props(
-      [#("html_content", "String")],
-      [RawVariableNode("html_content", 1)],
-    )
+    template_with_props([#("html_content", "String")], [
+      RawVariableNode("html_content", 1),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
@@ -1379,7 +1371,9 @@ pub fn validate_template_with_raw_variable_test() {
 
 pub fn validate_template_with_undefined_raw_variable_test() {
   let tmpl =
-    template_with_props([#("title", "String")], [RawVariableNode("undefined", 1)])
+    template_with_props([#("title", "String")], [
+      RawVariableNode("undefined", 1),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_error
@@ -1396,29 +1390,26 @@ pub fn validate_template_with_no_props_test() {
 pub fn validate_template_with_nested_loop_test() {
   // Nested loop variables should have correct scope
   let tmpl =
-    template_with_props(
-      [#("users", "List(User)")],
-      [
-        EachNode(
-          "users",
-          ["user"],
-          None,
-          [
-            EachNode(
-              "user.posts",
-              ["post"],
-              None,
-              [
-                VariableNode("user.name", 1),
-                VariableNode("post.title", 1),
-              ],
-              1,
-            ),
-          ],
-          1,
-        ),
-      ],
-    )
+    template_with_props([#("users", "List(User)")], [
+      EachNode(
+        "users",
+        ["user"],
+        None,
+        [
+          EachNode(
+            "user.posts",
+            ["post"],
+            None,
+            [
+              VariableNode("user.name", 1),
+              VariableNode("post.title", 1),
+            ],
+            1,
+          ),
+        ],
+        1,
+      ),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
@@ -1443,19 +1434,8 @@ pub fn generate_loop_index_uses_int_to_string_test() {
 
   let result = generate(tmpl, "loop_test", False)
 
-  // Should import gleam/int
   result.code
-  |> string.contains("import gleam/int")
-  |> should.be_true
-
-  // Should NOT import gleam/bool (not using bool properties)
-  result.code
-  |> string.contains("import gleam/bool")
-  |> should.be_false
-
-  // Should use int.to_string for loop.index
-  result.code
-  |> string.contains("int.to_string(loop.index)")
+  |> string.contains("runtime.display(loop.index)")
   |> should.be_true
 }
 
@@ -1477,7 +1457,7 @@ pub fn generate_loop_iteration_uses_int_to_string_test() {
   let result = generate(tmpl, "loop_test", False)
 
   result.code
-  |> string.contains("int.to_string(loop.iteration)")
+  |> string.contains("runtime.display(loop.iteration)")
   |> should.be_true
 }
 
@@ -1499,7 +1479,7 @@ pub fn generate_loop_count_uses_int_to_string_test() {
   let result = generate(tmpl, "loop_test", False)
 
   result.code
-  |> string.contains("int.to_string(loop.count)")
+  |> string.contains("runtime.display(loop.count)")
   |> should.be_true
 }
 
@@ -1521,7 +1501,7 @@ pub fn generate_loop_remaining_uses_int_to_string_test() {
   let result = generate(tmpl, "loop_test", False)
 
   result.code
-  |> string.contains("int.to_string(loop.remaining)")
+  |> string.contains("runtime.display(loop.remaining)")
   |> should.be_true
 }
 
@@ -1542,19 +1522,8 @@ pub fn generate_loop_first_uses_bool_to_string_test() {
 
   let result = generate(tmpl, "loop_test", False)
 
-  // Should import gleam/bool
   result.code
-  |> string.contains("import gleam/bool")
-  |> should.be_true
-
-  // Should NOT import gleam/int (not using int properties)
-  result.code
-  |> string.contains("import gleam/int")
-  |> should.be_false
-
-  // Should use bool.to_string for loop.first
-  result.code
-  |> string.contains("bool.to_string(loop.first)")
+  |> string.contains("runtime.display(loop.first)")
   |> should.be_true
 }
 
@@ -1576,7 +1545,7 @@ pub fn generate_loop_last_uses_bool_to_string_test() {
   let result = generate(tmpl, "loop_test", False)
 
   result.code
-  |> string.contains("bool.to_string(loop.last)")
+  |> string.contains("runtime.display(loop.last)")
   |> should.be_true
 }
 
@@ -1598,7 +1567,7 @@ pub fn generate_loop_even_uses_bool_to_string_test() {
   let result = generate(tmpl, "loop_test", False)
 
   result.code
-  |> string.contains("bool.to_string(loop.even)")
+  |> string.contains("runtime.display(loop.even)")
   |> should.be_true
 }
 
@@ -1620,63 +1589,8 @@ pub fn generate_loop_odd_uses_bool_to_string_test() {
   let result = generate(tmpl, "loop_test", False)
 
   result.code
-  |> string.contains("bool.to_string(loop.odd)")
+  |> string.contains("runtime.display(loop.odd)")
   |> should.be_true
-}
-
-pub fn generate_loop_mixed_properties_imports_both_test() {
-  // Using both Int and Bool loop properties should import both modules
-  let tmpl =
-    template([
-      EachNode(
-        "items",
-        ["item"],
-        Some("loop"),
-        [
-          VariableNode("loop.index", 1),
-          VariableNode("loop.first", 1),
-        ],
-        1,
-      ),
-    ])
-
-  let result = generate(tmpl, "loop_test", False)
-
-  // Should import both
-  result.code
-  |> string.contains("import gleam/int")
-  |> should.be_true
-
-  result.code
-  |> string.contains("import gleam/bool")
-  |> should.be_true
-}
-
-pub fn generate_loop_no_properties_no_imports_test() {
-  // Using loop variable but not accessing properties shouldn't import int/bool
-  let tmpl =
-    template([
-      EachNode(
-        "items",
-        ["item"],
-        Some("loop"),
-        [
-          VariableNode("item", 1),
-        ],
-        1,
-      ),
-    ])
-
-  let result = generate(tmpl, "loop_test", False)
-
-  // Should NOT import int or bool
-  result.code
-  |> string.contains("import gleam/int")
-  |> should.be_false
-
-  result.code
-  |> string.contains("import gleam/bool")
-  |> should.be_false
 }
 
 pub fn generate_named_loop_variable_test() {
@@ -1698,11 +1612,11 @@ pub fn generate_named_loop_variable_test() {
   let result = generate(tmpl, "loop_test", False)
 
   result.code
-  |> string.contains("int.to_string(user_loop.index)")
+  |> string.contains("runtime.display(user_loop.index)")
   |> should.be_true
 
   result.code
-  |> string.contains("bool.to_string(user_loop.first)")
+  |> string.contains("runtime.display(user_loop.first)")
   |> should.be_true
 }
 
@@ -1733,11 +1647,11 @@ pub fn generate_nested_loops_with_different_loop_vars_test() {
   let result = generate(tmpl, "loop_test", False)
 
   result.code
-  |> string.contains("int.to_string(user_loop.index)")
+  |> string.contains("runtime.display(user_loop.index)")
   |> should.be_true
 
   result.code
-  |> string.contains("int.to_string(post_loop.iteration)")
+  |> string.contains("runtime.display(post_loop.iteration)")
   |> should.be_true
 }
 
@@ -1758,9 +1672,9 @@ pub fn generate_raw_loop_variable_also_converts_test() {
 
   let result = generate(tmpl, "loop_test", False)
 
-  // Should still use int.to_string even for raw output
+  // Raw output uses to_string (no escaping) instead of display
   result.code
-  |> string.contains("int.to_string(loop.index)")
+  |> string.contains("runtime.to_string(loop.index)")
   |> should.be_true
 }
 
@@ -1984,10 +1898,9 @@ pub fn generate_nested_loops_tuple_destructuring_test() {
 pub fn validate_tuple_arity_mismatch_test() {
   // Destructuring with wrong number of variables should fail validation
   let tmpl =
-    template_with_props(
-      [#("items", "List(#(String, String, String))")],
-      [EachNode("items", ["a", "b", "c", "d"], None, [VariableNode("a", 1)], 5)],
-    )
+    template_with_props([#("items", "List(#(String, String, String))")], [
+      EachNode("items", ["a", "b", "c", "d"], None, [VariableNode("a", 1)], 5),
+    ])
 
   let result = generator.validate_template(tmpl, "test.loom.html")
 
@@ -2011,10 +1924,9 @@ pub fn validate_tuple_arity_mismatch_test() {
 pub fn validate_tuple_arity_correct_test() {
   // Correct number of variables should pass validation
   let tmpl =
-    template_with_props(
-      [#("items", "List(#(String, String, String))")],
-      [EachNode("items", ["a", "b", "c"], None, [VariableNode("a", 1)], 5)],
-    )
+    template_with_props([#("items", "List(#(String, String, String))")], [
+      EachNode("items", ["a", "b", "c"], None, [VariableNode("a", 1)], 5),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
@@ -2023,10 +1935,9 @@ pub fn validate_tuple_arity_correct_test() {
 pub fn validate_tuple_arity_two_elements_test() {
   // Two-element tuple should work
   let tmpl =
-    template_with_props(
-      [#("pairs", "List(#(String, Int))")],
-      [EachNode("pairs", ["key", "value"], None, [VariableNode("key", 1)], 5)],
-    )
+    template_with_props([#("pairs", "List(#(String, Int))")], [
+      EachNode("pairs", ["key", "value"], None, [VariableNode("key", 1)], 5),
+    ])
 
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
@@ -2035,10 +1946,9 @@ pub fn validate_tuple_arity_two_elements_test() {
 pub fn validate_tuple_arity_two_elements_mismatch_test() {
   // Three variables for two-element tuple should fail
   let tmpl =
-    template_with_props(
-      [#("pairs", "List(#(String, Int))")],
-      [EachNode("pairs", ["a", "b", "c"], None, [VariableNode("a", 1)], 5)],
-    )
+    template_with_props([#("pairs", "List(#(String, Int))")], [
+      EachNode("pairs", ["a", "b", "c"], None, [VariableNode("a", 1)], 5),
+    ])
 
   let result = generator.validate_template(tmpl, "test.loom.html")
 
@@ -2058,10 +1968,9 @@ pub fn validate_tuple_arity_two_elements_mismatch_test() {
 pub fn validate_tuple_arity_single_var_skips_check_test() {
   // Single variable (no destructuring) should skip arity check
   let tmpl =
-    template_with_props(
-      [#("items", "List(#(String, String, String))")],
-      [EachNode("items", ["item"], None, [VariableNode("item", 1)], 5)],
-    )
+    template_with_props([#("items", "List(#(String, String, String))")], [
+      EachNode("items", ["item"], None, [VariableNode("item", 1)], 5),
+    ])
 
   // Should pass - single var means no tuple destructuring
   generator.validate_template(tmpl, "test.loom.html")
@@ -2071,10 +1980,9 @@ pub fn validate_tuple_arity_single_var_skips_check_test() {
 pub fn validate_tuple_arity_non_tuple_list_skips_check_test() {
   // List of non-tuples should skip arity check
   let tmpl =
-    template_with_props(
-      [#("names", "List(String)")],
-      [EachNode("names", ["a", "b"], None, [VariableNode("a", 1)], 5)],
-    )
+    template_with_props([#("names", "List(String)")], [
+      EachNode("names", ["a", "b"], None, [VariableNode("a", 1)], 5),
+    ])
 
   // Should pass - can't validate non-tuple types
   generator.validate_template(tmpl, "test.loom.html")
@@ -2084,10 +1992,9 @@ pub fn validate_tuple_arity_non_tuple_list_skips_check_test() {
 pub fn validate_tuple_arity_nested_tuple_types_test() {
   // Nested tuple types should count correctly
   let tmpl =
-    template_with_props(
-      [#("data", "List(#(String, List(#(Int, Int))))")],
-      [EachNode("data", ["a", "b"], None, [VariableNode("a", 1)], 5)],
-    )
+    template_with_props([#("data", "List(#(String, List(#(Int, Int))))")], [
+      EachNode("data", ["a", "b"], None, [VariableNode("a", 1)], 5),
+    ])
 
   // Should pass - 2 elements in outer tuple
   generator.validate_template(tmpl, "test.loom.html")
@@ -2097,10 +2004,9 @@ pub fn validate_tuple_arity_nested_tuple_types_test() {
 pub fn validate_tuple_arity_nested_tuple_mismatch_test() {
   // Nested tuple with wrong count should fail
   let tmpl =
-    template_with_props(
-      [#("data", "List(#(String, List(#(Int, Int))))")],
-      [EachNode("data", ["a", "b", "c"], None, [VariableNode("a", 1)], 5)],
-    )
+    template_with_props([#("data", "List(#(String, List(#(Int, Int))))")], [
+      EachNode("data", ["a", "b", "c"], None, [VariableNode("a", 1)], 5),
+    ])
 
   let result = generator.validate_template(tmpl, "test.loom.html")
 

@@ -169,8 +169,7 @@ fn do_tokenize(
                 Text(prev <> "<!--"),
                 ..rest_tokens
               ])
-            _ ->
-              do_tokenize(rest, position + 4, line, [Text("<!--"), ..tokens])
+            _ -> do_tokenize(rest, position + 4, line, [Text("<!--"), ..tokens])
           }
         }
       }

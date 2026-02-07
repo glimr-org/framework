@@ -747,19 +747,6 @@ fn generate_module(
 fn generate_imports(template: Template) -> String {
   let base_imports = ["import glimr/loom/runtime"]
 
-  // Add int/bool imports only if the template uses those loop properties
-  let #(uses_int_props, uses_bool_props) =
-    get_loop_property_usage(template.nodes, set.new())
-  let int_import = case uses_int_props {
-    True -> ["import gleam/int"]
-    False -> []
-  }
-  let bool_import = case uses_bool_props {
-    True -> ["import gleam/bool"]
-    False -> []
-  }
-  let loop_imports = list.flatten([int_import, bool_import])
-
   // User imports from @import directives (copied verbatim as "import <content>")
   let user_imports =
     template.imports
@@ -778,64 +765,9 @@ fn generate_imports(template: Template) -> String {
     })
 
   string.join(
-    list.flatten([base_imports, loop_imports, user_imports, component_imports]),
+    list.flatten([base_imports, user_imports, component_imports]),
     "\n",
   )
-}
-
-/// Scans the template to find which loop property types are used.
-/// Returns (uses_int_properties, uses_bool_properties) to determine
-/// which imports are needed.
-///
-fn get_loop_property_usage(
-  nodes: List(Node),
-  loop_vars: Set(String),
-) -> #(Bool, Bool) {
-  list.fold(nodes, #(False, False), fn(acc, node) {
-    let #(uses_int, uses_bool) = acc
-    let #(node_int, node_bool) = case node {
-      parser.EachNode(_, _, loop_var, body, _) -> {
-        // Add loop variable to set and check body
-        let new_loop_vars = case loop_var {
-          Some(lv) -> set.insert(loop_vars, lv)
-          None -> loop_vars
-        }
-        get_loop_property_usage(body, new_loop_vars)
-      }
-      parser.VariableNode(expr, _) | parser.RawVariableNode(expr, _) ->
-        check_expr_loop_props(expr, loop_vars)
-      parser.IfNode(branches) ->
-        list.fold(branches, #(False, False), fn(b_acc, branch) {
-          let #(b_int, b_bool) = get_loop_property_usage(branch.2, loop_vars)
-          #(b_acc.0 || b_int, b_acc.1 || b_bool)
-        })
-      parser.ComponentNode(_, _, children) ->
-        get_loop_property_usage(children, loop_vars)
-      parser.SlotDefNode(_, children) ->
-        get_loop_property_usage(children, loop_vars)
-      parser.SlotNode(_, fallback) ->
-        get_loop_property_usage(fallback, loop_vars)
-      parser.ElementNode(_, _, children) ->
-        get_loop_property_usage(children, loop_vars)
-      _ -> #(False, False)
-    }
-    #(uses_int || node_int, uses_bool || node_bool)
-  })
-}
-
-/// Checks if an expression uses Int or Bool loop properties.
-///
-fn check_expr_loop_props(expr: String, loop_vars: Set(String)) -> #(Bool, Bool) {
-  case get_loop_property(expr, loop_vars) {
-    Some(#(_loop_var, property)) -> {
-      case property {
-        "index" | "iteration" | "count" | "remaining" -> #(True, False)
-        "first" | "last" | "even" | "odd" -> #(False, True)
-        _ -> #(False, False)
-      }
-    }
-    None -> #(False, False)
-  }
 }
 
 /// Recursively collects all component names from the AST.
@@ -1354,29 +1286,34 @@ fn generate_node_code_with_loop_vars(
           loop_vars,
         )
 
-      // Self-closing tags
-      case is_void_element(tag) {
-        True ->
-          pad
-          <> "<> \"<"
-          <> tag
-          <> "\"\n"
-          <> attrs_code
-          <> pad
-          <> "<> \" />\"\n"
-        False ->
-          pad
-          <> "<> \"<"
-          <> tag
-          <> "\"\n"
-          <> attrs_code
-          <> pad
-          <> "<> \">\"\n"
-          <> children_code
-          <> pad
-          <> "<> \"</"
-          <> tag
-          <> ">\"\n"
+      // <template> is a phantom wrapper - only render children, not the tag itself
+      case tag {
+        "template" -> children_code
+        _ ->
+          // Self-closing tags
+          case is_void_element(tag) {
+            True ->
+              pad
+              <> "<> \"<"
+              <> tag
+              <> "\"\n"
+              <> attrs_code
+              <> pad
+              <> "<> \" />\"\n"
+            False ->
+              pad
+              <> "<> \"<"
+              <> tag
+              <> "\"\n"
+              <> attrs_code
+              <> pad
+              <> "<> \">\"\n"
+              <> children_code
+              <> pad
+              <> "<> \"</"
+              <> tag
+              <> ">\"\n"
+          }
       }
     }
   }
@@ -2320,43 +2257,21 @@ fn transform_list_chars(
   }
 }
 
-/// Converts a loop variable expression to the appropriate string representation.
-/// Loop properties like loop.index (Int) need int.to_string, while regular
-/// strings need runtime.escape.
+/// Converts any expression to a displayable string representation.
+/// Uses runtime.display() which handles all types (String, Bool, Int, etc.)
+/// and escapes HTML.
 ///
-fn convert_loop_var_expr(expr: String, loop_vars: Set(String)) -> String {
-  case get_loop_property(expr, loop_vars) {
-    Some(#(_loop_var, property)) -> {
-      case property {
-        // Int properties need int.to_string
-        "index" | "iteration" | "count" | "remaining" ->
-          "int.to_string(" <> expr <> ")"
-        // Bool properties need bool.to_string for display
-        "first" | "last" | "even" | "odd" -> "bool.to_string(" <> expr <> ")"
-        // Unknown property, treat as string
-        _ -> "runtime.escape(" <> expr <> ")"
-      }
-    }
-    None -> "runtime.escape(" <> expr <> ")"
-  }
+fn convert_loop_var_expr(expr: String, _loop_vars: Set(String)) -> String {
+  "runtime.display(" <> expr <> ")"
 }
 
-/// Converts a loop variable expression for raw output (no escaping).
-/// Still needs type conversion for Int/Bool properties.
+/// Converts an expression for raw output (no escaping).
+/// Loop properties are converted to strings, but regular data is
+/// passed through directly (assumed to already be a String).
 ///
 fn convert_loop_var_expr_raw(expr: String, loop_vars: Set(String)) -> String {
   case get_loop_property(expr, loop_vars) {
-    Some(#(_loop_var, property)) -> {
-      case property {
-        // Int properties need int.to_string
-        "index" | "iteration" | "count" | "remaining" ->
-          "int.to_string(" <> expr <> ")"
-        // Bool properties need bool.to_string for display
-        "first" | "last" | "even" | "odd" -> "bool.to_string(" <> expr <> ")"
-        // Unknown property, pass through as-is
-        _ -> expr
-      }
-    }
+    Some(_) -> "runtime.to_string(" <> expr <> ")"
     None -> expr
   }
 }
