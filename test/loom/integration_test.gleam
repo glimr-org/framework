@@ -162,7 +162,7 @@ pub fn compile_page_template_test() {
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
   let generated =
-    generator.generate(parsed, "home", False, None, dict.new(), dict.new())
+    generator.generate(parsed, "home", False, dict.new(), dict.new())
 
   // Should pass through data.title, etc.
   generated.code
@@ -190,7 +190,7 @@ pub fn compile_component_template_test() {
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
   let generated =
-    generator.generate(parsed, "alert", True, None, dict.new(), dict.new())
+    generator.generate(parsed, "alert", True, dict.new(), dict.new())
 
   // Should have html function with slot and attributes params (no view file = no data params)
   generated.code
@@ -233,7 +233,7 @@ pub fn compile_layout_template_test() {
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
   let generated =
-    generator.generate(parsed, "app", False, None, dict.new(), dict.new())
+    generator.generate(parsed, "app", False, dict.new(), dict.new())
 
   // Should have html function with slot param (no view file = no data params)
   generated.code
@@ -258,7 +258,7 @@ pub fn compile_template_with_nested_components_test() {
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
   let generated =
-    generator.generate(parsed, "page", False, None, dict.new(), dict.new())
+    generator.generate(parsed, "page", False, dict.new(), dict.new())
 
   // Should import all components
   generated.code
@@ -285,7 +285,6 @@ pub fn compile_template_with_each_and_component_test() {
       parsed,
       "alerts_page",
       False,
-      None,
       dict.new(),
       dict.new(),
     )
@@ -347,7 +346,7 @@ pub fn pipeline_raw_html_not_escaped_test() {
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
   let generated =
-    generator.generate(parsed, "raw", False, None, dict.new(), dict.new())
+    generator.generate(parsed, "raw", False, dict.new(), dict.new())
 
   // Raw variable should not call escape
   generated.code
@@ -507,7 +506,7 @@ pub fn compile_component_with_attributes_test() {
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
   let generated =
-    generator.generate(parsed, "button", True, None, dict.new(), dict.new())
+    generator.generate(parsed, "button", True, dict.new(), dict.new())
 
   // Should have html function with attributes param
   generated.code
@@ -528,7 +527,7 @@ pub fn compile_component_auto_inject_attributes_test() {
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
   let generated =
-    generator.generate(parsed, "button", True, None, dict.new(), dict.new())
+    generator.generate(parsed, "button", True, dict.new(), dict.new())
 
   // Should auto-inject merge_attributes with base class
   generated.code
@@ -546,7 +545,7 @@ pub fn compile_using_component_with_attributes_test() {
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
   let generated =
-    generator.generate(parsed, "page", False, None, dict.new(), dict.new())
+    generator.generate(parsed, "page", False, dict.new(), dict.new())
 
   // Should generate attributes list with all attributes
   generated.code

@@ -12,7 +12,15 @@ import glimr/loom/parser.{
 
 // Helper to create a template (simplified after layout removal)
 fn template(nodes: List(Node)) -> Template {
-  Template(nodes: nodes)
+  Template(imports: [], props: [], nodes: nodes)
+}
+
+// Helper to create a template with props
+fn template_with_props(
+  props: List(#(String, String)),
+  nodes: List(Node),
+) -> Template {
+  Template(imports: [], props: props, nodes: nodes)
 }
 
 // Helper to create a simple if node (single branch, no else)
@@ -40,13 +48,13 @@ fn if_elseif_else_node(
   IfNode(list.append(if_branches, [#(None, 0, else_body)]))
 }
 
-// Helper to call generator with common defaults (6 args after layout removal)
+// Helper to call generator with common defaults
 fn generate(
   tmpl: Template,
   name: String,
   is_component: Bool,
 ) -> generator.GeneratedCode {
-  generator.generate(tmpl, name, is_component, None, dict.new(), dict.new())
+  generator.generate(tmpl, name, is_component, dict.new(), dict.new())
 }
 
 // ------------------------------------------------------------- Basic Generation Tests
@@ -646,7 +654,7 @@ pub fn generate_component_with_expr_attr_test() {
   // Create component props map with "value" as a known prop for "input" component
   let component_props = dict.from_list([#("input", [#("value", "String")])])
   let result =
-    generator.generate(tmpl, "form", False, None, component_props, dict.new())
+    generator.generate(tmpl, "form", False, component_props, dict.new())
 
   // Should pass expression directly as prop (since "value" is a known prop)
   result.code
@@ -1201,22 +1209,18 @@ pub fn generate_class_attr_only_conditionals_unchanged_test() {
 
 // ------------------------------------------------------------- Validation Tests
 
-import glimr/loom/gleam_parser.{ParsedViewFile}
-
 pub fn validate_template_with_defined_variable_test() {
-  let tmpl = template([VariableNode("title", 1)])
-  let view_file = ParsedViewFile(fields: [#("title", "String")], imports: [])
+  let tmpl = template_with_props([#("title", "String")], [VariableNode("title", 1)])
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_template_with_undefined_variable_test() {
-  let tmpl = template([VariableNode("undefined_var", 5)])
-  let view_file = ParsedViewFile(fields: [#("title", "String")], imports: [])
+  let tmpl = template_with_props([#("title", "String")], [VariableNode("undefined_var", 5)])
 
   let result =
-    generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+    generator.validate_template(tmpl, "test.loom.html")
 
   result
   |> should.be_error
@@ -1233,87 +1237,87 @@ pub fn validate_template_with_undefined_variable_test() {
 
 pub fn validate_template_with_dotted_access_test() {
   // user.name should validate the root "user"
-  let tmpl = template([VariableNode("user.name", 1)])
-  let view_file = ParsedViewFile(fields: [#("user", "User")], imports: [])
+  let tmpl = template_with_props([#("user", "User")], [VariableNode("user.name", 1)])
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_template_with_undefined_dotted_access_test() {
   // user.name where "user" is not defined
-  let tmpl = template([VariableNode("user.name", 1)])
-  let view_file = ParsedViewFile(fields: [#("title", "String")], imports: [])
+  let tmpl = template_with_props([#("title", "String")], [VariableNode("user.name", 1)])
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_error
 }
 
 pub fn validate_template_with_loop_variable_test() {
   // Loop variables should be valid inside the loop
   let tmpl =
-    template([
-      EachNode("items", ["item"], None, [VariableNode("item.name", 1)], 1),
-    ])
-  let view_file =
-    ParsedViewFile(fields: [#("items", "List(Item)")], imports: [])
+    template_with_props(
+      [#("items", "List(Item)")],
+      [EachNode("items", ["item"], None, [VariableNode("item.name", 1)], 1)],
+    )
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_template_with_loop_var_outside_scope_test() {
   // Loop variable used outside the loop should fail
   let tmpl =
-    template([
-      EachNode("items", ["item"], None, [TextNode("in loop")], 1),
-      VariableNode("item", 1),
-    ])
-  let view_file =
-    ParsedViewFile(fields: [#("items", "List(Item)")], imports: [])
+    template_with_props(
+      [#("items", "List(Item)")],
+      [
+        EachNode("items", ["item"], None, [TextNode("in loop")], 1),
+        VariableNode("item", 1),
+      ],
+    )
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_error
 }
 
 pub fn validate_template_with_tuple_destructuring_test() {
   // Tuple destructuring in l-for should make both vars available
   let tmpl =
-    template([
-      EachNode(
-        "pairs",
-        ["key", "value"],
-        None,
-        [
-          VariableNode("key", 1),
-          VariableNode("value", 1),
-        ],
-        1,
-      ),
-    ])
-  let view_file =
-    ParsedViewFile(fields: [#("pairs", "List(#(String, String))")], imports: [])
+    template_with_props(
+      [#("pairs", "List(#(String, String))")],
+      [
+        EachNode(
+          "pairs",
+          ["key", "value"],
+          None,
+          [
+            VariableNode("key", 1),
+            VariableNode("value", 1),
+          ],
+          1,
+        ),
+      ],
+    )
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_template_with_loop_index_test() {
   // Loop index variable should be available
   let tmpl =
-    template([
-      EachNode(
-        "items",
-        ["item"],
-        Some("loop"),
-        [VariableNode("loop.index", 1)],
-        1,
-      ),
-    ])
-  let view_file =
-    ParsedViewFile(fields: [#("items", "List(Item)")], imports: [])
+    template_with_props(
+      [#("items", "List(Item)")],
+      [
+        EachNode(
+          "items",
+          ["item"],
+          Some("loop"),
+          [VariableNode("loop.index", 1)],
+          1,
+        ),
+      ],
+    )
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
@@ -1321,7 +1325,7 @@ pub fn validate_template_with_slot_variable_test() {
   // Default slot variable should always be valid
   let tmpl = template([IfNode([#(Some("slot"), 1, [TextNode("has slot")])])])
 
-  generator.validate_template(tmpl, None, "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
@@ -1333,82 +1337,90 @@ pub fn validate_template_with_named_slot_variable_test() {
       IfNode([#(Some("slot.header"), 1, [TextNode("has header")])]),
     ])
 
-  generator.validate_template(tmpl, None, "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_template_with_if_condition_test() {
   // Variables in l-if conditions should be validated
   let tmpl =
-    template([IfNode([#(Some("is_visible"), 1, [TextNode("visible")])])])
-  let view_file = ParsedViewFile(fields: [#("is_visible", "Bool")], imports: [])
+    template_with_props(
+      [#("is_visible", "Bool")],
+      [IfNode([#(Some("is_visible"), 1, [TextNode("visible")])])],
+    )
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_template_with_undefined_if_condition_test() {
   // Undefined variable in l-if should fail
-  let tmpl = template([IfNode([#(Some("undefined"), 1, [TextNode("text")])])])
-  let view_file = ParsedViewFile(fields: [#("title", "String")], imports: [])
+  let tmpl =
+    template_with_props(
+      [#("title", "String")],
+      [IfNode([#(Some("undefined"), 1, [TextNode("text")])])],
+    )
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_error
 }
 
 pub fn validate_template_with_raw_variable_test() {
   // Raw variables should also be validated
-  let tmpl = template([RawVariableNode("html_content", 1)])
-  let view_file =
-    ParsedViewFile(fields: [#("html_content", "String")], imports: [])
+  let tmpl =
+    template_with_props(
+      [#("html_content", "String")],
+      [RawVariableNode("html_content", 1)],
+    )
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_template_with_undefined_raw_variable_test() {
-  let tmpl = template([RawVariableNode("undefined", 1)])
-  let view_file = ParsedViewFile(fields: [#("title", "String")], imports: [])
+  let tmpl =
+    template_with_props([#("title", "String")], [RawVariableNode("undefined", 1)])
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_error
 }
 
-pub fn validate_template_with_no_view_file_test() {
-  // Without a view file, all variables should fail (except slot vars)
+pub fn validate_template_with_no_props_test() {
+  // Without props, all variables should fail (except slot vars)
   let tmpl = template([VariableNode("title", 1)])
 
-  generator.validate_template(tmpl, None, "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_error
 }
 
 pub fn validate_template_with_nested_loop_test() {
   // Nested loop variables should have correct scope
   let tmpl =
-    template([
-      EachNode(
-        "users",
-        ["user"],
-        None,
-        [
-          EachNode(
-            "user.posts",
-            ["post"],
-            None,
-            [
-              VariableNode("user.name", 1),
-              VariableNode("post.title", 1),
-            ],
-            1,
-          ),
-        ],
-        1,
-      ),
-    ])
-  let view_file =
-    ParsedViewFile(fields: [#("users", "List(User)")], imports: [])
+    template_with_props(
+      [#("users", "List(User)")],
+      [
+        EachNode(
+          "users",
+          ["user"],
+          None,
+          [
+            EachNode(
+              "user.posts",
+              ["post"],
+              None,
+              [
+                VariableNode("user.name", 1),
+                VariableNode("post.title", 1),
+              ],
+              1,
+            ),
+          ],
+          1,
+        ),
+      ],
+    )
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
@@ -1972,17 +1984,12 @@ pub fn generate_nested_loops_tuple_destructuring_test() {
 pub fn validate_tuple_arity_mismatch_test() {
   // Destructuring with wrong number of variables should fail validation
   let tmpl =
-    template([
-      EachNode("items", ["a", "b", "c", "d"], None, [VariableNode("a", 1)], 5),
-    ])
-  let view_file =
-    ParsedViewFile(
-      fields: [#("items", "List(#(String, String, String))")],
-      imports: [],
+    template_with_props(
+      [#("items", "List(#(String, String, String))")],
+      [EachNode("items", ["a", "b", "c", "d"], None, [VariableNode("a", 1)], 5)],
     )
 
-  let result =
-    generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  let result = generator.validate_template(tmpl, "test.loom.html")
 
   result
   |> should.be_error
@@ -2004,43 +2011,36 @@ pub fn validate_tuple_arity_mismatch_test() {
 pub fn validate_tuple_arity_correct_test() {
   // Correct number of variables should pass validation
   let tmpl =
-    template([
-      EachNode("items", ["a", "b", "c"], None, [VariableNode("a", 1)], 5),
-    ])
-  let view_file =
-    ParsedViewFile(
-      fields: [#("items", "List(#(String, String, String))")],
-      imports: [],
+    template_with_props(
+      [#("items", "List(#(String, String, String))")],
+      [EachNode("items", ["a", "b", "c"], None, [VariableNode("a", 1)], 5)],
     )
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_tuple_arity_two_elements_test() {
   // Two-element tuple should work
   let tmpl =
-    template([
-      EachNode("pairs", ["key", "value"], None, [VariableNode("key", 1)], 5),
-    ])
-  let view_file =
-    ParsedViewFile(fields: [#("pairs", "List(#(String, Int))")], imports: [])
+    template_with_props(
+      [#("pairs", "List(#(String, Int))")],
+      [EachNode("pairs", ["key", "value"], None, [VariableNode("key", 1)], 5)],
+    )
 
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_tuple_arity_two_elements_mismatch_test() {
   // Three variables for two-element tuple should fail
   let tmpl =
-    template([
-      EachNode("pairs", ["a", "b", "c"], None, [VariableNode("a", 1)], 5),
-    ])
-  let view_file =
-    ParsedViewFile(fields: [#("pairs", "List(#(String, Int))")], imports: [])
+    template_with_props(
+      [#("pairs", "List(#(String, Int))")],
+      [EachNode("pairs", ["a", "b", "c"], None, [VariableNode("a", 1)], 5)],
+    )
 
-  let result =
-    generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  let result = generator.validate_template(tmpl, "test.loom.html")
 
   result
   |> should.be_error
@@ -2058,65 +2058,51 @@ pub fn validate_tuple_arity_two_elements_mismatch_test() {
 pub fn validate_tuple_arity_single_var_skips_check_test() {
   // Single variable (no destructuring) should skip arity check
   let tmpl =
-    template([
-      EachNode("items", ["item"], None, [VariableNode("item", 1)], 5),
-    ])
-  let view_file =
-    ParsedViewFile(
-      fields: [#("items", "List(#(String, String, String))")],
-      imports: [],
+    template_with_props(
+      [#("items", "List(#(String, String, String))")],
+      [EachNode("items", ["item"], None, [VariableNode("item", 1)], 5)],
     )
 
   // Should pass - single var means no tuple destructuring
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_tuple_arity_non_tuple_list_skips_check_test() {
   // List of non-tuples should skip arity check
   let tmpl =
-    template([
-      EachNode("names", ["a", "b"], None, [VariableNode("a", 1)], 5),
-    ])
-  let view_file =
-    ParsedViewFile(fields: [#("names", "List(String)")], imports: [])
+    template_with_props(
+      [#("names", "List(String)")],
+      [EachNode("names", ["a", "b"], None, [VariableNode("a", 1)], 5)],
+    )
 
   // Should pass - can't validate non-tuple types
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_tuple_arity_nested_tuple_types_test() {
   // Nested tuple types should count correctly
   let tmpl =
-    template([
-      EachNode("data", ["a", "b"], None, [VariableNode("a", 1)], 5),
-    ])
-  let view_file =
-    ParsedViewFile(
-      fields: [#("data", "List(#(String, List(#(Int, Int))))")],
-      imports: [],
+    template_with_props(
+      [#("data", "List(#(String, List(#(Int, Int))))")],
+      [EachNode("data", ["a", "b"], None, [VariableNode("a", 1)], 5)],
     )
 
   // Should pass - 2 elements in outer tuple
-  generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
 }
 
 pub fn validate_tuple_arity_nested_tuple_mismatch_test() {
   // Nested tuple with wrong count should fail
   let tmpl =
-    template([
-      EachNode("data", ["a", "b", "c"], None, [VariableNode("a", 1)], 5),
-    ])
-  let view_file =
-    ParsedViewFile(
-      fields: [#("data", "List(#(String, List(#(Int, Int))))")],
-      imports: [],
+    template_with_props(
+      [#("data", "List(#(String, List(#(Int, Int))))")],
+      [EachNode("data", ["a", "b", "c"], None, [VariableNode("a", 1)], 5)],
     )
 
-  let result =
-    generator.validate_template(tmpl, Some(view_file), "test.loom.html")
+  let result = generator.validate_template(tmpl, "test.loom.html")
 
   result
   |> should.be_error
@@ -2132,14 +2118,14 @@ pub fn validate_tuple_arity_nested_tuple_mismatch_test() {
 }
 
 pub fn validate_tuple_arity_unknown_collection_skips_test() {
-  // Unknown collection should skip validation (no view file)
+  // Unknown collection should skip validation (no props)
   let tmpl =
     template([
       EachNode("items", ["a", "b", "c", "d"], None, [VariableNode("a", 1)], 5),
     ])
 
-  // No view file - can't validate
-  generator.validate_template(tmpl, None, "test.loom.html")
+  // No props - can't validate
+  generator.validate_template(tmpl, "test.loom.html")
   |> should.be_error
   // Will fail for undefined variable, not arity
 }

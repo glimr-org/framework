@@ -7,6 +7,7 @@
 
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/string
 import glimr/loom/lexer.{type ComponentAttr, type Token}
 
 // ------------------------------------------------------------- Public Types
@@ -16,7 +17,14 @@ import glimr/loom/lexer.{type ComponentAttr, type Token}
 /// AST nodes that make up the template.
 ///
 pub type Template {
-  Template(nodes: List(Node))
+  Template(
+    /// Import statements from @import directives
+    imports: List(String),
+    /// Props from @props directive (name, type pairs)
+    props: List(#(String, String)),
+    /// Content nodes
+    nodes: List(Node),
+  )
 }
 
 /// Represents a node in the template AST. Each variant maps
@@ -71,18 +79,78 @@ pub type ParserError {
   UnclosedElement(tag: String)
   UnclosedSlot(name: Option(String))
   UnexpectedToken(token: Token)
+  /// @props or @import directive appeared after template content
+  DirectiveAfterContent(directive: String, line: Int)
+  /// Multiple @props directives found
+  DuplicatePropsDirective(line: Int)
 }
 
 // ------------------------------------------------------------- Public Functions
 
-/// Parses a list of tokens into a Template AST. Recursively
+/// Parses a list of tokens into a Template AST. Extracts
+/// @import and @props directives first, then recursively
 /// parses all nodes including nested structures like
 /// conditionals, loops, and component hierarchies.
 ///
 pub fn parse(tokens: List(Token)) -> Result(Template, ParserError) {
-  use nodes <- try_parse(parse_nodes(tokens, [], None))
-  Ok(Template(nodes: nodes))
+  // First extract @import and @props directives from the beginning
+  use #(imports, props, remaining_tokens) <- try_parse(
+    extract_directives(tokens, [], None),
+  )
+  // Then parse the content nodes
+  use nodes <- try_parse(parse_nodes(remaining_tokens, [], None))
+  Ok(Template(imports: imports, props: props, nodes: nodes))
 }
+
+/// Extracts @import and @props directives from the beginning of tokens.
+/// Directives must appear before any content. Returns the imports,
+/// props, and remaining tokens.
+///
+fn extract_directives(
+  tokens: List(Token),
+  imports_acc: List(String),
+  props_acc: Option(List(#(String, String))),
+) -> Result(#(List(String), List(#(String, String)), List(Token)), ParserError) {
+  case tokens {
+    [] -> Ok(#(list.reverse(imports_acc), option.unwrap(props_acc, []), []))
+
+    // Skip leading whitespace text (newlines, spaces between directives)
+    [lexer.Text(content), ..rest] -> {
+      case is_whitespace_only(content) {
+        True -> extract_directives(rest, imports_acc, props_acc)
+        False ->
+          // Non-whitespace text - directives phase is over
+          Ok(#(
+            list.reverse(imports_acc),
+            option.unwrap(props_acc, []),
+            tokens,
+          ))
+      }
+    }
+
+    [lexer.ImportDirective(import_str, _line), ..rest] ->
+      extract_directives(rest, [import_str, ..imports_acc], props_acc)
+
+    [lexer.PropsDirective(props, line), ..rest] -> {
+      case props_acc {
+        Some(_) -> Error(DuplicatePropsDirective(line))
+        None -> extract_directives(rest, imports_acc, Some(props))
+      }
+    }
+
+    // Any other token - directives phase is over
+    _ -> Ok(#(list.reverse(imports_acc), option.unwrap(props_acc, []), tokens))
+  }
+}
+
+/// Checks if a string contains only whitespace.
+///
+fn is_whitespace_only(s: String) -> Bool {
+  s
+  |> string.to_graphemes
+  |> list.all(fn(c) { c == " " || c == "\n" || c == "\t" || c == "\r" })
+}
+
 
 // ------------------------------------------------------------- Private Functions
 
@@ -205,6 +273,12 @@ fn parse_nodes(
       let _ = flush_pending_if(acc, pending_if)
       Error(UnexpectedSlotDefEnd)
     }
+
+    [lexer.ImportDirective(_, line), ..] ->
+      Error(DirectiveAfterContent("@import", line))
+
+    [lexer.PropsDirective(_, line), ..] ->
+      Error(DirectiveAfterContent("@props", line))
   }
 }
 
@@ -631,6 +705,12 @@ fn parse_component_body(
     [lexer.ElementEnd(tag), ..] -> Error(UnexpectedElementEnd(tag))
 
     [lexer.SlotDefEnd, ..] -> Error(UnexpectedSlotDefEnd)
+
+    [lexer.ImportDirective(_, line), ..] ->
+      Error(DirectiveAfterContent("@import", line))
+
+    [lexer.PropsDirective(_, line), ..] ->
+      Error(DirectiveAfterContent("@props", line))
   }
 }
 
@@ -737,6 +817,12 @@ fn parse_element_body(
     [lexer.ComponentEnd(name), ..] -> Error(UnexpectedComponentEnd(name))
 
     [lexer.SlotDefEnd, ..] -> Error(UnexpectedSlotDefEnd)
+
+    [lexer.ImportDirective(_, line), ..] ->
+      Error(DirectiveAfterContent("@import", line))
+
+    [lexer.PropsDirective(_, line), ..] ->
+      Error(DirectiveAfterContent("@props", line))
   }
 }
 
@@ -808,6 +894,12 @@ fn parse_slot_fallback_body(
     [lexer.Slot(_), ..] -> Error(UnexpectedToken(lexer.Slot(None)))
 
     [lexer.SlotDef(_), ..] -> Error(UnexpectedToken(lexer.SlotDef(None)))
+
+    [lexer.ImportDirective(_, line), ..] ->
+      Error(DirectiveAfterContent("@import", line))
+
+    [lexer.PropsDirective(_, line), ..] ->
+      Error(DirectiveAfterContent("@props", line))
   }
 }
 

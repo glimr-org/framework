@@ -28,6 +28,10 @@ pub type Token {
   ComponentEnd(name: String)
   Element(tag: String, attributes: List(ComponentAttr), self_closing: Bool)
   ElementEnd(tag: String)
+  /// @import directive for importing types/modules
+  ImportDirective(import_str: String, line: Int)
+  /// @props directive declaring template parameters
+  PropsDirective(props: List(#(String, String)), line: Int)
 }
 
 /// Represents an attribute on a component tag. Can be a
@@ -64,6 +68,10 @@ pub type LexerError {
   InvalidLmForSyntax(content: String, position: Int)
   UnterminatedComponent(position: Int)
   InvalidComponentSyntax(content: String, position: Int)
+  InvalidPropsDirective(content: String, line: Int)
+  InvalidImportDirective(content: String, line: Int)
+  UnterminatedPropsDirective(line: Int)
+  UnterminatedImportDirective(line: Int)
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -131,6 +139,46 @@ fn do_tokenize(
         Error(_) -> Error(UnterminatedVariable(position))
       }
     }
+
+    // Skip HTML comments entirely - don't parse their contents
+    "<!--" <> rest -> {
+      case string.split_once(rest, "-->") {
+        Ok(#(comment_content, remaining)) -> {
+          let full_comment = "<!--" <> comment_content <> "-->"
+          let new_pos = position + string.length(full_comment)
+          let new_line = line + count_newlines(full_comment)
+          // Emit the comment as plain text (so it appears in output)
+          case tokens {
+            [Text(prev), ..rest_tokens] ->
+              do_tokenize(remaining, new_pos, new_line, [
+                Text(prev <> full_comment),
+                ..rest_tokens
+              ])
+            _ ->
+              do_tokenize(remaining, new_pos, new_line, [
+                Text(full_comment),
+                ..tokens
+              ])
+          }
+        }
+        // Unclosed comment - just treat "<!--" as text
+        Error(_) -> {
+          case tokens {
+            [Text(prev), ..rest_tokens] ->
+              do_tokenize(rest, position + 4, line, [
+                Text(prev <> "<!--"),
+                ..rest_tokens
+              ])
+            _ ->
+              do_tokenize(rest, position + 4, line, [Text("<!--"), ..tokens])
+          }
+        }
+      }
+    }
+
+    "@import(" <> rest -> parse_import_directive(rest, position, line, tokens)
+
+    "@props(" <> rest -> parse_props_directive(rest, position, line, tokens)
 
     "@attributes" <> rest ->
       parse_simple_directive(
@@ -811,6 +859,174 @@ fn parse_simple_directive(
   }
 }
 
+/// Parses an @import directive. Extracts the content between
+/// parentheses and emits an ImportDirective token.
+/// Example: @import(app/models/user.{type User})
+///
+fn parse_import_directive(
+  input: String,
+  position: Int,
+  line: Int,
+  tokens: List(Token),
+) -> Result(List(Token), LexerError) {
+  case find_matching_paren(input, 0, "") {
+    Ok(#(import_str, rest)) -> {
+      let import_str = string.trim(import_str)
+      case import_str {
+        "" -> Error(InvalidImportDirective("empty import", line))
+        _ -> {
+          // @import( + content + )
+          let len = 8 + string.length(import_str) + 1
+          let new_line = line + count_newlines(import_str)
+          do_tokenize(rest, position + len, new_line, [
+            ImportDirective(import_str, line),
+            ..tokens
+          ])
+        }
+      }
+    }
+    Error(_) -> Error(UnterminatedImportDirective(line))
+  }
+}
+
+/// Parses a @props directive. Extracts prop name:type pairs
+/// from the parentheses content.
+/// Example: @props(name: String, items: List(User))
+///
+fn parse_props_directive(
+  input: String,
+  position: Int,
+  line: Int,
+  tokens: List(Token),
+) -> Result(List(Token), LexerError) {
+  case find_matching_paren(input, 0, "") {
+    Ok(#(props_str, rest)) -> {
+      case parse_props_content(props_str) {
+        Ok(props) -> {
+          // @props( + content + )
+          let len = 7 + string.length(props_str) + 1
+          let new_line = line + count_newlines(props_str)
+          do_tokenize(rest, position + len, new_line, [
+            PropsDirective(props, line),
+            ..tokens
+          ])
+        }
+        Error(reason) -> Error(InvalidPropsDirective(reason, line))
+      }
+    }
+    Error(_) -> Error(UnterminatedPropsDirective(line))
+  }
+}
+
+/// Finds the matching closing parenthesis, handling nested parens.
+/// Returns the content inside and the remaining input after ')'.
+///
+fn find_matching_paren(
+  input: String,
+  depth: Int,
+  acc: String,
+) -> Result(#(String, String), Nil) {
+  case string.pop_grapheme(input) {
+    Error(_) -> Error(Nil)
+    Ok(#(char, rest)) -> {
+      case char {
+        "(" -> find_matching_paren(rest, depth + 1, acc <> char)
+        ")" -> {
+          case depth {
+            0 -> Ok(#(acc, rest))
+            _ -> find_matching_paren(rest, depth - 1, acc <> char)
+          }
+        }
+        _ -> find_matching_paren(rest, depth, acc <> char)
+      }
+    }
+  }
+}
+
+/// Parses the content of @props() into a list of (name, type) pairs.
+/// Handles nested types like List(#(String, Int)).
+///
+fn parse_props_content(
+  content: String,
+) -> Result(List(#(String, String)), String) {
+  let content = string.trim(content)
+  case content {
+    "" -> Ok([])
+    _ -> {
+      let parts = split_props_at_commas(content)
+      parse_prop_parts(parts, [])
+    }
+  }
+}
+
+/// Splits props on commas at depth 0, handling nested parens.
+///
+fn split_props_at_commas(input: String) -> List(String) {
+  split_props_helper(input, 0, "", [])
+}
+
+fn split_props_helper(
+  input: String,
+  depth: Int,
+  current: String,
+  acc: List(String),
+) -> List(String) {
+  case string.pop_grapheme(input) {
+    Error(_) -> {
+      case string.trim(current) {
+        "" -> list.reverse(acc)
+        trimmed -> list.reverse([trimmed, ..acc])
+      }
+    }
+    Ok(#(char, rest)) -> {
+      case char {
+        "(" -> split_props_helper(rest, depth + 1, current <> char, acc)
+        ")" -> split_props_helper(rest, depth - 1, current <> char, acc)
+        "," if depth == 0 -> {
+          let trimmed = string.trim(current)
+          split_props_helper(rest, 0, "", [trimmed, ..acc])
+        }
+        _ -> split_props_helper(rest, depth, current <> char, acc)
+      }
+    }
+  }
+}
+
+/// Parses individual prop parts (name: Type) into tuples.
+///
+fn parse_prop_parts(
+  parts: List(String),
+  acc: List(#(String, String)),
+) -> Result(List(#(String, String)), String) {
+  case parts {
+    [] -> Ok(list.reverse(acc))
+    [part, ..rest] -> {
+      case parse_single_prop(part) {
+        Ok(prop) -> parse_prop_parts(rest, [prop, ..acc])
+        Error(e) -> Error(e)
+      }
+    }
+  }
+}
+
+/// Parses a single prop "name: Type" into a tuple.
+///
+fn parse_single_prop(part: String) -> Result(#(String, String), String) {
+  case string.split_once(part, ":") {
+    Error(_) ->
+      Error("Expected ':' between prop name and type in '" <> part <> "'")
+    Ok(#(name, type_str)) -> {
+      let name = string.trim(name)
+      let type_str = string.trim(type_str)
+      case name, type_str {
+        "", _ -> Error("Missing prop name before ':'")
+        _, "" -> Error("Missing type after ':' for prop '" <> name <> "'")
+        _, _ -> Ok(#(name, type_str))
+      }
+    }
+  }
+}
+
 /// Parses a <slot> element. Handles:
 /// - <slot /> → Slot(None)
 /// - <slot name="x" /> → Slot(Some("x"))
@@ -997,6 +1213,9 @@ fn take_until_special(input: String, accumulated: String) -> #(String, String) {
     "" -> #(accumulated, "")
     "{{{" <> _ -> #(accumulated, input)
     "{{" <> _ -> #(accumulated, input)
+    "<!--" <> _ -> #(accumulated, input)
+    "@import(" <> _ -> #(accumulated, input)
+    "@props(" <> _ -> #(accumulated, input)
     "@attributes" <> _ -> #(accumulated, input)
     "</slot>" <> _ -> #(accumulated, input)
     "<slot" <> _ -> #(accumulated, input)

@@ -11,7 +11,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
 import gleam/string
-import glimr/loom/gleam_parser.{type ParsedViewFile}
 import glimr/loom/lexer
 import glimr/loom/parser.{type Node, type Template}
 
@@ -57,7 +56,6 @@ pub fn generate(
   template: Template,
   module_name: String,
   is_component: Bool,
-  view_file: Option(ParsedViewFile),
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
 ) -> GeneratedCode {
@@ -66,7 +64,6 @@ pub fn generate(
       template,
       module_name,
       is_component,
-      view_file,
       component_data,
       component_slots,
     )
@@ -94,19 +91,15 @@ pub fn extract_slot_info(template: Template) -> ComponentSlotInfo {
 }
 
 /// Validates that all variables used in the template are defined.
-/// Checks against Data type fields, slot variables, and loop variables.
+/// Checks against props, slot variables, and loop variables.
 /// Returns Ok(Nil) if valid, Error with message if undefined variable found.
 ///
 pub fn validate_template(
   template: Template,
-  view_file: Option(ParsedViewFile),
   source_path: String,
 ) -> Result(Nil, String) {
-  // Get available variables from Data type (with types for validation)
-  let data_fields = case view_file {
-    Some(vf) -> dict.from_list(vf.fields)
-    None -> dict.new()
-  }
+  // Get available variables from template props (with types for validation)
+  let data_fields = dict.from_list(template.props)
 
   // Slot variables are always available (slot, slot_xxx)
   let slot_vars =
@@ -708,7 +701,7 @@ fn validate_expression(
         <> "\n\nThe variable {{ "
         <> root
         <> " }} is used in the template but not defined.\n"
-        <> "Add it to your Data type in the corresponding view file.\n\n"
+        <> "Add it to your @props directive.\n\n"
         <> "https://github.com/glimr-org/glimr?tab=readme-ov-file#variables",
       )
   }
@@ -724,7 +717,6 @@ fn generate_module(
   template: Template,
   _module_name: String,
   is_component: Bool,
-  view_file: Option(ParsedViewFile),
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
 ) -> String {
@@ -736,12 +728,11 @@ fn generate_module(
 //// .loom.html template file and run `./glimr loom:compile`.
 ////
 "
-  let imports = generate_imports(template, view_file)
+  let imports = generate_imports(template)
   let html_fn =
     generate_html_function(
       template,
       is_component,
-      view_file,
       component_data,
       component_slots,
     )
@@ -750,12 +741,10 @@ fn generate_module(
 }
 
 /// Generates import statements for the module. Includes the
-/// runtime, user imports, and imports for all referenced components.
+/// runtime, user imports from @import directives, and imports
+/// for all referenced components.
 ///
-fn generate_imports(
-  template: Template,
-  view_file: Option(ParsedViewFile),
-) -> String {
+fn generate_imports(template: Template) -> String {
   let base_imports = ["import glimr/loom/runtime"]
 
   // Add int/bool imports only if the template uses those loop properties
@@ -771,13 +760,10 @@ fn generate_imports(
   }
   let loop_imports = list.flatten([int_import, bool_import])
 
-  // Copy user imports for custom types (filter out glimr/bootstrap imports)
-  let user_imports = case view_file {
-    Some(vf) ->
-      vf.imports
-      |> list.filter(fn(imp) { !string.contains(imp, "compiled/") })
-    None -> []
-  }
+  // User imports from @import directives (copied verbatim as "import <content>")
+  let user_imports =
+    template.imports
+    |> list.map(fn(imp) { "import " <> imp })
 
   let component_names = collect_component_names(template.nodes, set.new())
   let component_imports =
@@ -908,7 +894,6 @@ fn collect_named_slots(nodes: List(Node), acc: Set(String)) -> Set(String) {
 fn generate_html_function(
   template: Template,
   is_component: Bool,
-  view_file: Option(ParsedViewFile),
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
 ) -> String {
@@ -923,31 +908,24 @@ fn generate_html_function(
   }
 
   // Build function parameters
-  let params = generate_function_params(template, is_component, view_file)
+  let params = generate_function_params(template, is_component)
 
   let body = generate_nodes_code(nodes, 1, component_data, component_slots)
   "pub fn html(" <> params <> ") -> String {\n" <> "  \"\"\n" <> body <> "}\n"
 }
 
-/// Generates the function parameter list. Includes data fields
-/// from the view file, slot parameters, and attributes for
+/// Generates the function parameter list. Includes props from
+/// @props directive, slot parameters, and attributes for
 /// components.
 ///
-fn generate_function_params(
-  template: Template,
-  is_component: Bool,
-  view_file: Option(ParsedViewFile),
-) -> String {
-  // Data fields from parsed view file
-  let data_params = case view_file {
-    Some(vf) ->
-      vf.fields
-      |> list.map(fn(field) {
-        let #(name, type_str) = field
-        name <> " " <> name <> ": " <> type_str
-      })
-    None -> []
-  }
+fn generate_function_params(template: Template, is_component: Bool) -> String {
+  // Props from @props directive
+  let data_params =
+    template.props
+    |> list.map(fn(prop) {
+      let #(name, type_str) = prop
+      name <> " " <> name <> ": " <> type_str
+    })
 
   // Slot parameters from template
   let slot_params = case has_default_slot(template.nodes) {
