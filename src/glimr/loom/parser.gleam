@@ -24,6 +24,9 @@ pub type Template {
     props: List(#(String, String)),
     /// Content nodes
     nodes: List(Node),
+    /// Whether this template contains l-on:* or l-model attributes
+    /// and should be treated as a "live" template with WebSocket connection
+    is_live: Bool,
   )
 }
 
@@ -101,7 +104,9 @@ pub fn parse(tokens: List(Token)) -> Result(Template, ParserError) {
   ))
   // Then parse the content nodes
   use nodes <- try_parse(parse_nodes(remaining_tokens, [], None))
-  Ok(Template(imports: imports, props: props, nodes: nodes))
+  // Detect if template contains l-on:* or l-model (makes it "live")
+  let is_live = has_live_attributes(nodes)
+  Ok(Template(imports: imports, props: props, nodes: nodes, is_live: is_live))
 }
 
 /// Extracts @import and @props directives from the beginning of tokens.
@@ -926,4 +931,38 @@ fn try_parse(
     Ok(value) -> next(value)
     Error(e) -> Error(e)
   }
+}
+
+/// Checks if any node in the tree contains l-on:* or l-model attributes.
+/// Used to determine if a template should be treated as "live".
+///
+fn has_live_attributes(nodes: List(Node)) -> Bool {
+  list.any(nodes, fn(node) {
+    case node {
+      ElementNode(_, attributes, children) ->
+        attrs_have_live(attributes) || has_live_attributes(children)
+      ComponentNode(_, attributes, children) ->
+        attrs_have_live(attributes) || has_live_attributes(children)
+      IfNode(branches) ->
+        list.any(branches, fn(branch) { has_live_attributes(branch.2) })
+      EachNode(_, _, _, body, _) -> has_live_attributes(body)
+      SlotNode(_, fallback) -> has_live_attributes(fallback)
+      SlotDefNode(_, children) -> has_live_attributes(children)
+      TextNode(_)
+      | VariableNode(_, _)
+      | RawVariableNode(_, _)
+      | AttributesNode(_) -> False
+    }
+  })
+}
+
+/// Checks if an attribute list contains LmOn or LmModel.
+///
+fn attrs_have_live(attrs: List(ComponentAttr)) -> Bool {
+  list.any(attrs, fn(attr) {
+    case attr {
+      lexer.LmOn(_, _, _, _) | lexer.LmModel(_, _) -> True
+      _ -> False
+    }
+  })
 }

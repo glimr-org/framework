@@ -54,6 +54,10 @@ pub type ComponentAttr {
     loop_var: Option(String),
     line: Int,
   )
+  /// l-on:event handler (e.g., l-on:click="count = count + 1")
+  LmOn(event: String, modifiers: List(String), handler: String, line: Int)
+  /// l-model two-way binding (e.g., l-model="name")
+  LmModel(prop: String, line: Int)
 }
 
 /// Errors that can occur during lexical analysis. Includes
@@ -507,6 +511,7 @@ fn has_dynamic_attrs(attrs: List(ComponentAttr)) -> Bool {
   list.any(attrs, fn(attr) {
     case attr {
       LmIf(_, _) | LmElseIf(_, _) | LmElse | LmFor(_, _, _, _) -> True
+      LmOn(_, _, _, _) | LmModel(_, _) -> True
       ClassAttr(_) | StyleAttr(_) | ExprAttr(_, _) -> True
       _ -> False
     }
@@ -589,6 +594,20 @@ fn parse_element_attrs(
             [LmFor(collection, items, loop_var, line), ..acc],
             line,
           )
+        Error(_) -> #(list.reverse(acc), input)
+      }
+    }
+    "l-on:" <> rest -> {
+      case parse_lm_on_attr(rest, line) {
+        Ok(#(attr, remaining)) ->
+          parse_element_attrs(remaining, [attr, ..acc], line)
+        Error(_) -> #(list.reverse(acc), input)
+      }
+    }
+    "l-model=" <> rest -> {
+      case parse_lm_model_attr(rest, line) {
+        Ok(#(attr, remaining)) ->
+          parse_element_attrs(remaining, [attr, ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
@@ -718,6 +737,93 @@ fn parse_collection_and_loop(input: String) -> #(String, Option(String)) {
   }
 }
 
+/// Parses an l-on:event attribute. Extracts the event name,
+/// modifiers, and handler expression.
+/// Examples:
+///   l-on:click="count = count + 1"
+///   l-on:click.prevent="handler()"
+///   l-on:input.debounce-300="name = $value"
+///
+fn parse_lm_on_attr(
+  input: String,
+  line: Int,
+) -> Result(#(ComponentAttr, String), Nil) {
+  // Parse event name and modifiers (e.g., "click.prevent.stop")
+  let #(event_part, rest) = take_until_equals_or_space(input, "")
+  case event_part, rest {
+    "", _ -> Error(Nil)
+    _, "=" <> remaining -> {
+      // Parse the handler value
+      case parse_quoted_value(remaining) {
+        Ok(#(handler, rest2)) -> {
+          let #(event, modifiers) = parse_event_and_modifiers(event_part)
+          Ok(#(LmOn(event, modifiers, handler, line), rest2))
+        }
+        Error(_) -> Error(Nil)
+      }
+    }
+    _, _ -> Error(Nil)
+  }
+}
+
+/// Parses an l-model attribute. Extracts the prop name.
+/// Example: l-model="name"
+///
+fn parse_lm_model_attr(
+  input: String,
+  line: Int,
+) -> Result(#(ComponentAttr, String), Nil) {
+  case parse_quoted_value(input) {
+    Ok(#(prop, rest)) -> Ok(#(LmModel(prop, line), rest))
+    Error(_) -> Error(Nil)
+  }
+}
+
+/// Takes characters until = or whitespace is found.
+///
+fn take_until_equals_or_space(input: String, acc: String) -> #(String, String) {
+  case string.pop_grapheme(input) {
+    Ok(#(c, rest)) -> {
+      case c {
+        "=" | " " | "\t" | "\n" | ">" | "/" -> #(acc, input)
+        _ -> take_until_equals_or_space(rest, acc <> c)
+      }
+    }
+    Error(_) -> #(acc, input)
+  }
+}
+
+/// Parses event name and modifiers from a string like "click.prevent.stop".
+/// Returns (event_name, [modifiers]).
+///
+fn parse_event_and_modifiers(input: String) -> #(String, List(String)) {
+  case string.split(input, ".") {
+    [event, ..modifiers] -> #(event, modifiers)
+    [] -> #(input, [])
+  }
+}
+
+/// Parses a quoted value (single or double quotes).
+/// Returns the value and remaining input.
+///
+fn parse_quoted_value(input: String) -> Result(#(String, String), Nil) {
+  case input {
+    "\"" <> rest -> {
+      case take_until_quote(rest, "\"", "") {
+        Ok(#(value, remaining)) -> Ok(#(value, remaining))
+        Error(_) -> Error(Nil)
+      }
+    }
+    "'" <> rest -> {
+      case take_until_quote(rest, "'", "") {
+        Ok(#(value, remaining)) -> Ok(#(value, remaining))
+        Error(_) -> Error(Nil)
+      }
+    }
+    _ -> Error(Nil)
+  }
+}
+
 /// Takes characters until a specific quote character is found.
 /// Used to extract attribute values enclosed in matching
 /// quote delimiters.
@@ -828,6 +934,20 @@ fn parse_component_attrs(
             [LmFor(collection, items, loop_var, line), ..acc],
             line,
           )
+        Error(_) -> #(list.reverse(acc), input)
+      }
+    }
+    "l-on:" <> rest -> {
+      case parse_lm_on_attr(rest, line) {
+        Ok(#(attr, remaining)) ->
+          parse_component_attrs(remaining, [attr, ..acc], line)
+        Error(_) -> #(list.reverse(acc), input)
+      }
+    }
+    "l-model=" <> rest -> {
+      case parse_lm_model_attr(rest, line) {
+        Ok(#(attr, remaining)) ->
+          parse_component_attrs(remaining, [attr, ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }

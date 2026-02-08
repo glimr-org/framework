@@ -12,7 +12,7 @@ import glimr/loom/parser.{
 
 // Helper to create a template (simplified after layout removal)
 fn template(nodes: List(Node)) -> Template {
-  Template(imports: [], props: [], nodes: nodes)
+  Template(imports: [], props: [], nodes: nodes, is_live: False)
 }
 
 // Helper to create a template with props
@@ -20,7 +20,7 @@ fn template_with_props(
   props: List(#(String, String)),
   nodes: List(Node),
 ) -> Template {
-  Template(imports: [], props: props, nodes: nodes)
+  Template(imports: [], props: props, nodes: nodes, is_live: False)
 }
 
 // Helper to create a simple if node (single branch, no else)

@@ -2,8 +2,8 @@ import gleam/option.{None, Some}
 import gleeunit/should
 import glimr/loom/lexer.{
   Attributes, BoolAttr, ClassAttr, Component, ComponentEnd, Element, ElementEnd,
-  ExprAttr, LmElse, LmElseIf, LmFor, LmIf, RawVariable, Slot, SlotDef,
-  SlotDefEnd, StringAttr, StyleAttr, Text, Variable,
+  ExprAttr, LmElse, LmElseIf, LmFor, LmIf, LmModel, LmOn, RawVariable, Slot,
+  SlotDef, SlotDefEnd, StringAttr, StyleAttr, Text, Variable,
 }
 
 // ------------------------------------------------------------- Text and Variable Tests
@@ -806,6 +806,273 @@ pub fn tokenize_nested_divs_with_dynamic_inner_test() {
     ElementEnd("div"),
     Text("</div>"),
   ])
+}
+
+// ------------------------------------------------------------- l-on Tests
+
+pub fn tokenize_lm_on_click_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<button l-on:click=\"count = count + 1\">+</button>")
+
+  tokens
+  |> should.equal([
+    Element("button", [LmOn("click", [], "count = count + 1", 1)], False),
+    Text("+"),
+    ElementEnd("button"),
+  ])
+}
+
+pub fn tokenize_lm_on_click_with_single_quotes_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<button l-on:click='count = count + 1'>+</button>")
+
+  tokens
+  |> should.equal([
+    Element("button", [LmOn("click", [], "count = count + 1", 1)], False),
+    Text("+"),
+    ElementEnd("button"),
+  ])
+}
+
+pub fn tokenize_lm_on_click_with_modifier_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<button l-on:click.prevent=\"handler()\">Click</button>")
+
+  tokens
+  |> should.equal([
+    Element("button", [LmOn("click", ["prevent"], "handler()", 1)], False),
+    Text("Click"),
+    ElementEnd("button"),
+  ])
+}
+
+pub fn tokenize_lm_on_click_with_multiple_modifiers_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize(
+      "<button l-on:click.prevent.stop=\"handler()\">Click</button>",
+    )
+
+  tokens
+  |> should.equal([
+    Element(
+      "button",
+      [LmOn("click", ["prevent", "stop"], "handler()", 1)],
+      False,
+    ),
+    Text("Click"),
+    ElementEnd("button"),
+  ])
+}
+
+pub fn tokenize_lm_on_input_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<input l-on:input=\"name = $value\" />")
+
+  tokens
+  |> should.equal([Element("input", [LmOn("input", [], "name = $value", 1)], True)])
+}
+
+pub fn tokenize_lm_on_input_immediate_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<input l-on:input.immediate=\"name = $value\" />")
+
+  tokens
+  |> should.equal([
+    Element("input", [LmOn("input", ["immediate"], "name = $value", 1)], True),
+  ])
+}
+
+pub fn tokenize_lm_on_input_debounce_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<input l-on:input.debounce-300=\"name = $value\" />")
+
+  tokens
+  |> should.equal([
+    Element("input", [LmOn("input", ["debounce-300"], "name = $value", 1)], True),
+  ])
+}
+
+pub fn tokenize_lm_on_submit_prevent_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize(
+      "<form l-on:submit.prevent=\"errors = form.submit(name)\"></form>",
+    )
+
+  tokens
+  |> should.equal([
+    Element(
+      "form",
+      [LmOn("submit", ["prevent"], "errors = form.submit(name)", 1)],
+      False,
+    ),
+    ElementEnd("form"),
+  ])
+}
+
+pub fn tokenize_lm_on_keydown_enter_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<input l-on:keydown.enter=\"submitted = True\" />")
+
+  tokens
+  |> should.equal([
+    Element("input", [LmOn("keydown", ["enter"], "submitted = True", 1)], True),
+  ])
+}
+
+pub fn tokenize_lm_on_with_function_call_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize(
+      "<button l-on:click=\"count = counter.increment(count)\">+</button>",
+    )
+
+  tokens
+  |> should.equal([
+    Element(
+      "button",
+      [LmOn("click", [], "count = counter.increment(count)", 1)],
+      False,
+    ),
+    Text("+"),
+    ElementEnd("button"),
+  ])
+}
+
+pub fn tokenize_lm_on_with_tuple_destructuring_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize(
+      "<button l-on:click=\"#(count, total) = counter.increment_both(count, total)\">+</button>",
+    )
+
+  tokens
+  |> should.equal([
+    Element(
+      "button",
+      [
+        LmOn(
+          "click",
+          [],
+          "#(count, total) = counter.increment_both(count, total)",
+          1,
+        ),
+      ],
+      False,
+    ),
+    Text("+"),
+    ElementEnd("button"),
+  ])
+}
+
+// ------------------------------------------------------------- l-model Tests
+
+pub fn tokenize_lm_model_test() {
+  let assert Ok(tokens) = lexer.tokenize("<input l-model=\"name\" />")
+
+  tokens
+  |> should.equal([Element("input", [LmModel("name", 1)], True)])
+}
+
+pub fn tokenize_lm_model_with_single_quotes_test() {
+  let assert Ok(tokens) = lexer.tokenize("<input l-model='name' />")
+
+  tokens
+  |> should.equal([Element("input", [LmModel("name", 1)], True)])
+}
+
+pub fn tokenize_lm_model_textarea_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<textarea l-model=\"bio\"></textarea>")
+
+  tokens
+  |> should.equal([
+    Element("textarea", [LmModel("bio", 1)], False),
+    ElementEnd("textarea"),
+  ])
+}
+
+pub fn tokenize_lm_model_select_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<select l-model=\"country\"><option>US</option></select>")
+
+  tokens
+  |> should.equal([
+    Element("select", [LmModel("country", 1)], False),
+    Text("<option>US</option>"),
+    ElementEnd("select"),
+  ])
+}
+
+pub fn tokenize_lm_model_checkbox_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<input type=\"checkbox\" l-model=\"agreed\" />")
+
+  tokens
+  |> should.equal([
+    Element(
+      "input",
+      [StringAttr("type", "checkbox"), LmModel("agreed", 1)],
+      True,
+    ),
+  ])
+}
+
+// ------------------------------------------------------------- l-on and l-model with other attributes Tests
+
+pub fn tokenize_lm_on_with_class_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize(
+      "<button class=\"btn\" l-on:click=\"count = count + 1\">+</button>",
+    )
+
+  tokens
+  |> should.equal([
+    Element(
+      "button",
+      [StringAttr("class", "btn"), LmOn("click", [], "count = count + 1", 1)],
+      False,
+    ),
+    Text("+"),
+    ElementEnd("button"),
+  ])
+}
+
+pub fn tokenize_lm_model_with_type_and_placeholder_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize(
+      "<input type=\"email\" l-model=\"email\" placeholder=\"you@example.com\" />",
+    )
+
+  tokens
+  |> should.equal([
+    Element(
+      "input",
+      [
+        StringAttr("type", "email"),
+        LmModel("email", 1),
+        StringAttr("placeholder", "you@example.com"),
+      ],
+      True,
+    ),
+  ])
+}
+
+pub fn tokenize_lm_on_on_component_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<x-button l-on:click=\"count = count + 1\">+</x-button>")
+
+  tokens
+  |> should.equal([
+    Component("button", [LmOn("click", [], "count = count + 1", 1)], False),
+    Text("+"),
+    ComponentEnd("button"),
+  ])
+}
+
+pub fn tokenize_lm_model_on_component_test() {
+  let assert Ok(tokens) =
+    lexer.tokenize("<x-input l-model=\"name\" />")
+
+  tokens
+  |> should.equal([Component("input", [LmModel("name", 1)], True)])
 }
 
 // ------------------------------------------------------------- Helpers

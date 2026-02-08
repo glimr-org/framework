@@ -1320,7 +1320,9 @@ fn generate_component_attrs(
         lexer.LmIf(_, _)
         | lexer.LmElseIf(_, _)
         | lexer.LmElse
-        | lexer.LmFor(_, _, _, _) -> Error(Nil)
+        | lexer.LmFor(_, _, _, _)
+        | lexer.LmOn(_, _, _, _)
+        | lexer.LmModel(_, _) -> Error(Nil)
       }
     })
     |> string.join("")
@@ -1407,7 +1409,9 @@ fn generate_component_attrs(
         lexer.LmIf(_, _)
         | lexer.LmElseIf(_, _)
         | lexer.LmElse
-        | lexer.LmFor(_, _, _, _) -> Error(Nil)
+        | lexer.LmFor(_, _, _, _)
+        | lexer.LmOn(_, _, _, _)
+        | lexer.LmModel(_, _) -> Error(Nil)
       }
     })
 
@@ -1596,7 +1600,9 @@ fn generate_element_attrs_code(attrs: List(lexer.ComponentAttr)) -> String {
             lexer.LmIf(_, _)
             | lexer.LmElseIf(_, _)
             | lexer.LmElse
-            | lexer.LmFor(_, _, _, _) -> Error(Nil)
+            | lexer.LmFor(_, _, _, _)
+            | lexer.LmOn(_, _, _, _)
+            | lexer.LmModel(_, _) -> Error(Nil)
           }
         })
 
@@ -1670,7 +1676,9 @@ fn generate_base_attrs_code(attrs: List(lexer.ComponentAttr)) -> String {
         lexer.LmIf(_, _)
         | lexer.LmElseIf(_, _)
         | lexer.LmElse
-        | lexer.LmFor(_, _, _, _) -> Error(Nil)
+        | lexer.LmFor(_, _, _, _)
+        | lexer.LmOn(_, _, _, _)
+        | lexer.LmModel(_, _) -> Error(Nil)
       }
     })
 

@@ -3,8 +3,8 @@ import gleam/option.{None, Some}
 import gleeunit/should
 import glimr/loom/lexer.{
   Attributes, BoolAttr, Component, ComponentEnd, Element, ElementEnd, ExprAttr,
-  LmElse, LmElseIf, LmFor, LmIf, RawVariable, Slot, SlotDef, SlotDefEnd,
-  StringAttr, Text, Variable,
+  LmElse, LmElseIf, LmFor, LmIf, LmModel, LmOn, RawVariable, Slot, SlotDef,
+  SlotDefEnd, StringAttr, Text, Variable,
 }
 import glimr/loom/parser.{
   type Node, type Template, AttributesNode, ComponentNode, EachNode, ElementNode,
@@ -16,7 +16,7 @@ import glimr/loom/parser.{
 
 // Helper to make templates more concise
 fn t(nodes: List(Node)) -> Template {
-  Template(imports: [], props: [], nodes: nodes)
+  Template(imports: [], props: [], nodes: nodes, is_live: False)
 }
 
 // Helper to create a simple if node (single branch, no else)
@@ -758,4 +758,110 @@ pub fn error_mismatched_component_end_test() {
 
   result
   |> should.equal(Error(UnexpectedComponentEnd("button")))
+}
+
+// ------------------------------------------------------------- is_live Detection Tests
+
+pub fn static_template_is_not_live_test() {
+  let tokens = [
+    Element("div", [StringAttr("class", "container")], False),
+    Text("Hello"),
+    ElementEnd("div"),
+  ]
+  let assert Ok(template) = parser.parse(tokens)
+
+  template.is_live
+  |> should.equal(False)
+}
+
+pub fn template_with_lm_on_is_live_test() {
+  let tokens = [
+    Element("button", [LmOn("click", [], "count = count + 1", 1)], False),
+    Text("+"),
+    ElementEnd("button"),
+  ]
+  let assert Ok(template) = parser.parse(tokens)
+
+  template.is_live
+  |> should.equal(True)
+}
+
+pub fn template_with_lm_model_is_live_test() {
+  let tokens = [Element("input", [LmModel("name", 1)], True)]
+  let assert Ok(template) = parser.parse(tokens)
+
+  template.is_live
+  |> should.equal(True)
+}
+
+pub fn template_with_lm_on_modifiers_is_live_test() {
+  let tokens = [
+    Element(
+      "form",
+      [LmOn("submit", ["prevent"], "errors = form.submit()", 1)],
+      False,
+    ),
+    ElementEnd("form"),
+  ]
+  let assert Ok(template) = parser.parse(tokens)
+
+  template.is_live
+  |> should.equal(True)
+}
+
+pub fn nested_lm_on_is_live_test() {
+  // Live attribute inside nested element
+  let tokens = [
+    Element("div", [], False),
+    Element("button", [LmOn("click", [], "count = count + 1", 1)], False),
+    Text("+"),
+    ElementEnd("button"),
+    ElementEnd("div"),
+  ]
+  let assert Ok(template) = parser.parse(tokens)
+
+  template.is_live
+  |> should.equal(True)
+}
+
+pub fn lm_on_inside_component_is_live_test() {
+  let tokens = [
+    Component("button", [LmOn("click", [], "count = count + 1", 1)], False),
+    Text("+"),
+    ComponentEnd("button"),
+  ]
+  let assert Ok(template) = parser.parse(tokens)
+
+  template.is_live
+  |> should.equal(True)
+}
+
+pub fn lm_on_inside_if_branch_is_live_test() {
+  let tokens = [
+    Element("div", [LmIf("show", 1)], False),
+    Element("button", [LmOn("click", [], "count = count + 1", 1)], False),
+    Text("+"),
+    ElementEnd("button"),
+    ElementEnd("div"),
+  ]
+  let assert Ok(template) = parser.parse(tokens)
+
+  template.is_live
+  |> should.equal(True)
+}
+
+pub fn lm_on_inside_for_loop_is_live_test() {
+  let tokens = [
+    Element("ul", [LmFor("items", ["item"], None, 1)], False),
+    Element("li", [], False),
+    Element("button", [LmOn("click", [], "remove(item)", 1)], False),
+    Text("Remove"),
+    ElementEnd("button"),
+    ElementEnd("li"),
+    ElementEnd("ul"),
+  ]
+  let assert Ok(template) = parser.parse(tokens)
+
+  template.is_live
+  |> should.equal(True)
 }
