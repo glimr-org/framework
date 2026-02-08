@@ -806,7 +806,30 @@ fn generate_html_function(
 
   let body =
     generate_nodes_code(nodes, 1, component_data, component_slots, handler_lookup)
-  "pub fn render(" <> params <> ") -> String {\n" <> "  \"\"\n" <> body <> "}\n"
+
+  // For live templates (non-components), wrap with live container
+  let final_body = case template.is_live && !is_component {
+    True -> generate_live_wrapper(body)
+    False -> body
+  }
+
+  "pub fn render(" <> params <> ") -> String {\n" <> "  \"\"\n" <> final_body <> "}\n"
+}
+
+/// Wraps live template content with the necessary container and script tags.
+/// Adds data-l-live attribute for loom.js initialization.
+///
+fn generate_live_wrapper(body: String) -> String {
+  // Opening wrapper div with data-l-live attribute
+  let open = "  <> \"<div data-l-live=\\\"live\\\">\"\n"
+
+  // Closing wrapper div
+  let close = "  <> \"</div>\"\n"
+
+  // loom.js script tag
+  let script = "  <> \"<script src=\\\"/loom.js\\\"></script>\"\n"
+
+  open <> body <> close <> script
 }
 
 /// Generates the function parameter list. Includes props from
@@ -1749,16 +1772,30 @@ fn generate_element_attrs_code(
                 <> "))",
               )
             // Generate data-l-* attributes for event handlers
-            lexer.LmOn(event, _modifiers, handler, line) -> {
+            lexer.LmOn(event, modifiers, handler, line) -> {
               case dict.get(handler_lookup, #(event, handler, line)) {
-                Ok(handler_id) ->
-                  Ok(
+                Ok(handler_id) -> {
+                  // Build list of attributes: handler ID + modifiers
+                  let handler_attr =
                     "runtime.Attribute(\"data-l-"
                     <> event
                     <> "\", \""
                     <> handler_id
-                    <> "\")",
-                  )
+                    <> "\")"
+
+                  // Add modifier attributes
+                  let modifier_attrs =
+                    modifiers
+                    |> list.map(fn(m) {
+                      "runtime.Attribute(\"data-l-" <> m <> "\", \"true\")"
+                    })
+                    |> string.join(", ")
+
+                  case modifier_attrs {
+                    "" -> Ok(handler_attr)
+                    _ -> Ok(handler_attr <> ", " <> modifier_attrs)
+                  }
+                }
                 Error(_) -> Error(Nil)
               }
             }

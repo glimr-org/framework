@@ -2171,7 +2171,7 @@ pub fn generate_lm_model_data_attribute_test() {
 }
 
 pub fn generate_lm_on_with_modifiers_test() {
-  // Template with event modifiers (modifiers are passed through but don't affect data attr)
+  // Template with event modifiers
   let tmpl =
     live_template([#("errors", "List(String)")], [
       ElementNode(
@@ -2190,6 +2190,34 @@ pub fn generate_lm_on_with_modifiers_test() {
 
   result.code
   |> string.contains("handle_submit_0")
+  |> should.be_true
+
+  // Should generate modifier data attribute
+  result.code
+  |> string.contains("data-l-prevent")
+  |> should.be_true
+}
+
+pub fn generate_lm_on_with_multiple_modifiers_test() {
+  // Template with multiple event modifiers
+  let tmpl =
+    live_template([#("count", "Int")], [
+      ElementNode(
+        "button",
+        [LmOn("click", ["prevent", "stop"], "count = count + 1", 1)],
+        [TextNode("+")],
+      ),
+    ])
+
+  let result = generate(tmpl, "counter", False)
+
+  // Should generate both modifier data attributes
+  result.code
+  |> string.contains("data-l-prevent")
+  |> should.be_true
+
+  result.code
+  |> string.contains("data-l-stop")
   |> should.be_true
 }
 
@@ -2348,6 +2376,70 @@ pub fn generate_non_live_template_no_live_functions_test() {
 
   result.code
   |> string.contains("pub fn handlers()")
+  |> should.be_false
+}
+
+pub fn generate_live_template_has_wrapper_div_test() {
+  // Live template (page, not component) should have wrapper div
+  let tmpl =
+    live_template([#("count", "Int")], [
+      ElementNode(
+        "button",
+        [LmOn("click", [], "count = count + 1", 1)],
+        [TextNode("+")],
+      ),
+    ])
+
+  let result = generate(tmpl, "counter", False)
+
+  // Should have data-l-live wrapper div
+  result.code
+  |> string.contains("data-l-live")
+  |> should.be_true
+
+  // Should have loom.js script tag
+  result.code
+  |> string.contains("/loom.js")
+  |> should.be_true
+}
+
+pub fn generate_live_component_no_wrapper_test() {
+  // Live component should NOT have wrapper div (only pages get wrapper)
+  let tmpl =
+    live_template([#("count", "Int")], [
+      ElementNode(
+        "button",
+        [LmOn("click", [], "count = count + 1", 1)],
+        [TextNode("+")],
+      ),
+    ])
+
+  // Pass is_component=True
+  let result = generator.generate(tmpl, "counter", True, dict.new(), dict.new())
+
+  // Should NOT have wrapper div (components don't get wrapped)
+  result.code
+  |> string.contains("data-l-live=\\\"live\\\"")
+  |> should.be_false
+
+  // Should NOT have loom.js script (that's for pages)
+  result.code
+  |> string.contains("/loom.js")
+  |> should.be_false
+}
+
+pub fn generate_non_live_template_no_wrapper_test() {
+  // Non-live template should NOT have wrapper div
+  let tmpl = template([TextNode("Hello")])
+
+  let result = generate(tmpl, "static", False)
+
+  result.code
+  |> string.contains("data-l-live")
+  |> should.be_false
+
+  result.code
+  |> string.contains("/loom.js")
   |> should.be_false
 }
 
