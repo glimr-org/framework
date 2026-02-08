@@ -106,6 +106,50 @@ pub fn l_for_and_l_if_on_same_element_test() {
   |> should.be_ok
 }
 
+pub fn nested_elements_same_tag_parses_correctly_test() {
+  // Verify nested same-tag elements with dynamic outer work correctly
+  let template = "<div l-if=\"show\"><div>inner</div></div>"
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+
+  // Should have an IfNode containing an ElementNode with nested content
+  case parsed.nodes {
+    [
+      parser.IfNode([
+        #(Some("show"), _, [parser.ElementNode("div", [], children)]),
+      ]),
+    ] -> {
+      // Children should include the inner div as text (plain HTML)
+      case children {
+        [parser.TextNode(text)] -> {
+          // The inner div should be preserved as text
+          text
+          |> string.contains("<div>inner</div>")
+          |> should.be_true
+        }
+        _ -> should.fail()
+      }
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn nested_elements_same_tag_in_loop_test() {
+  // Nested elements of the same type should not confuse the parser
+  let template =
+    "@props(items: List(Item))
+<span l-for=\"item in items\">
+  <span>{{ item.name }}</span>
+  <span>{{ item.job }}</span>
+</span>"
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+
+  // Validation should pass - item is in scope for all nested spans
+  generator.validate_template(parsed, "test.loom.html")
+  |> should.be_ok
+}
+
 pub fn template_element_is_phantom_wrapper_test() {
   // <template> should NOT output its own tags, only its children
   let template = "<template l-if=\"show\"><p>content</p></template>"

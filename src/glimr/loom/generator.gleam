@@ -50,7 +50,7 @@ pub type GeneratedCode {
 
 /// Generates Gleam code from a parsed template. Takes the AST,
 /// module metadata, and type information to produce complete
-/// source code with imports and the html function.
+/// source code with imports and the render function.
 ///
 pub fn generate(
   template: Template,
@@ -819,7 +819,7 @@ fn collect_named_slots(nodes: List(Node), acc: Set(String)) -> Set(String) {
   })
 }
 
-/// Generates the main html function for the template. Builds
+/// Generates the main render function for the template. Builds
 /// the function signature with data and slot parameters, then
 /// generates the body from the template nodes.
 ///
@@ -843,7 +843,7 @@ fn generate_html_function(
   let params = generate_function_params(template, is_component)
 
   let body = generate_nodes_code(nodes, 1, component_data, component_slots)
-  "pub fn html(" <> params <> ") -> String {\n" <> "  \"\"\n" <> body <> "}\n"
+  "pub fn render(" <> params <> ") -> String {\n" <> "  \"\"\n" <> body <> "}\n"
 }
 
 /// Generates the function parameter list. Includes props from
@@ -1250,7 +1250,7 @@ fn generate_node_code_with_loop_vars(
       pad
       <> "<> "
       <> module_alias
-      <> ".html(\n"
+      <> ".render(\n"
       <> props_code
       <> named_slots_code
       <> slot_code

@@ -67,7 +67,7 @@ pub fn generate_empty_template_test() {
 
   // Should have html function with no params (no view file = no data params)
   result.code
-  |> string.contains("pub fn html() -> String")
+  |> string.contains("pub fn render() -> String")
   |> should.be_true
 }
 
@@ -80,7 +80,7 @@ pub fn generate_text_only_test() {
 
   // Should have html function with no params (no view file = no data params)
   result.code
-  |> string.contains("pub fn html() -> String")
+  |> string.contains("pub fn render() -> String")
   |> should.be_true
 }
 
@@ -625,9 +625,9 @@ pub fn generate_component_usage_test() {
   )
   |> should.be_true
 
-  // Should call component html with labeled arguments
+  // Should call component render with labeled arguments
   result.code
-  |> string.contains("components_alert.html(")
+  |> string.contains("components_alert.render(")
   |> should.be_true
 
   // String attrs go to the attributes list

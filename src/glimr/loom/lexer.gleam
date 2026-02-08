@@ -81,7 +81,11 @@ pub type LexerError {
 /// and returning errors for malformed constructs.
 ///
 pub fn tokenize(input: String) -> Result(List(Token), LexerError) {
-  do_tokenize(input, 0, 1, [])
+  // tag_stack tracks open HTML tags in LIFO order. Each entry is
+  // (tag_name, is_dynamic) where is_dynamic=True means we emitted an
+  // Element token, False means it was plain HTML emitted as text.
+  // This ensures closing tags match the correct opening tag.
+  do_tokenize(input, 0, 1, [], [])
 }
 
 // ------------------------------------------------------------- Private Functions
@@ -91,11 +95,14 @@ pub fn tokenize(input: String) -> Result(List(Token), LexerError) {
 /// parsers for complex constructs. Tracks line numbers for
 /// error reporting.
 ///
+/// tag_stack: Stack of open tags as (tag_name, is_dynamic) tuples.
+///
 fn do_tokenize(
   input: String,
   position: Int,
   line: Int,
   tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   case input {
     "" -> Ok(list.reverse(tokens))
@@ -108,10 +115,13 @@ fn do_tokenize(
             True -> {
               let new_pos = position + 6 + string.length(name)
               let new_line = line + count_newlines("{{{" <> name <> "}}}")
-              do_tokenize(remaining, new_pos, new_line, [
-                RawVariable(name, line),
-                ..tokens
-              ])
+              do_tokenize(
+                remaining,
+                new_pos,
+                new_line,
+                [RawVariable(name, line), ..tokens],
+                tag_stack,
+              )
             }
             False -> Error(InvalidVariableName(name, position))
           }
@@ -128,10 +138,13 @@ fn do_tokenize(
             True -> {
               let new_pos = position + 4 + string.length(name)
               let new_line = line + count_newlines("{{" <> name <> "}}")
-              do_tokenize(remaining, new_pos, new_line, [
-                Variable(name, line),
-                ..tokens
-              ])
+              do_tokenize(
+                remaining,
+                new_pos,
+                new_line,
+                [Variable(name, line), ..tokens],
+                tag_stack,
+              )
             }
             False -> Error(InvalidVariableName(name, position))
           }
@@ -150,34 +163,52 @@ fn do_tokenize(
           // Emit the comment as plain text (so it appears in output)
           case tokens {
             [Text(prev), ..rest_tokens] ->
-              do_tokenize(remaining, new_pos, new_line, [
-                Text(prev <> full_comment),
-                ..rest_tokens
-              ])
+              do_tokenize(
+                remaining,
+                new_pos,
+                new_line,
+                [Text(prev <> full_comment), ..rest_tokens],
+                tag_stack,
+              )
             _ ->
-              do_tokenize(remaining, new_pos, new_line, [
-                Text(full_comment),
-                ..tokens
-              ])
+              do_tokenize(
+                remaining,
+                new_pos,
+                new_line,
+                [Text(full_comment), ..tokens],
+                tag_stack,
+              )
           }
         }
         // Unclosed comment - just treat "<!--" as text
         Error(_) -> {
           case tokens {
             [Text(prev), ..rest_tokens] ->
-              do_tokenize(rest, position + 4, line, [
-                Text(prev <> "<!--"),
-                ..rest_tokens
-              ])
-            _ -> do_tokenize(rest, position + 4, line, [Text("<!--"), ..tokens])
+              do_tokenize(
+                rest,
+                position + 4,
+                line,
+                [Text(prev <> "<!--"), ..rest_tokens],
+                tag_stack,
+              )
+            _ ->
+              do_tokenize(
+                rest,
+                position + 4,
+                line,
+                [Text("<!--"), ..tokens],
+                tag_stack,
+              )
           }
         }
       }
     }
 
-    "@import(" <> rest -> parse_import_directive(rest, position, line, tokens)
+    "@import(" <> rest ->
+      parse_import_directive(rest, position, line, tokens, tag_stack)
 
-    "@props(" <> rest -> parse_props_directive(rest, position, line, tokens)
+    "@props(" <> rest ->
+      parse_props_directive(rest, position, line, tokens, tag_stack)
 
     "@attributes" <> rest ->
       parse_simple_directive(
@@ -187,22 +218,26 @@ fn do_tokenize(
         position,
         line,
         tokens,
+        tag_stack,
       )
 
-    "<slot" <> rest -> parse_slot_element(rest, position, line, tokens)
+    "<slot" <> rest ->
+      parse_slot_element(rest, position, line, tokens, tag_stack)
 
     "</slot>" <> rest ->
-      do_tokenize(rest, position + 7, line, [SlotDefEnd, ..tokens])
+      do_tokenize(rest, position + 7, line, [SlotDefEnd, ..tokens], tag_stack)
 
-    "<x-" <> rest -> parse_component(rest, position, line, tokens)
+    "<x-" <> rest -> parse_component(rest, position, line, tokens, tag_stack)
 
-    "</x-" <> rest -> parse_component_end(rest, position, line, tokens)
+    "</x-" <> rest ->
+      parse_component_end(rest, position, line, tokens, tag_stack)
 
-    "</" <> rest -> parse_element_end(rest, position, line, tokens)
+    "</" <> rest -> parse_element_end(rest, position, line, tokens, tag_stack)
 
-    "<" <> rest -> try_parse_element(rest, position, line, tokens, input)
+    "<" <> rest ->
+      try_parse_element(rest, position, line, tokens, input, tag_stack)
 
-    _ -> consume_text(input, position, line, tokens)
+    _ -> consume_text(input, position, line, tokens, tag_stack)
   }
 }
 
@@ -224,6 +259,7 @@ fn parse_component(
   position: Int,
   line: Int,
   tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   case parse_component_tag(input, line) {
     Ok(#(name, attrs, self_closing, rest)) -> {
@@ -233,7 +269,7 @@ fn parse_component(
         <> string.slice(input, 0, string.length(input) - string.length(rest))
       let len = string.length(input) - string.length(rest) + 3
       let new_line = line + count_newlines(consumed)
-      do_tokenize(rest, position + len, new_line, [token, ..tokens])
+      do_tokenize(rest, position + len, new_line, [token, ..tokens], tag_stack)
     }
     Error(_) -> Error(UnterminatedComponent(position))
   }
@@ -248,20 +284,27 @@ fn parse_component_end(
   position: Int,
   line: Int,
   tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   case string.split_once(input, ">") {
     Ok(#(name, rest)) -> {
       let name = string.trim(name)
       let len = string.length(name) + 5
-      do_tokenize(rest, position + len, line, [ComponentEnd(name), ..tokens])
+      do_tokenize(
+        rest,
+        position + len,
+        line,
+        [ComponentEnd(name), ..tokens],
+        tag_stack,
+      )
     }
     Error(_) -> Error(UnterminatedComponent(position))
   }
 }
 
 /// Tries to parse an HTML element. If it has l-* attributes,
-/// emits an Element token. Otherwise, just emits "<" as text
-/// and continues so @attributes/@slot can be detected in text.
+/// emits an Element token. Otherwise, emits as text. Both cases
+/// push to tag_stack for proper closing tag matching.
 ///
 fn try_parse_element(
   input: String,
@@ -269,6 +312,7 @@ fn try_parse_element(
   line: Int,
   tokens: List(Token),
   _full_input: String,
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   case parse_element_tag(input, line) {
     Ok(#(tag, attrs, self_closing, rest)) -> {
@@ -276,7 +320,6 @@ fn try_parse_element(
       case has_dynamic_attrs(attrs) {
         True -> {
           let token = Element(tag, attrs, self_closing)
-          // Calculate length: full_input starts with "<", input starts after "<"
           let consumed =
             "<"
             <> string.slice(
@@ -286,18 +329,42 @@ fn try_parse_element(
             )
           let len = string.length(input) - string.length(rest) + 1
           let new_line = line + count_newlines(consumed)
-          do_tokenize(rest, position + len, new_line, [token, ..tokens])
+          // Push dynamic tag onto stack (only non-self-closing)
+          let new_stack = case self_closing {
+            True -> tag_stack
+            False -> [#(tag, True), ..tag_stack]
+          }
+          do_tokenize(
+            rest,
+            position + len,
+            new_line,
+            [token, ..tokens],
+            new_stack,
+          )
         }
         False -> {
-          // No l-* attributes - just emit "<" and let text scanning
-          // handle the rest so @attributes/@slot can be detected
+          // No l-* attributes - emit as text, push plain tag onto stack
+          let new_stack = case self_closing {
+            True -> tag_stack
+            False -> [#(tag, False), ..tag_stack]
+          }
           case tokens {
             [Text(prev), ..rest_tokens] ->
-              do_tokenize(input, position + 1, line, [
-                Text(prev <> "<"),
-                ..rest_tokens
-              ])
-            _ -> do_tokenize(input, position + 1, line, [Text("<"), ..tokens])
+              do_tokenize(
+                input,
+                position + 1,
+                line,
+                [Text(prev <> "<"), ..rest_tokens],
+                new_stack,
+              )
+            _ ->
+              do_tokenize(
+                input,
+                position + 1,
+                line,
+                [Text("<"), ..tokens],
+                new_stack,
+              )
           }
         }
       }
@@ -306,73 +373,130 @@ fn try_parse_element(
       // Not a valid element, just consume the "<" and continue
       case tokens {
         [Text(prev), ..rest_tokens] ->
-          do_tokenize(input, position + 1, line, [
-            Text(prev <> "<"),
-            ..rest_tokens
-          ])
-        _ -> do_tokenize(input, position + 1, line, [Text("<"), ..tokens])
+          do_tokenize(
+            input,
+            position + 1,
+            line,
+            [Text(prev <> "<"), ..rest_tokens],
+            tag_stack,
+          )
+        _ ->
+          do_tokenize(
+            input,
+            position + 1,
+            line,
+            [Text("<"), ..tokens],
+            tag_stack,
+          )
       }
     }
   }
 }
 
 /// Parses an HTML element closing tag starting after "</".
-/// Only emits ElementEnd if there's a matching Element.
+/// Pops from tag_stack to determine if this closes a plain
+/// HTML tag (emit as text) or a dynamic Element (emit ElementEnd).
 ///
 fn parse_element_end(
   input: String,
   position: Int,
   line: Int,
   tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   case string.split_once(input, ">") {
     Ok(#(tag, rest)) -> {
       let tag = string.trim(tag)
-      // Check if we have a matching Element in tokens
-      case has_matching_element(tag, tokens) {
-        True -> {
-          let len = string.length(tag) + 3
-          do_tokenize(rest, position + len, line, [ElementEnd(tag), ..tokens])
+      let text = "</" <> tag <> ">"
+      let len = string.length(text)
+
+      // Pop from stack to find the matching opening tag
+      case pop_matching_tag(tag_stack, tag) {
+        // Found matching tag on stack
+        Ok(#(is_dynamic, new_stack)) -> {
+          case is_dynamic {
+            True -> {
+              // Closing a dynamic Element - emit ElementEnd
+              do_tokenize(
+                rest,
+                position + len,
+                line,
+                [ElementEnd(tag), ..tokens],
+                new_stack,
+              )
+            }
+            False -> {
+              // Closing a plain HTML tag - emit as text
+              case tokens {
+                [Text(prev), ..rest_tokens] ->
+                  do_tokenize(
+                    rest,
+                    position + len,
+                    line,
+                    [Text(prev <> text), ..rest_tokens],
+                    new_stack,
+                  )
+                _ ->
+                  do_tokenize(
+                    rest,
+                    position + len,
+                    line,
+                    [Text(text), ..tokens],
+                    new_stack,
+                  )
+              }
+            }
+          }
         }
-        False -> {
-          // No matching Element, emit as text (merge with previous)
-          let text = "</" <> tag <> ">"
-          let len = string.length(text)
+        // No matching tag on stack - emit as text
+        Error(_) -> {
           case tokens {
             [Text(prev), ..rest_tokens] ->
-              do_tokenize(rest, position + len, line, [
-                Text(prev <> text),
-                ..rest_tokens
-              ])
-            _ -> do_tokenize(rest, position + len, line, [Text(text), ..tokens])
+              do_tokenize(
+                rest,
+                position + len,
+                line,
+                [Text(prev <> text), ..rest_tokens],
+                tag_stack,
+              )
+            _ ->
+              do_tokenize(
+                rest,
+                position + len,
+                line,
+                [Text(text), ..tokens],
+                tag_stack,
+              )
           }
         }
       }
     }
     Error(_) -> {
       // Invalid closing tag, treat as text
-      consume_text("</" <> input, position, line, tokens)
+      consume_text("</" <> input, position, line, tokens, tag_stack)
     }
   }
 }
 
-/// Checks if there's an unclosed Element token with matching
-/// tag name. Counts Element vs ElementEnd tokens to determine
-/// if any elements of this type remain open.
+/// Pops the first matching tag from the stack.
+/// Returns Ok(is_dynamic, remaining_stack) if found, Error otherwise.
 ///
-fn has_matching_element(tag: String, tokens: List(Token)) -> Bool {
-  // Count unclosed Element tokens for this tag
-  // (Element count minus ElementEnd count must be > 0)
-  let counts =
-    list.fold(tokens, #(0, 0), fn(acc, t) {
-      let #(elements, ends) = acc
-      case t {
-        Element(t, _, False) if t == tag -> #(elements + 1, ends)
-        ElementEnd(t) if t == tag -> #(elements, ends + 1)
-        _ -> acc
+fn pop_matching_tag(
+  stack: List(#(String, Bool)),
+  tag: String,
+) -> Result(#(Bool, List(#(String, Bool))), Nil) {
+  case stack {
+    [] -> Error(Nil)
+    [#(t, is_dynamic), ..rest] if t == tag -> Ok(#(is_dynamic, rest))
+    [_, ..rest] -> {
+      // Tag doesn't match - this is malformed HTML, but we handle it
+      // by continuing to search. In practice, browsers are lenient.
+      case pop_matching_tag(rest, tag) {
+        Ok(#(is_dynamic, remaining)) -> Ok(#(is_dynamic, remaining))
+        Error(_) -> Error(Nil)
       }
-    })
-  counts.0 > counts.1
+    }
+  }
 }
 
 /// Checks if attribute list contains any dynamic attributes.
@@ -835,24 +959,42 @@ fn parse_simple_directive(
   position: Int,
   line: Int,
   tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   let directive_len = string.length(directive)
   case rest {
-    "" -> do_tokenize("", position + directive_len, line, [token, ..tokens])
+    "" ->
+      do_tokenize(
+        "",
+        position + directive_len,
+        line,
+        [token, ..tokens],
+        tag_stack,
+      )
     _ -> {
       case string.first(rest) {
         Ok(c) -> {
           case string_utils.is_alphanumeric(c) {
-            True -> consume_text(directive <> rest, position, line, tokens)
+            True ->
+              consume_text(directive <> rest, position, line, tokens, tag_stack)
             False ->
-              do_tokenize(rest, position + directive_len, line, [
-                token,
-                ..tokens
-              ])
+              do_tokenize(
+                rest,
+                position + directive_len,
+                line,
+                [token, ..tokens],
+                tag_stack,
+              )
           }
         }
         _ ->
-          do_tokenize(rest, position + directive_len, line, [token, ..tokens])
+          do_tokenize(
+            rest,
+            position + directive_len,
+            line,
+            [token, ..tokens],
+            tag_stack,
+          )
       }
     }
   }
@@ -867,6 +1009,7 @@ fn parse_import_directive(
   position: Int,
   line: Int,
   tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   case find_matching_paren(input, 0, "") {
     Ok(#(import_str, rest)) -> {
@@ -877,10 +1020,13 @@ fn parse_import_directive(
           // @import( + content + )
           let len = 8 + string.length(import_str) + 1
           let new_line = line + count_newlines(import_str)
-          do_tokenize(rest, position + len, new_line, [
-            ImportDirective(import_str, line),
-            ..tokens
-          ])
+          do_tokenize(
+            rest,
+            position + len,
+            new_line,
+            [ImportDirective(import_str, line), ..tokens],
+            tag_stack,
+          )
         }
       }
     }
@@ -897,6 +1043,7 @@ fn parse_props_directive(
   position: Int,
   line: Int,
   tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   case find_matching_paren(input, 0, "") {
     Ok(#(props_str, rest)) -> {
@@ -905,10 +1052,13 @@ fn parse_props_directive(
           // @props( + content + )
           let len = 7 + string.length(props_str) + 1
           let new_line = line + count_newlines(props_str)
-          do_tokenize(rest, position + len, new_line, [
-            PropsDirective(props, line),
-            ..tokens
-          ])
+          do_tokenize(
+            rest,
+            position + len,
+            new_line,
+            [PropsDirective(props, line), ..tokens],
+            tag_stack,
+          )
         }
         Error(reason) -> Error(InvalidPropsDirective(reason, line))
       }
@@ -1037,6 +1187,7 @@ fn parse_slot_element(
   position: Int,
   line: Int,
   tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   // Input starts after "<slot", could be " ", ">", or "/"
   case input {
@@ -1044,16 +1195,23 @@ fn parse_slot_element(
     "/>" <> rest -> {
       let len = 7
       // position + len for "<slot/>"
-      do_tokenize(rest, position + len, line, [Slot(None), ..tokens])
+      do_tokenize(rest, position + len, line, [Slot(None), ..tokens], tag_stack)
     }
     // Opening without attributes: <slot>
     ">" <> rest -> {
       let len = 6
       // position + len for "<slot>"
-      do_tokenize(rest, position + len, line, [SlotDef(None), ..tokens])
+      do_tokenize(
+        rest,
+        position + len,
+        line,
+        [SlotDef(None), ..tokens],
+        tag_stack,
+      )
     }
     // Has attributes (space after <slot)
-    " " <> rest -> parse_slot_with_attrs(rest, position, line, tokens)
+    " " <> rest ->
+      parse_slot_with_attrs(rest, position, line, tokens, tag_stack)
     // Invalid
     _ -> Error(UnterminatedComponent(position))
   }
@@ -1068,6 +1226,7 @@ fn parse_slot_with_attrs(
   position: Int,
   line: Int,
   tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   // Find the end of the tag (either /> or >)
   case find_slot_tag_end(input) {
@@ -1083,9 +1242,22 @@ fn parse_slot_with_attrs(
           False -> 1
         }
       case self_closing {
-        True -> do_tokenize(rest, position + len, line, [Slot(name), ..tokens])
+        True ->
+          do_tokenize(
+            rest,
+            position + len,
+            line,
+            [Slot(name), ..tokens],
+            tag_stack,
+          )
         False ->
-          do_tokenize(rest, position + len, line, [SlotDef(name), ..tokens])
+          do_tokenize(
+            rest,
+            position + len,
+            line,
+            [SlotDef(name), ..tokens],
+            tag_stack,
+          )
       }
     }
     Error(_) -> Error(UnterminatedComponent(position))
@@ -1159,6 +1331,7 @@ fn consume_text(
   position: Int,
   line: Int,
   tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   let #(text, rest) = take_until_special(input, "")
 
@@ -1173,15 +1346,21 @@ fn consume_text(
           // Merge with previous text token if exists
           case tokens {
             [Text(prev), ..rest_tokens] ->
-              do_tokenize(remaining, position + 1, new_line, [
-                Text(prev <> char),
-                ..rest_tokens
-              ])
+              do_tokenize(
+                remaining,
+                position + 1,
+                new_line,
+                [Text(prev <> char), ..rest_tokens],
+                tag_stack,
+              )
             _ ->
-              do_tokenize(remaining, position + 1, new_line, [
-                Text(char),
-                ..tokens
-              ])
+              do_tokenize(
+                remaining,
+                position + 1,
+                new_line,
+                [Text(char), ..tokens],
+                tag_stack,
+              )
           }
         }
         Error(_) -> Ok(list.reverse(tokens))
@@ -1193,11 +1372,21 @@ fn consume_text(
       // Merge with previous text token if exists
       case tokens {
         [Text(prev), ..rest_tokens] ->
-          do_tokenize(rest, new_pos, new_line, [
-            Text(prev <> text),
-            ..rest_tokens
-          ])
-        _ -> do_tokenize(rest, new_pos, new_line, [Text(text), ..tokens])
+          do_tokenize(
+            rest,
+            new_pos,
+            new_line,
+            [Text(prev <> text), ..rest_tokens],
+            tag_stack,
+          )
+        _ ->
+          do_tokenize(
+            rest,
+            new_pos,
+            new_line,
+            [Text(text), ..tokens],
+            tag_stack,
+          )
       }
     }
   }
