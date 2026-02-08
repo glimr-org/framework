@@ -4,10 +4,13 @@ import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
 import glimr/loom/generator
-import glimr/loom/lexer.{ClassAttr, ExprAttr, StringAttr, StyleAttr}
+import glimr/loom/lexer.{
+  ClassAttr, ExprAttr, LmModel, LmOn, StringAttr, StyleAttr,
+}
 import glimr/loom/parser.{
-  type Node, type Template, AttributesNode, ComponentNode, EachNode, IfNode,
-  RawVariableNode, SlotDefNode, SlotNode, Template, TextNode, VariableNode,
+  type Node, type Template, AttributesNode, ComponentNode, EachNode, ElementNode,
+  IfNode, RawVariableNode, SlotDefNode, SlotNode, Template, TextNode,
+  VariableNode,
 }
 
 // Helper to create a template (simplified after layout removal)
@@ -21,6 +24,11 @@ fn template_with_props(
   nodes: List(Node),
 ) -> Template {
   Template(imports: [], props: props, nodes: nodes, is_live: False)
+}
+
+// Helper to create a live template (with is_live: True)
+fn live_template(props: List(#(String, String)), nodes: List(Node)) -> Template {
+  Template(imports: [], props: props, nodes: nodes, is_live: True)
 }
 
 // Helper to create a simple if node (single branch, no else)
@@ -2083,6 +2091,264 @@ pub fn validate_tuple_arity_unknown_collection_skips_test() {
   // Expressions are allowed - Gleam compiler validates
   generator.validate_template(tmpl, "test.loom.html")
   |> should.be_ok
+}
+
+// ------------------------------------------------------------- Live Template Tests
+
+pub fn generate_lm_on_data_attribute_test() {
+  // Template with l-on:click handler
+  let tmpl =
+    live_template([#("count", "Int")], [
+      ElementNode(
+        "button",
+        [LmOn("click", [], "count = count + 1", 1)],
+        [TextNode("+")],
+      ),
+    ])
+
+  let result = generate(tmpl, "counter", False)
+
+  // Should generate data-l-click attribute with handler ID
+  result.code
+  |> string.contains("data-l-click")
+  |> should.be_true
+
+  result.code
+  |> string.contains("handle_click_0")
+  |> should.be_true
+}
+
+pub fn generate_multiple_lm_on_handlers_test() {
+  // Template with multiple handlers
+  let tmpl =
+    live_template([#("count", "Int")], [
+      ElementNode(
+        "button",
+        [LmOn("click", [], "count = count + 1", 1)],
+        [TextNode("+")],
+      ),
+      ElementNode(
+        "button",
+        [LmOn("click", [], "count = count - 1", 2)],
+        [TextNode("-")],
+      ),
+    ])
+
+  let result = generate(tmpl, "counter", False)
+
+  // Should have two different handler IDs
+  result.code
+  |> string.contains("handle_click_0")
+  |> should.be_true
+
+  result.code
+  |> string.contains("handle_click_1")
+  |> should.be_true
+}
+
+pub fn generate_lm_model_data_attribute_test() {
+  // Template with l-model binding
+  let tmpl =
+    live_template([#("name", "String")], [
+      ElementNode("input", [LmModel("name", 1)], []),
+    ])
+
+  let result = generate(tmpl, "form", False)
+
+  // Should generate data-l-input attribute with handler ID
+  result.code
+  |> string.contains("data-l-input")
+  |> should.be_true
+
+  result.code
+  |> string.contains("handle_input_0")
+  |> should.be_true
+
+  // Should also generate value attribute for the input
+  result.code
+  |> string.contains("\"value\", name")
+  |> should.be_true
+}
+
+pub fn generate_lm_on_with_modifiers_test() {
+  // Template with event modifiers (modifiers are passed through but don't affect data attr)
+  let tmpl =
+    live_template([#("errors", "List(String)")], [
+      ElementNode(
+        "form",
+        [LmOn("submit", ["prevent"], "errors = form.submit()", 1)],
+        [],
+      ),
+    ])
+
+  let result = generate(tmpl, "registration", False)
+
+  // Should generate data-l-submit attribute
+  result.code
+  |> string.contains("data-l-submit")
+  |> should.be_true
+
+  result.code
+  |> string.contains("handle_submit_0")
+  |> should.be_true
+}
+
+pub fn generate_lm_on_mixed_events_test() {
+  // Template with different event types
+  let tmpl =
+    live_template([#("count", "Int"), #("name", "String")], [
+      ElementNode(
+        "button",
+        [LmOn("click", [], "count = count + 1", 1)],
+        [TextNode("+")],
+      ),
+      ElementNode(
+        "input",
+        [LmOn("input", [], "name = $value", 2)],
+        [],
+      ),
+    ])
+
+  let result = generate(tmpl, "mixed", False)
+
+  // Should have both data-l-click and data-l-input
+  result.code
+  |> string.contains("data-l-click")
+  |> should.be_true
+
+  result.code
+  |> string.contains("data-l-input")
+  |> should.be_true
+
+  result.code
+  |> string.contains("handle_click_0")
+  |> should.be_true
+
+  result.code
+  |> string.contains("handle_input_1")
+  |> should.be_true
+}
+
+pub fn generate_non_live_template_no_data_attrs_test() {
+  // Non-live template with l-on should NOT generate data attributes
+  // (because handler_lookup will be empty)
+  let tmpl =
+    Template(
+      imports: [],
+      props: [#("count", "Int")],
+      nodes: [
+        ElementNode(
+          "button",
+          [LmOn("click", [], "count = count + 1", 1)],
+          [TextNode("+")],
+        ),
+      ],
+      is_live: False,
+    )
+
+  let result = generate(tmpl, "notlive", False)
+
+  // Should NOT have data-l-click (because is_live is False)
+  result.code
+  |> string.contains("data-l-click")
+  |> should.be_false
+}
+
+pub fn generate_live_template_has_is_live_function_test() {
+  let tmpl =
+    live_template([#("count", "Int")], [
+      ElementNode(
+        "button",
+        [LmOn("click", [], "count = count + 1", 1)],
+        [TextNode("+")],
+      ),
+    ])
+
+  let result = generate(tmpl, "counter", False)
+
+  // Should have is_live() function that returns True
+  result.code
+  |> string.contains("pub fn is_live() -> Bool")
+  |> should.be_true
+
+  result.code
+  |> string.contains("True")
+  |> should.be_true
+}
+
+pub fn generate_live_template_has_handlers_function_test() {
+  let tmpl =
+    live_template([#("count", "Int")], [
+      ElementNode(
+        "button",
+        [LmOn("click", ["prevent"], "count = count + 1", 1)],
+        [TextNode("+")],
+      ),
+    ])
+
+  let result = generate(tmpl, "counter", False)
+
+  // Should have handlers() function
+  result.code
+  |> string.contains("pub fn handlers()")
+  |> should.be_true
+
+  // Handler info should include the handler ID
+  result.code
+  |> string.contains("handle_click_0")
+  |> should.be_true
+
+  // Handler info should include the event type
+  result.code
+  |> string.contains("\"click\"")
+  |> should.be_true
+
+  // Handler info should include modifiers
+  result.code
+  |> string.contains("\"prevent\"")
+  |> should.be_true
+}
+
+pub fn generate_live_template_has_prop_names_function_test() {
+  let tmpl =
+    live_template([#("count", "Int"), #("name", "String")], [
+      ElementNode(
+        "button",
+        [LmOn("click", [], "count = count + 1", 1)],
+        [TextNode("+")],
+      ),
+    ])
+
+  let result = generate(tmpl, "counter", False)
+
+  // Should have prop_names() function
+  result.code
+  |> string.contains("pub fn prop_names()")
+  |> should.be_true
+
+  // Should list prop names
+  result.code
+  |> string.contains("\"count\"")
+  |> should.be_true
+
+  result.code
+  |> string.contains("\"name\"")
+  |> should.be_true
+}
+
+pub fn generate_non_live_template_no_live_functions_test() {
+  // Non-live template should NOT have is_live or handlers functions
+  let tmpl = template([TextNode("Hello")])
+
+  let result = generate(tmpl, "static", False)
+
+  result.code
+  |> string.contains("pub fn is_live()")
+  |> should.be_false
+
+  result.code
+  |> string.contains("pub fn handlers()")
+  |> should.be_false
 }
 
 // ------------------------------------------------------------- Helpers

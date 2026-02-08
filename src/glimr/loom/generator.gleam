@@ -11,6 +11,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
 import gleam/string
+import glimr/loom/handler_parser
 import glimr/loom/lexer
 import glimr/loom/parser.{type Node, type Template}
 
@@ -37,6 +38,12 @@ pub type ComponentSlotInfo {
 ///
 pub type ComponentSlotMap =
   Dict(String, ComponentSlotInfo)
+
+/// Maps handler identifiers (event, handler_str, line) to their assigned IDs.
+/// Used during code generation to look up the correct handler ID for data attributes.
+///
+type HandlerLookup =
+  Dict(#(String, String, Int), String)
 
 /// The result of code generation. Contains the module name
 /// and the complete generated Gleam source code ready to
@@ -596,15 +603,102 @@ fn generate_module(
 ////
 "
   let imports = generate_imports(template)
+
+  // Collect handlers for live templates
+  let handler_lookup = case template.is_live {
+    False -> dict.new()
+    True -> build_handler_lookup(template)
+  }
+
   let html_fn =
     generate_html_function(
       template,
       is_component,
       component_data,
       component_slots,
+      handler_lookup,
     )
 
-  string.join([header, imports, "", html_fn], "\n")
+  // For live templates, generate additional functions
+  let live_fns = case template.is_live {
+    False -> ""
+    True -> generate_live_functions(template)
+  }
+
+  string.join([header, imports, "", html_fn, live_fns], "\n")
+}
+
+/// Generates additional functions for live templates.
+/// Includes is_live() and handler metadata functions.
+///
+fn generate_live_functions(template: Template) -> String {
+  let handlers = case handler_parser.collect_handlers(template) {
+    Error(_) -> []
+    Ok(h) -> h
+  }
+
+  let handlers_list =
+    handlers
+    |> list.map(fn(h) {
+      let #(id, handler) = h
+      let modifiers_str =
+        handler.modifiers
+        |> list.map(fn(m) { "\"" <> m <> "\"" })
+        |> string.join(", ")
+      "  #(\""
+      <> id
+      <> "\", \""
+      <> handler.event
+      <> "\", ["
+      <> modifiers_str
+      <> "])"
+    })
+    |> string.join(",\n")
+
+  let prop_names =
+    template.props
+    |> list.map(fn(p) { "\"" <> p.0 <> "\"" })
+    |> string.join(", ")
+
+  "/// Returns True if this is a live template.\n"
+  <> "///\n"
+  <> "pub fn is_live() -> Bool {\n"
+  <> "  True\n"
+  <> "}\n"
+  <> "\n"
+  <> "/// Returns the list of handler IDs and their event types.\n"
+  <> "/// Format: List(#(handler_id, event, modifiers))\n"
+  <> "///\n"
+  <> "pub fn handlers() -> List(#(String, String, List(String))) {\n"
+  <> "  [\n"
+  <> handlers_list
+  <> "\n  ]\n"
+  <> "}\n"
+  <> "\n"
+  <> "/// Returns the list of prop names for this template.\n"
+  <> "///\n"
+  <> "pub fn prop_names() -> List(String) {\n"
+  <> "  ["
+  <> prop_names
+  <> "]\n"
+  <> "}\n"
+}
+
+/// Builds a lookup map from handler identifiers to their assigned IDs.
+/// Used during code generation to emit data-l-* attributes.
+///
+fn build_handler_lookup(template: Template) -> HandlerLookup {
+  case handler_parser.collect_handlers(template) {
+    Error(_) -> dict.new()
+    Ok(handlers) -> {
+      handlers
+      |> list.fold(dict.new(), fn(acc, item) {
+        let #(id, handler) = item
+        let key = #(handler.event, handler.original, handler.line)
+        dict.insert(acc, key, id)
+      })
+    }
+  }
 }
 
 /// Generates import statements for the module. Includes the
@@ -695,6 +789,7 @@ fn generate_html_function(
   is_component: Bool,
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
+  handler_lookup: HandlerLookup,
 ) -> String {
   // For components, inject @attributes into first element if not present
   let nodes = case is_component {
@@ -709,7 +804,8 @@ fn generate_html_function(
   // Build function parameters
   let params = generate_function_params(template, is_component)
 
-  let body = generate_nodes_code(nodes, 1, component_data, component_slots)
+  let body =
+    generate_nodes_code(nodes, 1, component_data, component_slots, handler_lookup)
   "pub fn render(" <> params <> ") -> String {\n" <> "  \"\"\n" <> body <> "}\n"
 }
 
@@ -804,6 +900,7 @@ fn generate_if_branches(
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
   loop_vars: Set(String),
+  handler_lookup: HandlerLookup,
 ) -> String {
   let pad = string.repeat("  ", indent)
   generate_if_branches_recursive(
@@ -813,6 +910,7 @@ fn generate_if_branches(
     component_data,
     component_slots,
     loop_vars,
+    handler_lookup,
   )
 }
 
@@ -823,6 +921,7 @@ fn generate_if_branches_recursive(
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
   loop_vars: Set(String),
+  handler_lookup: HandlerLookup,
 ) -> String {
   case branches {
     [] -> ""
@@ -835,6 +934,7 @@ fn generate_if_branches_recursive(
           component_data,
           component_slots,
           loop_vars,
+          handler_lookup,
         )
       pad <> "<> {\n" <> pad <> "  \"\"\n" <> body_code <> pad <> "}\n"
     }
@@ -847,6 +947,7 @@ fn generate_if_branches_recursive(
           component_data,
           component_slots,
           loop_vars,
+          handler_lookup,
         )
       let else_code = case rest {
         [] ->
@@ -861,6 +962,7 @@ fn generate_if_branches_recursive(
               component_data,
               component_slots,
               loop_vars,
+              handler_lookup,
             )
           pad
           <> "    False -> {\n"
@@ -880,6 +982,7 @@ fn generate_if_branches_recursive(
               component_data,
               component_slots,
               loop_vars,
+              handler_lookup,
             )
           pad <> "    False ->\n" <> nested
         }
@@ -935,6 +1038,7 @@ fn generate_nodes_code(
   indent: Int,
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
+  handler_lookup: HandlerLookup,
 ) -> String {
   generate_nodes_code_with_loop_vars(
     nodes,
@@ -942,6 +1046,7 @@ fn generate_nodes_code(
     component_data,
     component_slots,
     set.new(),
+    handler_lookup,
   )
 }
 
@@ -955,6 +1060,7 @@ fn generate_nodes_code_with_loop_vars(
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
   loop_vars: Set(String),
+  handler_lookup: HandlerLookup,
 ) -> String {
   nodes
   |> list.map(fn(node) {
@@ -964,6 +1070,7 @@ fn generate_nodes_code_with_loop_vars(
       component_data,
       component_slots,
       loop_vars,
+      handler_lookup,
     )
   })
   |> string.join("")
@@ -979,6 +1086,7 @@ fn generate_node_code_with_loop_vars(
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
   loop_vars: Set(String),
+  handler_lookup: HandlerLookup,
 ) -> String {
   let pad = string.repeat("  ", indent)
 
@@ -1014,6 +1122,7 @@ fn generate_node_code_with_loop_vars(
           component_data,
           component_slots,
           loop_vars,
+          handler_lookup,
         )
       pad
       <> "|> runtime.append_if(slot == \"\", fn(acc) {\n"
@@ -1041,6 +1150,7 @@ fn generate_node_code_with_loop_vars(
           component_data,
           component_slots,
           loop_vars,
+          handler_lookup,
         )
       pad
       <> "|> runtime.append_if("
@@ -1073,6 +1183,7 @@ fn generate_node_code_with_loop_vars(
         component_data,
         component_slots,
         loop_vars,
+        handler_lookup,
       )
     }
 
@@ -1090,6 +1201,7 @@ fn generate_node_code_with_loop_vars(
           component_data,
           component_slots,
           new_loop_vars,
+          handler_lookup,
         )
       // For tuple destructuring, we need to use a temp var and let binding
       // since Gleam doesn't allow pattern matching in fn parameters
@@ -1136,7 +1248,13 @@ fn generate_node_code_with_loop_vars(
       let module_alias = component_module_alias(name)
       let #(default_children, named_slots) = separate_slot_defs(children)
       let #(props_code, extra_attrs_code) =
-        generate_component_attrs(name, attributes, indent + 2, component_data)
+        generate_component_attrs(
+          name,
+          attributes,
+          indent + 2,
+          component_data,
+          handler_lookup,
+        )
       let named_slots_code =
         generate_component_named_slots_with_loop_vars(
           name,
@@ -1145,6 +1263,7 @@ fn generate_node_code_with_loop_vars(
           component_data,
           component_slots,
           loop_vars,
+          handler_lookup,
         )
 
       // Check if the component has a default slot
@@ -1165,6 +1284,7 @@ fn generate_node_code_with_loop_vars(
               component_data,
               component_slots,
               loop_vars,
+              handler_lookup,
             )
           pad
           <> "    slot: {\n"
@@ -1206,7 +1326,7 @@ fn generate_node_code_with_loop_vars(
     }
 
     parser.ElementNode(tag, attributes, children) -> {
-      let attrs_code = generate_element_attrs_code(attributes)
+      let attrs_code = generate_element_attrs_code(attributes, handler_lookup)
       let children_code =
         generate_nodes_code_with_loop_vars(
           children,
@@ -1214,6 +1334,7 @@ fn generate_node_code_with_loop_vars(
           component_data,
           component_slots,
           loop_vars,
+          handler_lookup,
         )
 
       // <template> is a phantom wrapper - only render children, not the tag itself
@@ -1258,6 +1379,7 @@ fn generate_component_attrs(
   attributes: List(lexer.ComponentAttr),
   indent: Int,
   component_data: ComponentDataMap,
+  handler_lookup: HandlerLookup,
 ) -> #(String, String) {
   let pad = string.repeat("  ", indent)
 
@@ -1406,12 +1528,37 @@ fn generate_component_attrs(
             <> transform_style_list(value)
             <> "))",
           )
+        // Generate data-l-* attributes for event handlers
+        lexer.LmOn(event, _modifiers, handler, line) -> {
+          case dict.get(handler_lookup, #(event, handler, line)) {
+            Ok(handler_id) ->
+              Ok(
+                "runtime.Attribute(\"data-l-"
+                <> event
+                <> "\", \""
+                <> handler_id
+                <> "\")",
+              )
+            Error(_) -> Error(Nil)
+          }
+        }
+        // l-model generates data-l-input attribute + value binding is handled separately
+        lexer.LmModel(prop, line) -> {
+          let handler_str = prop <> " = $value"
+          case dict.get(handler_lookup, #("input", handler_str, line)) {
+            Ok(handler_id) ->
+              Ok(
+                "runtime.Attribute(\"data-l-input\", \""
+                <> handler_id
+                <> "\")",
+              )
+            Error(_) -> Error(Nil)
+          }
+        }
         lexer.LmIf(_, _)
         | lexer.LmElseIf(_, _)
         | lexer.LmElse
-        | lexer.LmFor(_, _, _, _)
-        | lexer.LmOn(_, _, _, _)
-        | lexer.LmModel(_, _) -> Error(Nil)
+        | lexer.LmFor(_, _, _, _) -> Error(Nil)
       }
     })
 
@@ -1494,6 +1641,7 @@ fn generate_component_named_slots_with_loop_vars(
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
   loop_vars: Set(String),
+  handler_lookup: HandlerLookup,
 ) -> String {
   let pad = string.repeat("  ", indent)
 
@@ -1528,6 +1676,7 @@ fn generate_component_named_slots_with_loop_vars(
           component_data,
           component_slots,
           loop_vars,
+          handler_lookup,
         )
       pad
       <> "slot_"
@@ -1556,7 +1705,10 @@ fn generate_component_named_slots_with_loop_vars(
 /// Generates code for element attributes. Converts lexer
 /// attributes to runtime calls for rendering HTML attributes.
 ///
-fn generate_element_attrs_code(attrs: List(lexer.ComponentAttr)) -> String {
+fn generate_element_attrs_code(
+  attrs: List(lexer.ComponentAttr),
+  handler_lookup: HandlerLookup,
+) -> String {
   case attrs {
     [] -> ""
     _ -> {
@@ -1596,17 +1748,55 @@ fn generate_element_attrs_code(attrs: List(lexer.ComponentAttr)) -> String {
                 <> transform_style_list(value)
                 <> "))",
               )
-            // l-* attributes should already be filtered out by parser
+            // Generate data-l-* attributes for event handlers
+            lexer.LmOn(event, _modifiers, handler, line) -> {
+              case dict.get(handler_lookup, #(event, handler, line)) {
+                Ok(handler_id) ->
+                  Ok(
+                    "runtime.Attribute(\"data-l-"
+                    <> event
+                    <> "\", \""
+                    <> handler_id
+                    <> "\")",
+                  )
+                Error(_) -> Error(Nil)
+              }
+            }
+            // l-model generates both value binding and data-l-input attribute
+            lexer.LmModel(prop, line) -> {
+              let handler_str = prop <> " = $value"
+              case dict.get(handler_lookup, #("input", handler_str, line)) {
+                Ok(handler_id) ->
+                  Ok(
+                    "runtime.Attribute(\"data-l-input\", \""
+                    <> handler_id
+                    <> "\")",
+                  )
+                Error(_) -> Error(Nil)
+              }
+            }
+            // l-* control flow attributes are handled elsewhere
             lexer.LmIf(_, _)
             | lexer.LmElseIf(_, _)
             | lexer.LmElse
-            | lexer.LmFor(_, _, _, _)
-            | lexer.LmOn(_, _, _, _)
-            | lexer.LmModel(_, _) -> Error(Nil)
+            | lexer.LmFor(_, _, _, _) -> Error(Nil)
           }
         })
 
-      case attr_items {
+      // For l-model, we also need to generate a value attribute
+      let lm_model_value_attrs =
+        attrs
+        |> list.filter_map(fn(attr) {
+          case attr {
+            lexer.LmModel(prop, _) ->
+              Ok("runtime.Attribute(\"value\", " <> prop <> ")")
+            _ -> Error(Nil)
+          }
+        })
+
+      let all_items = list.append(attr_items, lm_model_value_attrs)
+
+      case all_items {
         [] -> ""
         items ->
           "  <> \" \" <> runtime.render_attributes(["
