@@ -16,6 +16,7 @@ import glimr/filesystem/filesystem
 import glimr/loom/generator
 import glimr/loom/lexer
 import glimr/loom/parser
+import glimr/loom/registry
 import shellout
 import simplifile
 
@@ -44,6 +45,9 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
           |> console.print()
         False -> Nil
       }
+
+      // Clear the live module registry before full recompilation
+      let _ = registry.clear_registry()
 
       // Build component data map first
       let component_data = build_component_data_map()
@@ -177,6 +181,10 @@ fn compile_existing_loom_path(
 ///
 fn cleanup_deleted_loom_file(path: String, verbose: Bool) -> Nil {
   let output_file = path_to_output_path(path)
+  let module_name = path_to_module_name(path)
+
+  // Unregister the module from the live registry
+  let _ = registry.unregister_module(module_name)
 
   case simplifile.is_file(output_file) {
     Ok(True) -> {
@@ -345,6 +353,15 @@ fn compile_file(
 
                   case simplifile.write(output_file, generated.code) {
                     Ok(_) -> {
+                      // Register live modules (non-components) in the registry
+                      case template.is_live && !is_component {
+                        True -> {
+                          let _ = registry.register_module(module_name, path)
+                          Nil
+                        }
+                        False -> Nil
+                      }
+
                       case verbose {
                         True ->
                           console.output()
@@ -461,15 +478,23 @@ fn build_component_slot_map_all() -> generator.ComponentSlotMap {
   build_component_slot_map(component_files)
 }
 
-/// Converts a template path to a module name. Strips the
-/// base directory and extension, replacing slashes with
-/// underscores for valid Gleam module names.
+/// Converts a template path to a module name. Returns the full
+/// Gleam module path (e.g., "compiled/loom/loom_test") matching
+/// where the compiled output will be placed.
 ///
 fn path_to_module_name(path: String) -> String {
-  path
-  |> string.replace(views_path, "")
-  |> string.replace(".loom.html", "")
-  |> string.replace("/", "_")
+  let relative =
+    path
+    |> string.replace(views_path, "")
+    |> string.replace(".loom.html", "")
+
+  // Remove leading slash if present
+  let relative = case string.starts_with(relative, "/") {
+    True -> string.drop_start(relative, 1)
+    False -> relative
+  }
+
+  "compiled/loom/" <> relative
 }
 
 /// Converts a template path to its output path. Maps from

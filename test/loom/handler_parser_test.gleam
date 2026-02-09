@@ -84,8 +84,7 @@ pub fn parse_tuple_with_spaces_test() {
 // ------------------------------------------------------------- Special Variables Tests
 
 pub fn get_special_vars_value_test() {
-  let assert Ok(handler) =
-    handler_parser.parse("input", [], "name = $value", 1)
+  let assert Ok(handler) = handler_parser.parse("input", [], "name = $value", 1)
 
   handler_parser.get_special_vars(handler)
   |> should.equal(["$value"])
@@ -221,11 +220,9 @@ pub fn collect_handlers_empty_template_test() {
 pub fn collect_handlers_single_lm_on_test() {
   let template =
     make_template([
-      ElementNode(
-        "button",
-        [lexer.LmOn("click", [], "count = count + 1", 1)],
-        [TextNode("+")],
-      ),
+      ElementNode("button", [lexer.LmOn("click", [], "count = count + 1", 1)], [
+        TextNode("+"),
+      ]),
     ])
   let assert Ok(handlers) = handler_parser.collect_handlers(template)
 
@@ -240,16 +237,12 @@ pub fn collect_handlers_single_lm_on_test() {
 pub fn collect_handlers_multiple_lm_on_test() {
   let template =
     make_template([
-      ElementNode(
-        "button",
-        [lexer.LmOn("click", [], "count = count + 1", 1)],
-        [TextNode("+")],
-      ),
-      ElementNode(
-        "button",
-        [lexer.LmOn("click", [], "count = count - 1", 2)],
-        [TextNode("-")],
-      ),
+      ElementNode("button", [lexer.LmOn("click", [], "count = count + 1", 1)], [
+        TextNode("+"),
+      ]),
+      ElementNode("button", [lexer.LmOn("click", [], "count = count - 1", 2)], [
+        TextNode("-"),
+      ]),
     ])
   let assert Ok(handlers) = handler_parser.collect_handlers(template)
 
@@ -277,17 +270,13 @@ pub fn collect_handlers_lm_model_test() {
 pub fn collect_handlers_nested_elements_test() {
   let template =
     make_template([
-      ElementNode(
-        "div",
-        [],
-        [
-          ElementNode(
-            "button",
-            [lexer.LmOn("click", [], "count = count + 1", 1)],
-            [TextNode("+")],
-          ),
-        ],
-      ),
+      ElementNode("div", [], [
+        ElementNode(
+          "button",
+          [lexer.LmOn("click", [], "count = count + 1", 1)],
+          [TextNode("+")],
+        ),
+      ]),
     ])
   let assert Ok(handlers) = handler_parser.collect_handlers(template)
 

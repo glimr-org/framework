@@ -2099,11 +2099,9 @@ pub fn generate_lm_on_data_attribute_test() {
   // Template with l-on:click handler
   let tmpl =
     live_template([#("count", "Int")], [
-      ElementNode(
-        "button",
-        [LmOn("click", [], "count = count + 1", 1)],
-        [TextNode("+")],
-      ),
+      ElementNode("button", [LmOn("click", [], "count = count + 1", 1)], [
+        TextNode("+"),
+      ]),
     ])
 
   let result = generate(tmpl, "counter", False)
@@ -2122,16 +2120,12 @@ pub fn generate_multiple_lm_on_handlers_test() {
   // Template with multiple handlers
   let tmpl =
     live_template([#("count", "Int")], [
-      ElementNode(
-        "button",
-        [LmOn("click", [], "count = count + 1", 1)],
-        [TextNode("+")],
-      ),
-      ElementNode(
-        "button",
-        [LmOn("click", [], "count = count - 1", 2)],
-        [TextNode("-")],
-      ),
+      ElementNode("button", [LmOn("click", [], "count = count + 1", 1)], [
+        TextNode("+"),
+      ]),
+      ElementNode("button", [LmOn("click", [], "count = count - 1", 2)], [
+        TextNode("-"),
+      ]),
     ])
 
   let result = generate(tmpl, "counter", False)
@@ -2225,16 +2219,10 @@ pub fn generate_lm_on_mixed_events_test() {
   // Template with different event types
   let tmpl =
     live_template([#("count", "Int"), #("name", "String")], [
-      ElementNode(
-        "button",
-        [LmOn("click", [], "count = count + 1", 1)],
-        [TextNode("+")],
-      ),
-      ElementNode(
-        "input",
-        [LmOn("input", [], "name = $value", 2)],
-        [],
-      ),
+      ElementNode("button", [LmOn("click", [], "count = count + 1", 1)], [
+        TextNode("+"),
+      ]),
+      ElementNode("input", [LmOn("input", [], "name = $value", 2)], []),
     ])
 
   let result = generate(tmpl, "mixed", False)
@@ -2265,11 +2253,9 @@ pub fn generate_non_live_template_no_data_attrs_test() {
       imports: [],
       props: [#("count", "Int")],
       nodes: [
-        ElementNode(
-          "button",
-          [LmOn("click", [], "count = count + 1", 1)],
-          [TextNode("+")],
-        ),
+        ElementNode("button", [LmOn("click", [], "count = count + 1", 1)], [
+          TextNode("+"),
+        ]),
       ],
       is_live: False,
     )
@@ -2285,11 +2271,9 @@ pub fn generate_non_live_template_no_data_attrs_test() {
 pub fn generate_live_template_has_is_live_function_test() {
   let tmpl =
     live_template([#("count", "Int")], [
-      ElementNode(
-        "button",
-        [LmOn("click", [], "count = count + 1", 1)],
-        [TextNode("+")],
-      ),
+      ElementNode("button", [LmOn("click", [], "count = count + 1", 1)], [
+        TextNode("+"),
+      ]),
     ])
 
   let result = generate(tmpl, "counter", False)
@@ -2340,11 +2324,9 @@ pub fn generate_live_template_has_handlers_function_test() {
 pub fn generate_live_template_has_prop_names_function_test() {
   let tmpl =
     live_template([#("count", "Int"), #("name", "String")], [
-      ElementNode(
-        "button",
-        [LmOn("click", [], "count = count + 1", 1)],
-        [TextNode("+")],
-      ),
+      ElementNode("button", [LmOn("click", [], "count = count + 1", 1)], [
+        TextNode("+"),
+      ]),
     ])
 
   let result = generate(tmpl, "counter", False)
@@ -2380,26 +2362,24 @@ pub fn generate_non_live_template_no_live_functions_test() {
 }
 
 pub fn generate_live_template_has_wrapper_div_test() {
-  // Live template (page, not component) should have wrapper div
+  // Live template (page, not component) should use runtime.inject_live_wrapper
   let tmpl =
     live_template([#("count", "Int")], [
-      ElementNode(
-        "button",
-        [LmOn("click", [], "count = count + 1", 1)],
-        [TextNode("+")],
-      ),
+      ElementNode("button", [LmOn("click", [], "count = count + 1", 1)], [
+        TextNode("+"),
+      ]),
     ])
 
   let result = generate(tmpl, "counter", False)
 
-  // Should have data-l-live wrapper div
+  // Should call runtime.inject_live_wrapper with module name
   result.code
-  |> string.contains("data-l-live")
+  |> string.contains("runtime.inject_live_wrapper")
   |> should.be_true
 
-  // Should have loom.js script tag
+  // Should pass the module name to inject_live_wrapper
   result.code
-  |> string.contains("/loom.js")
+  |> string.contains("\"counter\"")
   |> should.be_true
 }
 
@@ -2407,11 +2387,9 @@ pub fn generate_live_component_no_wrapper_test() {
   // Live component should NOT have wrapper div (only pages get wrapper)
   let tmpl =
     live_template([#("count", "Int")], [
-      ElementNode(
-        "button",
-        [LmOn("click", [], "count = count + 1", 1)],
-        [TextNode("+")],
-      ),
+      ElementNode("button", [LmOn("click", [], "count = count + 1", 1)], [
+        TextNode("+"),
+      ]),
     ])
 
   // Pass is_component=True

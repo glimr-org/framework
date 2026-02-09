@@ -826,7 +826,7 @@ fn parse_quoted_value(input: String) -> Result(#(String, String), Nil) {
 
 /// Takes characters until a specific quote character is found.
 /// Used to extract attribute values enclosed in matching
-/// quote delimiters.
+/// quote delimiters. Handles escaped quotes (\" or \').
 ///
 fn take_until_quote(
   input: String,
@@ -834,6 +834,20 @@ fn take_until_quote(
   acc: String,
 ) -> Result(#(String, String), Nil) {
   case string.pop_grapheme(input) {
+    Ok(#("\\", rest)) -> {
+      // Check if this is an escaped quote
+      case string.pop_grapheme(rest) {
+        Ok(#(next, rest2)) if next == quote -> {
+          // Escaped quote - include the quote (not the backslash) and continue
+          take_until_quote(rest2, quote, acc <> quote)
+        }
+        Ok(#(next, rest2)) -> {
+          // Backslash followed by something else - keep both
+          take_until_quote(rest2, quote, acc <> "\\" <> next)
+        }
+        Error(_) -> Error(Nil)
+      }
+    }
     Ok(#(c, rest)) -> {
       case c == quote {
         True -> Ok(#(acc, rest))

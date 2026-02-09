@@ -589,7 +589,7 @@ fn validate_expression(
 ///
 fn generate_module(
   template: Template,
-  _module_name: String,
+  module_name: String,
   is_component: Bool,
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
@@ -613,6 +613,7 @@ fn generate_module(
   let html_fn =
     generate_html_function(
       template,
+      module_name,
       is_component,
       component_data,
       component_slots,
@@ -629,7 +630,7 @@ fn generate_module(
 }
 
 /// Generates additional functions for live templates.
-/// Includes is_live() and handler metadata functions.
+/// Includes is_live(), handler metadata, and the handle dispatch function.
 ///
 fn generate_live_functions(template: Template) -> String {
   let handlers = case handler_parser.collect_handlers(template) {
@@ -660,6 +661,16 @@ fn generate_live_functions(template: Template) -> String {
     |> list.map(fn(p) { "\"" <> p.0 <> "\"" })
     |> string.join(", ")
 
+  // Collect which special vars are actually used
+  let used_vars = collect_used_special_vars(handlers)
+
+  // Generate the handle function
+  let handle_fn = generate_handle_function(template, handlers, used_vars)
+
+  // Generate JSON wrapper functions for dynamic dispatch
+  let handle_json_fn = generate_handle_json_function(template, used_vars)
+  let render_json_fn = generate_render_json_function(template)
+
   "/// Returns True if this is a live template.\n"
   <> "///\n"
   <> "pub fn is_live() -> Bool {\n"
@@ -682,6 +693,449 @@ fn generate_live_functions(template: Template) -> String {
   <> prop_names
   <> "]\n"
   <> "}\n"
+  <> "\n"
+  <> handle_fn
+  <> "\n"
+  <> handle_json_fn
+  <> "\n"
+  <> render_json_fn
+}
+
+/// Represents which special variables are used in the template's handlers.
+///
+pub type UsedSpecialVars {
+  UsedSpecialVars(value: Bool, checked: Bool, key: Bool)
+}
+
+/// Collects which special variables are used across all handlers.
+///
+fn collect_used_special_vars(
+  handlers: List(#(String, handler_parser.Handler)),
+) -> UsedSpecialVars {
+  let all_vars =
+    handlers
+    |> list.flat_map(fn(h) { handler_parser.get_special_vars(h.1) })
+
+  UsedSpecialVars(
+    value: list.contains(all_vars, "$value"),
+    checked: list.contains(all_vars, "$checked"),
+    key: list.contains(all_vars, "$key"),
+  )
+}
+
+/// Generates the handle function for dispatching events.
+/// Takes handler_id, current prop values, and special vars.
+/// Returns a tuple of updated prop values.
+///
+fn generate_handle_function(
+  template: Template,
+  handlers: List(#(String, handler_parser.Handler)),
+  used_vars: UsedSpecialVars,
+) -> String {
+  // Generate prop parameters
+  let prop_params =
+    template.props
+    |> list.map(fn(p) { p.0 <> ": " <> p.1 })
+    |> string.join(", ")
+
+  // Generate return type (tuple of prop types)
+  let return_type = case template.props {
+    [] -> "Nil"
+    [single] -> single.1
+    props -> "#(" <> string.join(list.map(props, fn(p) { p.1 }), ", ") <> ")"
+  }
+
+  // Generate handler cases
+  let handler_cases =
+    handlers
+    |> list.map(fn(h) { generate_handler_case(h, template.props) })
+    |> string.join("\n")
+
+  // Generate default case (return unchanged props)
+  let default_return = case template.props {
+    [] -> "Nil"
+    [single] -> single.0
+    props -> "#(" <> string.join(list.map(props, fn(p) { p.0 }), ", ") <> ")"
+  }
+
+  // Only include special var parameters that are actually used
+  let special_var_params =
+    []
+    |> fn(acc) {
+      case used_vars.value {
+        True -> ["value_: option.Option(String)", ..acc]
+        False -> acc
+      }
+    }
+    |> fn(acc) {
+      case used_vars.checked {
+        True -> ["checked_: option.Option(Bool)", ..acc]
+        False -> acc
+      }
+    }
+    |> fn(acc) {
+      case used_vars.key {
+        True -> ["key_: option.Option(String)", ..acc]
+        False -> acc
+      }
+    }
+    |> list.reverse
+    |> string.join(",\n  ")
+
+  let special_params_str = case special_var_params {
+    "" -> ""
+    params -> ",\n  " <> params
+  }
+
+  "/// Handles an event by dispatching to the appropriate handler.\n"
+  <> "/// Returns the updated prop values.\n"
+  <> "///\n"
+  <> "pub fn handle(\n"
+  <> "  handler_id: String,\n"
+  <> "  "
+  <> prop_params
+  <> special_params_str
+  <> ",\n"
+  <> ") -> "
+  <> return_type
+  <> " {\n"
+  <> "  case handler_id {\n"
+  <> handler_cases
+  <> "    _ -> "
+  <> default_return
+  <> "\n"
+  <> "  }\n"
+  <> "}\n"
+}
+
+/// Generates a single handler case for the handle function.
+///
+fn generate_handler_case(
+  handler: #(String, handler_parser.Handler),
+  props: List(#(String, String)),
+) -> String {
+  let #(id, h) = handler
+
+  // Transform special vars in expression ($value -> _value, etc.)
+  let expression = transform_special_vars(h.expression)
+
+  // Generate the return tuple (all prop names - shadowed bindings will be used)
+  let return_expr = case props {
+    [] -> "Nil"
+    [single] -> single.0
+    _ -> "#(" <> string.join(list.map(props, fn(p) { p.0 }), ", ") <> ")"
+  }
+
+  // Generate the let binding(s)
+  let bindings = case h.targets {
+    [single] -> "      let " <> single <> " = " <> expression <> "\n"
+    targets -> {
+      let pattern = "#(" <> string.join(targets, ", ") <> ")"
+      "      let " <> pattern <> " = " <> expression <> "\n"
+    }
+  }
+
+  "    \""
+  <> id
+  <> "\" -> {\n"
+  <> bindings
+  <> "      "
+  <> return_expr
+  <> "\n"
+  <> "    }\n"
+}
+
+/// Transforms special variables in an expression.
+/// $value -> value_, $checked -> checked_, $key -> key_
+/// Also handles Option unwrapping for common patterns.
+///
+fn transform_special_vars(expr: String) -> String {
+  expr
+  |> string.replace("$value", "option.unwrap(value_, \"\")")
+  |> string.replace("$checked", "option.unwrap(checked_, False)")
+  |> string.replace("$key", "option.unwrap(key_, \"\")")
+}
+
+/// Generates the handle_json wrapper function for dynamic dispatch.
+/// Parses props from JSON, calls typed handle(), returns JSON.
+/// Note: Signature is fixed for dynamic dispatch compatibility.
+///
+fn generate_handle_json_function(
+  template: Template,
+  used_vars: UsedSpecialVars,
+) -> String {
+  // Generate the props decoder
+  let props_decoder = generate_props_decoder(template.props)
+
+  // Generate the call to handle() with extracted props
+  let handle_call = generate_handle_call(template.props, used_vars)
+
+  // Generate the JSON encoding of the result
+  let result_encoder = generate_result_encoder(template.props)
+
+  // Only parse special vars that are used (but keep all params for fixed signature)
+  // Use underscore prefix for unused params to avoid warnings
+  let value_param = case used_vars.value {
+    True -> "value"
+    False -> "_value"
+  }
+  let checked_param = case used_vars.checked {
+    True -> "checked"
+    False -> "_checked"
+  }
+  let key_param = case used_vars.key {
+    True -> "key"
+    False -> "_key"
+  }
+
+  let parse_value = case used_vars.value {
+    True ->
+      "  let value_opt = case value { \"\" -> option.None  _ -> option.Some(value) }\n"
+    False -> ""
+  }
+  let parse_checked = case used_vars.checked {
+    True ->
+      "  let checked_opt = case checked { \"true\" -> option.Some(True)  \"false\" -> option.Some(False)  _ -> option.None }\n"
+    False -> ""
+  }
+  let parse_key = case used_vars.key {
+    True ->
+      "  let key_opt = case key { \"\" -> option.None  _ -> option.Some(key) }\n"
+    False -> ""
+  }
+  let parse_special_vars = parse_value <> parse_checked <> parse_key
+
+  "/// JSON wrapper for handle() - used by live_socket for dynamic dispatch.\n"
+  <> "/// Parses props from JSON, calls handle(), returns updated props as JSON.\n"
+  <> "///\n"
+  <> "pub fn handle_json(\n"
+  <> "  handler_id: String,\n"
+  <> "  props_json: String,\n"
+  <> "  "
+  <> value_param
+  <> ": String,\n"
+  <> "  "
+  <> checked_param
+  <> ": String,\n"
+  <> "  "
+  <> key_param
+  <> ": String,\n"
+  <> ") -> String {\n"
+  <> parse_special_vars
+  <> "\n"
+  <> "  // Decode props from JSON\n"
+  <> "  let decoder = {\n"
+  <> props_decoder
+  <> "  }\n"
+  <> "\n"
+  <> "  case json.parse(props_json, decoder) {\n"
+  <> "    Ok(props) -> {\n"
+  <> "      // Call the typed handle function\n"
+  <> "      let result = "
+  <> handle_call
+  <> "\n"
+  <> "      // Encode result back to JSON\n"
+  <> result_encoder
+  <> "    }\n"
+  <> "    Error(_) -> props_json  // Return unchanged on parse error\n"
+  <> "  }\n"
+  <> "}\n"
+}
+
+/// Generates the render_json wrapper function for dynamic dispatch.
+/// Parses props from JSON, calls render(), returns HTML.
+///
+fn generate_render_json_function(template: Template) -> String {
+  // Generate the props decoder (same as handle_json)
+  let props_decoder = generate_props_decoder(template.props)
+
+  // Generate the call to render() with extracted props
+  let render_call = generate_render_call(template.props)
+
+  "/// JSON wrapper for render() - used by live_socket for dynamic dispatch.\n"
+  <> "/// Parses props from JSON, calls render(), returns HTML string.\n"
+  <> "///\n"
+  <> "pub fn render_json(props_json: String) -> String {\n"
+  <> "  // Decode props from JSON\n"
+  <> "  let decoder = {\n"
+  <> props_decoder
+  <> "  }\n"
+  <> "\n"
+  <> "  case json.parse(props_json, decoder) {\n"
+  <> "    Ok(props) -> "
+  <> render_call
+  <> "\n"
+  <> "    Error(_) -> \"<!-- JSON parse error -->\"  // Error fallback\n"
+  <> "  }\n"
+  <> "}\n"
+}
+
+/// Generates a decoder for the props tuple/record.
+///
+fn generate_props_decoder(props: List(#(String, String))) -> String {
+  case props {
+    [] -> "    decode.success(Nil)\n"
+    _ -> {
+      let field_decoders =
+        props
+        |> list.map(fn(p) {
+          let decoder = type_to_decoder(p.1)
+          "    use "
+          <> p.0
+          <> " <- decode.field(\""
+          <> p.0
+          <> "\", "
+          <> decoder
+          <> ")\n"
+        })
+        |> string.join("")
+
+      let success_tuple = case props {
+        [single] -> single.0
+        _ -> "#(" <> string.join(list.map(props, fn(p) { p.0 }), ", ") <> ")"
+      }
+
+      field_decoders <> "    decode.success(" <> success_tuple <> ")\n"
+    }
+  }
+}
+
+/// Generates the handle() function call with props.
+///
+fn generate_handle_call(
+  props: List(#(String, String)),
+  used_vars: UsedSpecialVars,
+) -> String {
+  // Build special var args string based on what's used
+  let special_args =
+    []
+    |> fn(acc) {
+      case used_vars.value {
+        True -> ["value_opt", ..acc]
+        False -> acc
+      }
+    }
+    |> fn(acc) {
+      case used_vars.checked {
+        True -> ["checked_opt", ..acc]
+        False -> acc
+      }
+    }
+    |> fn(acc) {
+      case used_vars.key {
+        True -> ["key_opt", ..acc]
+        False -> acc
+      }
+    }
+    |> list.reverse
+    |> string.join(", ")
+
+  let special_args_str = case special_args {
+    "" -> ""
+    args -> ", " <> args
+  }
+
+  case props {
+    [] -> "handle(handler_id" <> special_args_str <> ")"
+    [_single] -> "handle(handler_id, props" <> special_args_str <> ")"
+    _ -> {
+      // Destructure the tuple
+      let pattern =
+        "#(" <> string.join(list.map(props, fn(p) { p.0 }), ", ") <> ")"
+      let args = string.join(list.map(props, fn(p) { p.0 }), ", ")
+      "{ let "
+      <> pattern
+      <> " = props\n        handle(handler_id, "
+      <> args
+      <> special_args_str
+      <> ") }"
+    }
+  }
+}
+
+/// Generates the render() function call with props.
+///
+fn generate_render_call(props: List(#(String, String))) -> String {
+  case props {
+    [] -> "render()"
+    [single] -> "render(" <> single.0 <> ": props)"
+    _ -> {
+      // Destructure the tuple and pass as named args
+      let pattern =
+        "#(" <> string.join(list.map(props, fn(p) { p.0 }), ", ") <> ")"
+      let args =
+        string.join(list.map(props, fn(p) { p.0 <> ": " <> p.0 }), ", ")
+      "{ let " <> pattern <> " = props\n      render(" <> args <> ") }"
+    }
+  }
+}
+
+/// Generates the JSON encoder for the result.
+///
+fn generate_result_encoder(props: List(#(String, String))) -> String {
+  case props {
+    [] -> "      \"{}\"\n"
+    [single] -> {
+      let encoder = type_to_encoder(single.0, single.1)
+      "      json.to_string(json.object([#(\""
+      <> single.0
+      <> "\", "
+      <> encoder
+      <> ")]))\n"
+    }
+    _ -> {
+      let pattern =
+        "#(" <> string.join(list.map(props, fn(p) { p.0 }), ", ") <> ")"
+      let fields =
+        props
+        |> list.map(fn(p) {
+          let encoder = type_to_encoder(p.0, p.1)
+          "#(\"" <> p.0 <> "\", " <> encoder <> ")"
+        })
+        |> string.join(", ")
+
+      "      let "
+      <> pattern
+      <> " = result\n"
+      <> "      json.to_string(json.object(["
+      <> fields
+      <> "]))\n"
+    }
+  }
+}
+
+/// Maps a Gleam type to its JSON decoder.
+///
+fn type_to_decoder(gleam_type: String) -> String {
+  case gleam_type {
+    "String" -> "decode.string"
+    "Int" -> "decode.int"
+    "Float" -> "decode.float"
+    "Bool" -> "decode.bool"
+    "List(String)" -> "decode.list(decode.string)"
+    "List(Int)" -> "decode.list(decode.int)"
+    "List(Float)" -> "decode.list(decode.float)"
+    "List(Bool)" -> "decode.list(decode.bool)"
+    _ -> "decode.string"
+    // Fallback for complex types
+  }
+}
+
+/// Maps a prop name and type to its JSON encoder expression.
+///
+fn type_to_encoder(name: String, gleam_type: String) -> String {
+  case gleam_type {
+    "String" -> "json.string(" <> name <> ")"
+    "Int" -> "json.int(" <> name <> ")"
+    "Float" -> "json.float(" <> name <> ")"
+    "Bool" -> "json.bool(" <> name <> ")"
+    "List(String)" -> "json.array(" <> name <> ", json.string)"
+    "List(Int)" -> "json.array(" <> name <> ", json.int)"
+    "List(Float)" -> "json.array(" <> name <> ", json.float)"
+    "List(Bool)" -> "json.array(" <> name <> ", json.bool)"
+    _ -> "json.string(" <> name <> ")"
+    // Fallback
+  }
 }
 
 /// Builds a lookup map from handler identifiers to their assigned IDs.
@@ -706,7 +1160,18 @@ fn build_handler_lookup(template: Template) -> HandlerLookup {
 /// for all referenced components.
 ///
 fn generate_imports(template: Template) -> String {
+  // Base imports - runtime is always needed
   let base_imports = ["import glimr/loom/runtime"]
+
+  // For live templates, import additional modules for handle/render JSON wrappers
+  let live_imports = case template.is_live {
+    True -> [
+      "import gleam/option",
+      "import gleam/json",
+      "import gleam/dynamic/decode",
+    ]
+    False -> []
+  }
 
   // User imports from @import directives (copied verbatim as "import <content>")
   let user_imports =
@@ -726,7 +1191,7 @@ fn generate_imports(template: Template) -> String {
     })
 
   string.join(
-    list.flatten([base_imports, user_imports, component_imports]),
+    list.flatten([base_imports, live_imports, user_imports, component_imports]),
     "\n",
   )
 }
@@ -786,6 +1251,7 @@ fn collect_named_slots(nodes: List(Node), acc: Set(String)) -> Set(String) {
 ///
 fn generate_html_function(
   template: Template,
+  module_name: String,
   is_component: Bool,
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
@@ -805,31 +1271,66 @@ fn generate_html_function(
   let params = generate_function_params(template, is_component)
 
   let body =
-    generate_nodes_code(nodes, 1, component_data, component_slots, handler_lookup)
+    generate_nodes_code(
+      nodes,
+      1,
+      component_data,
+      component_slots,
+      handler_lookup,
+    )
 
   // For live templates (non-components), wrap with live container
-  let final_body = case template.is_live && !is_component {
-    True -> generate_live_wrapper(body)
-    False -> body
+  // Live wrapper includes its own "" so we don't add one
+  case template.is_live && !is_component {
+    True -> {
+      let wrapped = generate_live_wrapper(body, module_name, template.props)
+      "pub fn render(" <> params <> ") -> String {\n" <> wrapped <> "}\n"
+    }
+    False -> {
+      "pub fn render("
+      <> params
+      <> ") -> String {\n"
+      <> "  \"\"\n"
+      <> body
+      <> "}\n"
+    }
   }
-
-  "pub fn render(" <> params <> ") -> String {\n" <> "  \"\"\n" <> final_body <> "}\n"
 }
 
 /// Wraps live template content with the necessary container and script tags.
-/// Adds data-l-live attribute for loom.js initialization.
+/// Uses runtime.inject_live_wrapper to properly inject into the body tag,
+/// ensuring valid HTML structure when using layout components.
 ///
-fn generate_live_wrapper(body: String) -> String {
-  // Opening wrapper div with data-l-live attribute
-  let open = "  <> \"<div data-l-live=\\\"live\\\">\"\n"
+fn generate_live_wrapper(
+  body: String,
+  module_name: String,
+  props: List(#(String, String)),
+) -> String {
+  // Generate the props JSON encoder expression
+  let props_json_expr = case props {
+    [] -> "\"{}\""
+    _ -> {
+      let fields =
+        props
+        |> list.map(fn(p) {
+          let encoder = type_to_encoder(p.0, p.1)
+          "#(\"" <> p.0 <> "\", " <> encoder <> ")"
+        })
+        |> string.join(", ")
+      "json.to_string(json.object([" <> fields <> "]))"
+    }
+  }
 
-  // Closing wrapper div
-  let close = "  <> \"</div>\"\n"
-
-  // loom.js script tag
-  let script = "  <> \"<script src=\\\"/loom.js\\\"></script>\"\n"
-
-  open <> body <> close <> script
+  // Wrap body in a block to ensure proper grouping, then pipe to inject_live_wrapper
+  // This finds the <body> tag and injects the container there at runtime
+  "  {\n  \"\"\n"
+  <> body
+  <> "  }\n"
+  <> "  |> runtime.inject_live_wrapper(\""
+  <> module_name
+  <> "\", "
+  <> props_json_expr
+  <> ")\n"
 }
 
 /// Generates the function parameter list. Includes props from
@@ -1552,16 +2053,44 @@ fn generate_component_attrs(
             <> "))",
           )
         // Generate data-l-* attributes for event handlers
-        lexer.LmOn(event, _modifiers, handler, line) -> {
+        lexer.LmOn(event, modifiers, handler, line) -> {
           case dict.get(handler_lookup, #(event, handler, line)) {
-            Ok(handler_id) ->
-              Ok(
+            Ok(handler_id) -> {
+              // Build list of attributes: handler ID + modifiers
+              let handler_attr =
                 "runtime.Attribute(\"data-l-"
                 <> event
                 <> "\", \""
                 <> handler_id
-                <> "\")",
-              )
+                <> "\")"
+
+              // Add modifier attributes
+              let modifier_attrs =
+                modifiers
+                |> list.map(fn(m) {
+                  // Handle debounce specially: .debounce or .debounce-300
+                  case string.starts_with(m, "debounce") {
+                    True -> {
+                      let value = case string.split(m, "-") {
+                        ["debounce", ms] -> ms
+                        _ -> "150"
+                        // Default debounce
+                      }
+                      "runtime.Attribute(\"data-l-debounce\", \""
+                      <> value
+                      <> "\")"
+                    }
+                    False ->
+                      "runtime.Attribute(\"data-l-" <> m <> "\", \"true\")"
+                  }
+                })
+                |> string.join(", ")
+
+              case modifier_attrs {
+                "" -> Ok(handler_attr)
+                _ -> Ok(handler_attr <> ", " <> modifier_attrs)
+              }
+            }
             Error(_) -> Error(Nil)
           }
         }
@@ -1571,9 +2100,7 @@ fn generate_component_attrs(
           case dict.get(handler_lookup, #("input", handler_str, line)) {
             Ok(handler_id) ->
               Ok(
-                "runtime.Attribute(\"data-l-input\", \""
-                <> handler_id
-                <> "\")",
+                "runtime.Attribute(\"data-l-input\", \"" <> handler_id <> "\")",
               )
             Error(_) -> Error(Nil)
           }
@@ -1787,7 +2314,21 @@ fn generate_element_attrs_code(
                   let modifier_attrs =
                     modifiers
                     |> list.map(fn(m) {
-                      "runtime.Attribute(\"data-l-" <> m <> "\", \"true\")"
+                      // Handle debounce specially: .debounce or .debounce-300
+                      case string.starts_with(m, "debounce") {
+                        True -> {
+                          let value = case string.split(m, "-") {
+                            ["debounce", ms] -> ms
+                            _ -> "150"
+                            // Default debounce
+                          }
+                          "runtime.Attribute(\"data-l-debounce\", \""
+                          <> value
+                          <> "\")"
+                        }
+                        False ->
+                          "runtime.Attribute(\"data-l-" <> m <> "\", \"true\")"
+                      }
                     })
                     |> string.join(", ")
 

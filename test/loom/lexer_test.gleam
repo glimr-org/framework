@@ -869,7 +869,9 @@ pub fn tokenize_lm_on_input_test() {
     lexer.tokenize("<input l-on:input=\"name = $value\" />")
 
   tokens
-  |> should.equal([Element("input", [LmOn("input", [], "name = $value", 1)], True)])
+  |> should.equal([
+    Element("input", [LmOn("input", [], "name = $value", 1)], True),
+  ])
 }
 
 pub fn tokenize_lm_on_input_immediate_test() {
@@ -888,7 +890,11 @@ pub fn tokenize_lm_on_input_debounce_test() {
 
   tokens
   |> should.equal([
-    Element("input", [LmOn("input", ["debounce-300"], "name = $value", 1)], True),
+    Element(
+      "input",
+      [LmOn("input", ["debounce-300"], "name = $value", 1)],
+      True,
+    ),
   ])
 }
 
@@ -1068,8 +1074,7 @@ pub fn tokenize_lm_on_on_component_test() {
 }
 
 pub fn tokenize_lm_model_on_component_test() {
-  let assert Ok(tokens) =
-    lexer.tokenize("<x-input l-model=\"name\" />")
+  let assert Ok(tokens) = lexer.tokenize("<x-input l-model=\"name\" />")
 
   tokens
   |> should.equal([Component("input", [LmModel("name", 1)], True)])

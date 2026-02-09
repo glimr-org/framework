@@ -4,6 +4,8 @@
 //// Handles string concatenation, conditional rendering, loops,
 //// HTML escaping, and attribute management.
 
+import dot_env/env
+import gleam/int
 import gleam/list
 import gleam/string
 import houdini
@@ -295,5 +297,71 @@ fn attr_name(attr: Attribute) -> String {
   case attr {
     Attribute(name, _) -> name
     BoolAttribute(name, _) -> name
+  }
+}
+
+/// Returns the WebSocket URL for Loom Live connections.
+/// In dev mode (when DEV_PROXY_PORT env var is set), returns an
+/// explicit URL pointing to the app port to bypass the dev proxy.
+/// In production, returns a relative path that uses the page host.
+///
+pub fn live_ws_url() -> String {
+  // Check if we're in dev mode by looking for DEV_PROXY_PORT
+  case env.get_int("DEV_PROXY_PORT") {
+    Ok(port) -> {
+      // Dev mode: connect directly to app port, bypassing proxy
+      "ws://localhost:" <> int.to_string(port) <> "/loom/ws"
+    }
+    Error(_) -> {
+      // Production: use relative path (same host as page)
+      "/loom/ws"
+    }
+  }
+}
+
+/// Injects live template wrapper into HTML by finding the body tag.
+/// Adds the live container div after <body> and closing div + script before </body>.
+/// This ensures proper HTML structure when using layout components.
+///
+pub fn inject_live_wrapper(
+  html: String,
+  module_name: String,
+  props_json: String,
+) -> String {
+  let ws_url = live_ws_url()
+  let open_div =
+    "<div data-l-live=\""
+    <> module_name
+    <> "\" data-l-ws=\""
+    <> ws_url
+    <> "\" data-l-props='"
+    <> props_json
+    <> "'>"
+  let close_div = "</div><script src=\"/loom.js\"></script>"
+
+  // Find and inject after <body...>
+  let html = inject_after_body_open(html, open_div)
+  // Find and inject before </body>
+  let html = string.replace(html, "</body>", close_div <> "</body>")
+
+  html
+}
+
+/// Injects content after the opening body tag, handling body attributes.
+///
+fn inject_after_body_open(html: String, content: String) -> String {
+  case string.split_once(html, "<body") {
+    Ok(#(before, after)) -> {
+      // Find the closing > of the body tag
+      case string.split_once(after, ">") {
+        Ok(#(body_attrs, rest)) ->
+          before <> "<body" <> body_attrs <> ">" <> content <> rest
+        Error(_) -> html
+      }
+    }
+    Error(_) -> {
+      // No body tag found - wrap the whole thing (fallback)
+      content <> html <> "</div><script src=\"/loom.js\"></script>"
+    }
   }
 }
