@@ -10,10 +10,10 @@ import gleam/string
 import simplifile
 import wisp.{type Response}
 
-// ------------------------------------------------------------- Private Constants
+// ------------------------------------------------------------- Public Constants
 
 /// Returns the base path for application view files
-const views_path = "src/resources/views/"
+pub const views_path = "src/resources/views/"
 
 // ------------------------------------------------------------- Public Functions
 

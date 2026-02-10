@@ -33,18 +33,18 @@ fn run(_args: Args) -> Nil {
                 Ok(_) -> Nil
                 Error(msg) -> {
                   io.println(console.error(msg))
-                  halt(1)
+                  console.halt(1)
                 }
               }
             }
           }
         }
-        Error(_) -> halt(1)
+        Error(_) -> console.halt(1)
       }
     }
     Error(msg) -> {
       io.println(console.error(msg))
-      halt(1)
+      console.halt(1)
     }
   }
 }
@@ -54,6 +54,3 @@ fn run(_args: Args) -> Nil {
 pub fn main() {
   command.run(command())
 }
-
-@external(erlang, "erlang", "halt")
-fn halt(code: Int) -> Nil

@@ -1,20 +1,28 @@
 //// Template Parser
 ////
-//// Converts a stream of lexer tokens into an abstract syntax
-//// tree. Handles nested structures like conditionals, loops,
-//// components, and slot definitions.
+//// The lexer produces a flat stream of tokens, but templates
+//// are inherently hierarchical — components nest inside each
+//// other, conditionals span siblings, and slots cross
+//// component boundaries. This module transforms that flat
+//// token stream into an AST that preserves these structural
+//// relationships so downstream code generation can emit
+//// correct, nested output without re-discovering structure.
 ////
 
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import glimr/loom/lexer.{type ComponentAttr, type Token}
+import glimr/utils/string as string_utils
 
 // ------------------------------------------------------------- Public Types
 
-/// Represents a parsed template as a list of content nodes.
-/// The root structure returned from parsing, containing all
-/// AST nodes that make up the template.
+/// Code generation needs a single entry point that carries
+/// all the information extracted from a template file —
+/// imports, props, content nodes, and liveness — so it can
+/// emit a complete module without re-parsing or requiring
+/// multiple passes over the token stream.
 ///
 pub type Template {
   Template(
@@ -30,9 +38,12 @@ pub type Template {
   )
 }
 
-/// Represents a node in the template AST. Each variant maps
-/// to a different template construct like text, variables,
-/// control flow, or components.
+/// Different template constructs need distinct code
+/// generation strategies — text is emitted verbatim,
+/// variables require escaping or lookups, control flow
+/// needs branching logic, and components trigger recursive
+/// rendering. A sum type lets the code generator pattern
+/// match exhaustively on every construct.
 ///
 pub type Node {
   TextNode(String)
@@ -66,9 +77,11 @@ pub type Node {
   )
 }
 
-/// Errors that can occur during template parsing. Includes
-/// unexpected closing tags, unclosed blocks, and invalid
-/// token sequences.
+/// Template authors need actionable error messages when their
+/// markup is malformed. Structured error variants let the
+/// compiler surface the specific problem — a mismatched
+/// closing tag, a dangling else branch, or a directive in
+/// the wrong position — rather than a generic parse failure.
 ///
 pub type ParserError {
   UnexpectedLmElse
@@ -88,30 +101,69 @@ pub type ParserError {
   DuplicatePropsDirective(line: Int)
 }
 
+// ------------------------------------------------------------- Private Types
+
+/// Conditional chains (l-if / l-else-if / l-else) span
+/// multiple sibling elements, but the parser processes
+/// tokens one at a time. This accumulator collects branches
+/// as they appear so the chain can be emitted as a single
+/// IfNode once a non-conditional sibling or end-of-context
+/// signals the chain is complete.
+///
+type PendingIf {
+  PendingIf(
+    first_condition: String,
+    first_line: Int,
+    first_body: List(Node),
+    branches: List(#(Option(String), Int, List(Node))),
+    has_else: Bool,
+  )
+}
+
+/// Components, elements, and slots all contain children but
+/// differ in their closing tags, slot semantics, and error
+/// messages. This context type lets a single parse_body
+/// function handle all three without duplicating the shared
+/// child-parsing logic.
+///
+type BodyContext {
+  ComponentBody(name: String)
+  ElementBody(tag: String)
+  SlotBody(name: Option(String))
+}
+
 // ------------------------------------------------------------- Public Functions
 
-/// Parses a list of tokens into a Template AST. Extracts
-/// @import and @props directives first, then recursively
-/// parses all nodes including nested structures like
-/// conditionals, loops, and component hierarchies.
+/// Entry point for the parser. Directives are extracted
+/// first because they affect how the generated module is
+/// structured (imports, function signatures) and must not
+/// appear mixed with content. The remaining tokens are then
+/// parsed into the node tree that drives code generation.
 ///
 pub fn parse(tokens: List(Token)) -> Result(Template, ParserError) {
   // First extract @import and @props directives from the beginning
-  use #(imports, props, remaining_tokens) <- try_parse(extract_directives(
+  use #(imports, props, remaining_tokens) <- result.try(extract_directives(
     tokens,
     [],
     None,
   ))
+
   // Then parse the content nodes
-  use nodes <- try_parse(parse_nodes(remaining_tokens, [], None))
+  use nodes <- result.try(parse_nodes(remaining_tokens, [], None))
+
   // Detect if template contains l-on:* or l-model (makes it "live")
   let is_live = has_live_attributes(nodes)
+
   Ok(Template(imports: imports, props: props, nodes: nodes, is_live: is_live))
 }
 
-/// Extracts @import and @props directives from the beginning of tokens.
-/// Directives must appear before any content. Returns the imports,
-/// props, and remaining tokens.
+// ------------------------------------------------------------- Private Functions
+
+/// Directives control module-level concerns (what to import,
+/// what props the template accepts) so they must be resolved
+/// before content parsing begins. Enforcing a "directives
+/// first" rule keeps template structure predictable and
+/// avoids ambiguity about directive scope.
 ///
 fn extract_directives(
   tokens: List(Token),
@@ -146,34 +198,20 @@ fn extract_directives(
   }
 }
 
-/// Checks if a string contains only whitespace.
+/// Whitespace-only text nodes between directives should be
+/// ignored so that newlines and indentation between @import
+/// and @props lines don't prematurely end the directive
+/// extraction phase.
 ///
-fn is_whitespace_only(s: String) -> Bool {
-  s
-  |> string.to_graphemes
-  |> list.all(fn(c) { c == " " || c == "\n" || c == "\t" || c == "\r" })
+fn is_whitespace_only(string: String) -> Bool {
+  string |> string.to_graphemes |> list.all(string_utils.is_whitespace)
 }
 
-// ------------------------------------------------------------- Private Functions
-
-/// State for tracking conditional chains across sibling elements.
-/// When we see l-if, we start a pending chain. When we see l-else-if
-/// or l-else, we add to it. When we see something else or end of
-/// current context, we emit the completed IfNode.
-///
-type PendingIf {
-  PendingIf(
-    first_condition: String,
-    first_line: Int,
-    first_body: List(Node),
-    branches: List(#(Option(String), Int, List(Node))),
-    has_else: Bool,
-  )
-}
-
-/// Parses top-level nodes from the token stream. Handles all
-/// node types and delegates to specialized parsers for nested
-/// structures. Tracks conditional chains across siblings.
+/// The recursive backbone of the parser. Each token is
+/// dispatched to the appropriate node constructor while a 
+/// pending conditional accumulator tracks l-if chains across 
+/// siblings — necessary because conditional branches are 
+/// separate tokens that must coalesce into one IfNode.
 ///
 fn parse_nodes(
   tokens: List(Token),
@@ -218,15 +256,18 @@ fn parse_nodes(
       // Opening <slot> or <slot name="x"> - parse children as fallback
       // At top level/element body, this is a slot OUTPUT with fallback content
       let acc = flush_pending_if(acc, pending_if)
-      use #(children, remaining) <- try_parse(
-        parse_slot_fallback_body(rest, name, []),
-      )
+      use #(children, remaining) <- result.try(parse_body(
+        rest,
+        SlotBody(name),
+        [],
+        None,
+      ))
       parse_nodes(remaining, [SlotNode(name, children), ..acc], None)
     }
 
     [lexer.Component(name, attrs, self_closing), ..rest] -> {
       // Check for l-* attributes on component
-      use #(node, remaining, new_pending) <- try_parse(
+      use #(node, remaining, new_pending) <- result.try(
         parse_component_with_attrs(name, attrs, self_closing, rest, pending_if),
       )
       case node {
@@ -242,13 +283,9 @@ fn parse_nodes(
     }
 
     [lexer.Element(tag, attrs, self_closing), ..rest] -> {
-      use #(node, remaining, new_pending) <- try_parse(parse_element_with_attrs(
-        tag,
-        attrs,
-        self_closing,
-        rest,
-        pending_if,
-      ))
+      use #(node, remaining, new_pending) <- result.try(
+        parse_element_with_attrs(tag, attrs, self_closing, rest, pending_if),
+      )
       case node {
         Some(n) -> {
           let acc = flush_pending_if(acc, pending_if)
@@ -284,9 +321,11 @@ fn parse_nodes(
   }
 }
 
-/// Flushes any pending conditional chain to the accumulator.
-/// Converts the accumulated branches into an IfNode and
-/// prepends it to the node list.
+/// A conditional chain only becomes a complete IfNode once a 
+/// non-conditional sibling or end-of-context appears. This 
+/// function materializes the accumulated branches at that 
+/// boundary, ensuring the IfNode lands in the correct position 
+/// relative to surrounding nodes.
 ///
 fn flush_pending_if(
   acc: List(Node),
@@ -304,9 +343,11 @@ fn flush_pending_if(
   }
 }
 
-/// Parses a component with potential l-* attributes.
-/// Returns the node (or None if absorbed into chain), remaining tokens,
-/// and the new pending_if state.
+/// Components can carry l-* directives that wrap them in
+/// conditional or loop structures. This function separates
+/// those directives from the component's own attributes so the 
+/// generated AST nests correctly — the component node lives 
+/// inside the control flow node, not alongside it.
 ///
 fn parse_component_with_attrs(
   name: String,
@@ -325,9 +366,9 @@ fn parse_component_with_attrs(
   let clean_attrs = filter_lm_attrs(attrs)
 
   // Get component children
-  use #(children, remaining) <- try_parse(case self_closing {
+  use #(children, remaining) <- result.try(case self_closing {
     True -> Ok(#([], rest))
-    False -> parse_component_body(rest, name, [], None)
+    False -> parse_body(rest, ComponentBody(name), [], None)
   })
 
   // Build the base node
@@ -351,9 +392,11 @@ fn parse_component_with_attrs(
   )
 }
 
-/// Parses an element with potential l-* attributes. Handles
-/// l-if, l-else-if, l-else, and l-for directives that wrap
-/// the element in conditional or loop structures.
+/// Elements with both l-for and l-if need special nesting order: 
+/// l-if goes inside the loop so loop variables are in scope for 
+/// the condition. This function also unwraps <template> 
+/// elements into their children to avoid emitting unnecessary 
+/// wrapper nodes in the output.
 ///
 fn parse_element_with_attrs(
   tag: String,
@@ -372,28 +415,16 @@ fn parse_element_with_attrs(
   let clean_attrs = filter_lm_attrs(attrs)
 
   // Get element children
-  use #(children, remaining) <- try_parse(case self_closing {
+  use #(children, remaining) <- result.try(case self_closing {
     True -> Ok(#([], rest))
-    False -> parse_element_body(rest, tag, [], None)
+    False -> parse_body(rest, ElementBody(tag), [], None)
   })
 
-  // Build the base node
-  // For <template>, we just use children directly (no wrapper)
-  let base_node = case tag {
-    "template" -> {
-      case children {
-        [single] -> single
-        _ -> ElementNode(tag, clean_attrs, children)
-      }
-    }
-    _ -> ElementNode(tag, clean_attrs, children)
-  }
-
-  // Handle template specially - if it has no non-l-* attributes and
-  // multiple children, we want to use children directly
+  // <template> with no remaining attrs is an invisible wrapper,
+  // so unwrap its children directly to avoid an extra DOM node
   let base_nodes = case tag, clean_attrs {
     "template", [] -> children
-    _, _ -> [base_node]
+    _, _ -> [ElementNode(tag, clean_attrs, children)]
   }
 
   // When both l-for and l-if are on the same element, l-if goes INSIDE the loop
@@ -436,9 +467,11 @@ fn parse_element_with_attrs(
   }
 }
 
-/// Handles conditional chain logic for an element or component.
-/// Manages l-if/l-else-if/l-else chains across sibling elements
-/// and returns the appropriate pending state.
+/// Both components and elements can participate in conditional 
+/// chains, so this shared function avoids duplicating the chain 
+/// state machine. It validates ordering constraints (no else-if 
+/// after else, no orphaned else) and returns the updated 
+/// pending state.
 ///
 fn handle_conditional_chain(
   node: Node,
@@ -516,9 +549,10 @@ fn handle_conditional_chain(
   }
 }
 
-/// Finds l-if attribute value in an attribute list. Returns
-/// the condition string if present, None otherwise. Used to
-/// detect the start of a conditional chain.
+/// l-if attributes are mixed in with regular HTML attributes by
+/// the lexer. Extracting them separately lets the parser treat 
+/// them as control flow directives rather than as attributes to 
+/// pass through to the rendered output.
 ///
 fn find_lm_if(attrs: List(ComponentAttr)) -> Option(#(String, Int)) {
   list.find_map(attrs, fn(attr) {
@@ -530,9 +564,10 @@ fn find_lm_if(attrs: List(ComponentAttr)) -> Option(#(String, Int)) {
   |> option.from_result
 }
 
-/// Finds l-else-if attribute value in an attribute list.
-/// Returns the condition string if present, None otherwise.
-/// Used to continue a conditional chain.
+/// l-else-if must be extracted separately from l-if because it 
+/// continues an existing conditional chain rather than starting '
+/// a new one, requiring different state machine transitions in 
+/// the parser.
 ///
 fn find_lm_else_if(attrs: List(ComponentAttr)) -> Option(#(String, Int)) {
   list.find_map(attrs, fn(attr) {
@@ -544,9 +579,11 @@ fn find_lm_else_if(attrs: List(ComponentAttr)) -> Option(#(String, Int)) {
   |> option.from_result
 }
 
-/// Checks if l-else is present in an attribute list. Returns
-/// true if the else directive is found, indicating the final
-/// branch of a conditional chain.
+/// Unlike l-if and l-else-if which carry condition strings,
+/// l-else is a boolean presence check — it has no value. A 
+/// simple Bool return suffices because the parser only needs to 
+/// know whether the else branch exists, not extract any 
+/// associated data.
 ///
 fn has_lm_else(attrs: List(ComponentAttr)) -> Bool {
   list.any(attrs, fn(attr) {
@@ -557,9 +594,11 @@ fn has_lm_else(attrs: List(ComponentAttr)) -> Bool {
   })
 }
 
-/// Finds l-for attribute value in an attribute list. Returns
-/// collection name, item pattern, and optional loop variable
-/// if the for directive is present.
+/// l-for carries structured data (collection, destructured 
+/// items, optional loop variable) that the parser needs to
+/// build an EachNode. Extracting it here keeps the main parsing 
+/// functions focused on nesting logic rather than attribute 
+/// inspection.
 ///
 fn find_lm_for(
   attrs: List(ComponentAttr),
@@ -574,9 +613,10 @@ fn find_lm_for(
   |> option.from_result
 }
 
-/// Filters out l-* attributes from attribute list. Removes
-/// directive attributes (l-if, l-else-if, l-else, l-for)
-/// leaving only standard HTML/component attributes.
+/// Directive attributes control parsing structure but must not 
+/// appear in the rendered output. Stripping them here ensures 
+/// that generated HTML elements and component invocations only 
+/// carry the attributes that belong in the final markup.
 ///
 fn filter_lm_attrs(attrs: List(ComponentAttr)) -> List(ComponentAttr) {
   list.filter(attrs, fn(attr) {
@@ -590,137 +630,153 @@ fn filter_lm_attrs(attrs: List(ComponentAttr)) -> List(ComponentAttr) {
   })
 }
 
-/// Parses the children of a component until its closing tag.
-/// Handles nested components, elements, slots, and maintains
-/// conditional chain state across siblings.
+/// Child parsing is shared across components, elements, and
+/// slots because they all consume tokens the same way — only 
+/// the termination condition and slot semantics differ. 
+/// Centralizing this avoids three near-identical recursive 
+/// functions and ensures consistent conditional chain handling 
+/// at every nesting level.
 ///
-fn parse_component_body(
+fn parse_body(
   tokens: List(Token),
-  component_name: String,
+  context: BodyContext,
   acc: List(Node),
   pending_if: Option(PendingIf),
 ) -> Result(#(List(Node), List(Token)), ParserError) {
   case tokens {
-    [] -> Error(UnclosedComponent(component_name))
+    // Empty input means unclosed tag
+    [] ->
+      case context {
+        ComponentBody(name) -> Error(UnclosedComponent(name))
+        ElementBody(tag) -> Error(UnclosedElement(tag))
+        SlotBody(name) -> Error(UnclosedSlot(name))
+      }
 
-    [lexer.ComponentEnd(name), ..rest] if name == component_name -> {
-      let acc = flush_pending_if(acc, pending_if)
-      Ok(#(list.reverse(acc), rest))
-    }
+    // Closing tags - match against context
+    [lexer.ComponentEnd(name), ..rest] ->
+      case context {
+        ComponentBody(expected) if name == expected -> {
+          let acc = flush_pending_if(acc, pending_if)
+          Ok(#(list.reverse(acc), rest))
+        }
+        _ -> Error(UnexpectedComponentEnd(name))
+      }
 
-    [lexer.ComponentEnd(name), ..] -> Error(UnexpectedComponentEnd(name))
+    [lexer.ElementEnd(tag), ..rest] ->
+      case context {
+        ElementBody(expected) if tag == expected -> {
+          let acc = flush_pending_if(acc, pending_if)
+          Ok(#(list.reverse(acc), rest))
+        }
+        _ -> Error(UnexpectedElementEnd(tag))
+      }
 
+    [lexer.SlotDefEnd, ..rest] ->
+      case context {
+        SlotBody(_) -> {
+          let acc = flush_pending_if(acc, pending_if)
+          Ok(#(list.reverse(acc), rest))
+        }
+        _ -> Error(UnexpectedSlotDefEnd)
+      }
+
+    // Common content nodes
     [lexer.Text(content), ..rest] -> {
       let acc = flush_pending_if(acc, pending_if)
-      parse_component_body(
-        rest,
-        component_name,
-        [TextNode(content), ..acc],
-        None,
-      )
+      parse_body(rest, context, [TextNode(content), ..acc], None)
     }
 
     [lexer.Variable(name, line), ..rest] -> {
       let acc = flush_pending_if(acc, pending_if)
-      parse_component_body(
-        rest,
-        component_name,
-        [VariableNode(name, line), ..acc],
-        None,
-      )
+      parse_body(rest, context, [VariableNode(name, line), ..acc], None)
     }
 
     [lexer.RawVariable(name, line), ..rest] -> {
       let acc = flush_pending_if(acc, pending_if)
-      parse_component_body(
-        rest,
-        component_name,
-        [RawVariableNode(name, line), ..acc],
-        None,
-      )
-    }
-
-    [lexer.Slot(name), ..rest] -> {
-      // Self-closing <slot /> - creates SlotDefNode inside component body
-      // This is defining content to pass to the component's slot
-      let acc = flush_pending_if(acc, pending_if)
-      parse_component_body(
-        rest,
-        component_name,
-        [SlotDefNode(name, []), ..acc],
-        None,
-      )
+      parse_body(rest, context, [RawVariableNode(name, line), ..acc], None)
     }
 
     [lexer.Attributes, ..rest] -> {
       let acc = flush_pending_if(acc, pending_if)
-      parse_component_body(
-        rest,
-        component_name,
-        [AttributesNode([]), ..acc],
-        None,
-      )
+      parse_body(rest, context, [AttributesNode([]), ..acc], None)
     }
 
-    [lexer.SlotDef(name), ..rest] -> {
-      // Opening <slot name="x"> inside component - defines content for named slot
-      let acc = flush_pending_if(acc, pending_if)
-      use #(children, remaining) <- try_parse(
-        parse_slot_fallback_body(rest, name, []),
-      )
-      parse_component_body(
-        remaining,
-        component_name,
-        [SlotDefNode(name, children), ..acc],
-        None,
-      )
-    }
+    // Slot handling differs by context: components define slot
+    // content, elements output it, and nested slots are invalid
+    [lexer.Slot(name), ..rest] ->
+      case context {
+        ComponentBody(_) -> {
+          let acc = flush_pending_if(acc, pending_if)
+          parse_body(rest, context, [SlotDefNode(name, []), ..acc], None)
+        }
+        ElementBody(_) -> {
+          let acc = flush_pending_if(acc, pending_if)
+          parse_body(rest, context, [SlotNode(name, []), ..acc], None)
+        }
+        SlotBody(_) -> Error(UnexpectedToken(lexer.Slot(None)))
+      }
 
+    [lexer.SlotDef(name), ..rest] ->
+      case context {
+        ComponentBody(_) -> {
+          let acc = flush_pending_if(acc, pending_if)
+          use #(children, remaining) <- result.try(parse_body(
+            rest,
+            SlotBody(name),
+            [],
+            None,
+          ))
+          parse_body(
+            remaining,
+            context,
+            [SlotDefNode(name, children), ..acc],
+            None,
+          )
+        }
+        ElementBody(_) -> {
+          let acc = flush_pending_if(acc, pending_if)
+          use #(children, remaining) <- result.try(parse_body(
+            rest,
+            SlotBody(name),
+            [],
+            None,
+          ))
+          parse_body(
+            remaining,
+            context,
+            [SlotNode(name, children), ..acc],
+            None,
+          )
+        }
+        SlotBody(_) -> Error(UnexpectedToken(lexer.SlotDef(None)))
+      }
+
+    // Nested components and elements
     [lexer.Component(name, attrs, self_closing), ..rest] -> {
-      use #(node, remaining, new_pending) <- try_parse(
+      use #(node, remaining, new_pending) <- result.try(
         parse_component_with_attrs(name, attrs, self_closing, rest, pending_if),
       )
       case node {
         Some(n) -> {
           let acc = flush_pending_if(acc, pending_if)
-          parse_component_body(
-            remaining,
-            component_name,
-            [n, ..acc],
-            new_pending,
-          )
+          parse_body(remaining, context, [n, ..acc], new_pending)
         }
-        None ->
-          parse_component_body(remaining, component_name, acc, new_pending)
+        None -> parse_body(remaining, context, acc, new_pending)
       }
     }
 
     [lexer.Element(tag, attrs, self_closing), ..rest] -> {
-      use #(node, remaining, new_pending) <- try_parse(parse_element_with_attrs(
-        tag,
-        attrs,
-        self_closing,
-        rest,
-        pending_if,
-      ))
+      use #(node, remaining, new_pending) <- result.try(
+        parse_element_with_attrs(tag, attrs, self_closing, rest, pending_if),
+      )
       case node {
         Some(n) -> {
           let acc = flush_pending_if(acc, pending_if)
-          parse_component_body(
-            remaining,
-            component_name,
-            [n, ..acc],
-            new_pending,
-          )
+          parse_body(remaining, context, [n, ..acc], new_pending)
         }
-        None ->
-          parse_component_body(remaining, component_name, acc, new_pending)
+        None -> parse_body(remaining, context, acc, new_pending)
       }
     }
-
-    [lexer.ElementEnd(tag), ..] -> Error(UnexpectedElementEnd(tag))
-
-    [lexer.SlotDefEnd, ..] -> Error(UnexpectedSlotDefEnd)
 
     [lexer.ImportDirective(_, line), ..] ->
       Error(DirectiveAfterContent("@import", line))
@@ -730,211 +786,11 @@ fn parse_component_body(
   }
 }
 
-/// Parses the children of an element until its closing tag.
-/// Handles nested elements, components, slots, and maintains
-/// conditional chain state across siblings.
-///
-fn parse_element_body(
-  tokens: List(Token),
-  element_tag: String,
-  acc: List(Node),
-  pending_if: Option(PendingIf),
-) -> Result(#(List(Node), List(Token)), ParserError) {
-  case tokens {
-    [] -> Error(UnclosedElement(element_tag))
-
-    [lexer.ElementEnd(tag), ..rest] if tag == element_tag -> {
-      let acc = flush_pending_if(acc, pending_if)
-      Ok(#(list.reverse(acc), rest))
-    }
-
-    [lexer.ElementEnd(tag), ..] -> Error(UnexpectedElementEnd(tag))
-
-    [lexer.Text(content), ..rest] -> {
-      let acc = flush_pending_if(acc, pending_if)
-      parse_element_body(rest, element_tag, [TextNode(content), ..acc], None)
-    }
-
-    [lexer.Variable(name, line), ..rest] -> {
-      let acc = flush_pending_if(acc, pending_if)
-      parse_element_body(
-        rest,
-        element_tag,
-        [VariableNode(name, line), ..acc],
-        None,
-      )
-    }
-
-    [lexer.RawVariable(name, line), ..rest] -> {
-      let acc = flush_pending_if(acc, pending_if)
-      parse_element_body(
-        rest,
-        element_tag,
-        [RawVariableNode(name, line), ..acc],
-        None,
-      )
-    }
-
-    [lexer.Slot(name), ..rest] -> {
-      // Self-closing <slot /> in element body - slot output with no fallback
-      let acc = flush_pending_if(acc, pending_if)
-      parse_element_body(rest, element_tag, [SlotNode(name, []), ..acc], None)
-    }
-
-    [lexer.Attributes, ..rest] -> {
-      let acc = flush_pending_if(acc, pending_if)
-      parse_element_body(rest, element_tag, [AttributesNode([]), ..acc], None)
-    }
-
-    [lexer.SlotDef(name), ..rest] -> {
-      // Opening <slot> in element body - slot output with fallback
-      let acc = flush_pending_if(acc, pending_if)
-      use #(children, remaining) <- try_parse(
-        parse_slot_fallback_body(rest, name, []),
-      )
-      parse_element_body(
-        remaining,
-        element_tag,
-        [SlotNode(name, children), ..acc],
-        None,
-      )
-    }
-
-    [lexer.Component(name, attrs, self_closing), ..rest] -> {
-      use #(node, remaining, new_pending) <- try_parse(
-        parse_component_with_attrs(name, attrs, self_closing, rest, pending_if),
-      )
-      case node {
-        Some(n) -> {
-          let acc = flush_pending_if(acc, pending_if)
-          parse_element_body(remaining, element_tag, [n, ..acc], new_pending)
-        }
-        None -> parse_element_body(remaining, element_tag, acc, new_pending)
-      }
-    }
-
-    [lexer.Element(tag, attrs, self_closing), ..rest] -> {
-      use #(node, remaining, new_pending) <- try_parse(parse_element_with_attrs(
-        tag,
-        attrs,
-        self_closing,
-        rest,
-        pending_if,
-      ))
-      case node {
-        Some(n) -> {
-          let acc = flush_pending_if(acc, pending_if)
-          parse_element_body(remaining, element_tag, [n, ..acc], new_pending)
-        }
-        None -> parse_element_body(remaining, element_tag, acc, new_pending)
-      }
-    }
-
-    [lexer.ComponentEnd(name), ..] -> Error(UnexpectedComponentEnd(name))
-
-    [lexer.SlotDefEnd, ..] -> Error(UnexpectedSlotDefEnd)
-
-    [lexer.ImportDirective(_, line), ..] ->
-      Error(DirectiveAfterContent("@import", line))
-
-    [lexer.PropsDirective(_, line), ..] ->
-      Error(DirectiveAfterContent("@props", line))
-  }
-}
-
-/// Parses slot content until the closing </slot> tag. Used
-/// for both slot fallback content in components and slot
-/// definition content when passing to a component.
-///
-fn parse_slot_fallback_body(
-  tokens: List(Token),
-  slot_name: Option(String),
-  acc: List(Node),
-) -> Result(#(List(Node), List(Token)), ParserError) {
-  case tokens {
-    [] -> Error(UnclosedSlot(slot_name))
-
-    [lexer.SlotDefEnd, ..rest] -> Ok(#(list.reverse(acc), rest))
-
-    [lexer.Text(content), ..rest] ->
-      parse_slot_fallback_body(rest, slot_name, [TextNode(content), ..acc])
-
-    [lexer.Variable(name, line), ..rest] ->
-      parse_slot_fallback_body(rest, slot_name, [
-        VariableNode(name, line),
-        ..acc
-      ])
-
-    [lexer.RawVariable(name, line), ..rest] ->
-      parse_slot_fallback_body(rest, slot_name, [
-        RawVariableNode(name, line),
-        ..acc
-      ])
-
-    [lexer.Attributes, ..rest] ->
-      parse_slot_fallback_body(rest, slot_name, [AttributesNode([]), ..acc])
-
-    [lexer.Component(name, attrs, self_closing), ..rest] -> {
-      use #(node, remaining, _) <- try_parse(parse_component_with_attrs(
-        name,
-        attrs,
-        self_closing,
-        rest,
-        None,
-      ))
-      case node {
-        Some(n) -> parse_slot_fallback_body(remaining, slot_name, [n, ..acc])
-        None -> parse_slot_fallback_body(remaining, slot_name, acc)
-      }
-    }
-
-    [lexer.Element(tag, attrs, self_closing), ..rest] -> {
-      use #(node, remaining, _) <- try_parse(parse_element_with_attrs(
-        tag,
-        attrs,
-        self_closing,
-        rest,
-        None,
-      ))
-      case node {
-        Some(n) -> parse_slot_fallback_body(remaining, slot_name, [n, ..acc])
-        None -> parse_slot_fallback_body(remaining, slot_name, acc)
-      }
-    }
-
-    [lexer.ComponentEnd(name), ..] -> Error(UnexpectedComponentEnd(name))
-
-    [lexer.ElementEnd(tag), ..] -> Error(UnexpectedElementEnd(tag))
-
-    // Nested slots not allowed
-    [lexer.Slot(_), ..] -> Error(UnexpectedToken(lexer.Slot(None)))
-
-    [lexer.SlotDef(_), ..] -> Error(UnexpectedToken(lexer.SlotDef(None)))
-
-    [lexer.ImportDirective(_, line), ..] ->
-      Error(DirectiveAfterContent("@import", line))
-
-    [lexer.PropsDirective(_, line), ..] ->
-      Error(DirectiveAfterContent("@props", line))
-  }
-}
-
-/// Chains parser results using use syntax. Propagates errors
-/// automatically, allowing sequential parsing operations to
-/// be written in a clean, linear style.
-///
-fn try_parse(
-  result: Result(a, ParserError),
-  next: fn(a) -> Result(b, ParserError),
-) -> Result(b, ParserError) {
-  case result {
-    Ok(value) -> next(value)
-    Error(e) -> Error(e)
-  }
-}
-
-/// Checks if any node in the tree contains l-on:* or l-model attributes.
-/// Used to determine if a template should be treated as "live".
+/// Templates with event handlers or model bindings need a
+/// WebSocket connection for interactivity. Detecting this at 
+/// parse time lets the framework decide upfront whether to wire 
+/// up live infrastructure, avoiding unnecessary overhead for 
+/// purely static templates.
 ///
 fn has_live_attributes(nodes: List(Node)) -> Bool {
   list.any(nodes, fn(node) {
@@ -956,7 +812,10 @@ fn has_live_attributes(nodes: List(Node)) -> Bool {
   })
 }
 
-/// Checks if an attribute list contains LmOn or LmModel.
+/// Leaf-level check for the recursive has_live_attributes
+/// traversal. Separated out so the tree walker only needs to 
+/// concern itself with node structure, not with how individual 
+/// attributes are classified as "live".
 ///
 fn attrs_have_live(attrs: List(ComponentAttr)) -> Bool {
   list.any(attrs, fn(attr) {

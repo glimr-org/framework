@@ -216,7 +216,7 @@ pub fn clear_registry_removes_all_modules_test() {
   registry.register_module("compiled/loom/todo", "src/views/todo.loom.html")
   |> should.be_ok()
 
-  registry.clear_registry()
+  registry.clear()
   |> should.be_ok()
 
   registry.is_valid_module("compiled/loom/counter")
