@@ -1,17 +1,28 @@
 //// Loom Live Socket
 ////
-//// OTP actor that manages state for a single live template connection.
-//// Receives events from the WebSocket handler, dispatches to compiled
-//// handlers, and sends back HTML patches or redirects.
+//// Each live template connection needs its own isolated state 
+//// — the current prop values — that persists across events and 
+//// survives concurrent connections. An OTP actor per 
+//// connection provides this isolation naturally, owns the prop 
+//// state, and serializes event handling so two simultaneous 
+//// clicks on the same page don't race.
 ////
 
 import gleam/erlang/process.{type Subject}
 import gleam/option
 import gleam/otp/actor
+import gleam/result
 import glimr/loom/live_dispatch
-import glimr/loom/live_types.{type SocketMessage, Event, SendPatch, Stop}
+import glimr/loom/loom.{type SocketMessage, Event, SendPatch, Stop}
 
-/// State held by the live socket actor
+// ------------------------------------------------------------- Public Types
+
+/// The actor needs the reply subject to push patches back, the 
+/// module name for dynamic dispatch into the generated
+/// handle_json/render_json functions, and the current props as 
+/// JSON so they can be passed through the handle/render cycle 
+/// without the actor knowing the actual prop types.
+///
 pub type LiveSocketState {
   LiveSocketState(
     /// Subject to send responses back to the WebSocket handler
@@ -23,12 +34,20 @@ pub type LiveSocketState {
   )
 }
 
-/// Opaque type alias for the live socket subject
+/// Callers interact with the actor via its Subject but don't 
+/// need to know the message type. This alias provides a 
+/// semantic name that communicates intent while hiding the 
+/// internal SocketMessage protocol.
+///
 pub type LiveSocket =
   Subject(SocketMessage)
 
-/// Start a new live socket actor with the given module and initial props.
-/// The reply_to subject is used to send patches back to the WebSocket handler.
+// ------------------------------------------------------------- Public Functions
+
+/// Each WebSocket connection starts its own actor so prop state 
+/// is isolated per user session. The reply_to subject ties this 
+/// actor back to the specific WebSocket handler that owns it, 
+/// ensuring patches reach the right browser tab.
 ///
 pub fn start(
   reply_to: Subject(SocketMessage),
@@ -37,75 +56,66 @@ pub fn start(
 ) -> Result(Subject(SocketMessage), actor.StartError) {
   let initial_state = LiveSocketState(reply_to:, module:, props_json:)
 
-  let result =
-    actor.new(initial_state)
-    |> actor.on_message(handle_message)
-    |> actor.start
-
-  case result {
-    Ok(started) -> Ok(started.data)
-    Error(err) -> Error(err)
-  }
+  actor.new(initial_state)
+  |> actor.on_message(handle_message)
+  |> actor.start
+  |> result.map(fn(started) { started.data })
 }
 
-/// Handle incoming messages to the actor
+// ------------------------------------------------------------- Private Functions
+
+/// Events trigger a two-step cycle: call handle_json to update 
+/// props, then call render_json to produce new HTML from those 
+/// props. Keeping both steps in the actor ensures the 
+/// props_json state is updated atomically before the re-render, 
+/// and errors in either step leave the state unchanged rather 
+/// than half-updated.
+///
 fn handle_message(
   state: LiveSocketState,
   message: SocketMessage,
 ) -> actor.Next(LiveSocketState, SocketMessage) {
   case message {
     Event(client_event) -> {
-      // Extract special vars as strings for the JSON wrapper
       let value = option.unwrap(client_event.special_vars.value, "")
+
       let checked = case client_event.special_vars.checked {
         option.Some(True) -> "true"
         option.Some(False) -> "false"
         option.None -> ""
       }
+
       let key = option.unwrap(client_event.special_vars.key, "")
 
-      // Call handle_json on the template module via dynamic dispatch
-      case
-        live_dispatch.call_handle_json(
+      let result = {
+        use new_props_json <- result.try(live_dispatch.call_handle_json(
           state.module,
           client_event.handler,
           state.props_json,
           value,
           checked,
           key,
-        )
-      {
-        Ok(new_props_json) -> {
-          // Call render_json to get the new HTML
-          case live_dispatch.call_render_json(state.module, new_props_json) {
-            Ok(html) -> {
-              // Send the patch back to the WebSocket handler
-              process.send(state.reply_to, SendPatch(html))
-              // Update state with new props
-              actor.continue(
-                LiveSocketState(..state, props_json: new_props_json),
-              )
-            }
-            Error(_) -> {
-              // Render failed, continue with unchanged state
-              actor.continue(state)
-            }
-          }
+        ))
+
+        use html <- result.try(live_dispatch.call_render_json(
+          state.module,
+          new_props_json,
+        ))
+
+        Ok(#(new_props_json, html))
+      }
+
+      case result {
+        Ok(#(new_props_json, html)) -> {
+          process.send(state.reply_to, SendPatch(html))
+          actor.continue(LiveSocketState(..state, props_json: new_props_json))
         }
-        Error(_) -> {
-          // Handle failed, continue with unchanged state
-          actor.continue(state)
-        }
+
+        Error(_) -> actor.continue(state)
       }
     }
 
-    SendPatch(_) | live_types.SendRedirect(_) -> {
-      // These are outgoing messages, not handled by the actor
-      actor.continue(state)
-    }
-
-    Stop -> {
-      actor.stop()
-    }
+    SendPatch(_) | loom.SendRedirect(_) -> actor.continue(state)
+    Stop -> actor.stop()
   }
 }

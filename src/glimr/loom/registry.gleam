@@ -1,8 +1,11 @@
 //// Loom Module Registry
 ////
-//// Maintains a registry of valid live template modules for security
-//// validation. Prevents clients from requesting arbitrary modules
-//// via WebSocket.
+//// The WebSocket init message includes a module name chosen by 
+//// the client. Without validation, a malicious client could 
+//// invoke arbitrary Erlang modules via dynamic dispatch. This 
+//// registry acts as an allowlist — only modules explicitly 
+//// registered during compilation can be dispatched to, closing 
+//// the arbitrary-execution hole.
 ////
 
 import gleam/dynamic/decode
@@ -17,31 +20,36 @@ const registry_path = "priv/storage/framework/loom/modules.json"
 
 // ------------------------------------------------------------- Public Types
 
-/// Registry entry for a live module
+/// Each entry tracks both the module path (for dispatch
+/// validation) and the source template path (for debugging and 
+/// recompilation). Storing both avoids a second lookup to map 
+/// between module names and their source files.
+///
 pub type ModuleEntry {
   ModuleEntry(module: String, source: String)
 }
 
 // ------------------------------------------------------------- Public Functions
 
-/// Checks if a module is registered as a valid live module.
-/// Returns True if the module is in the registry.
+/// The WebSocket handler calls this before starting an actor to 
+/// ensure the client-requested module was actually compiled by 
+/// the framework. Rejecting unknown modules here prevents 
+/// arbitrary code execution via the dynamic dispatch path.
 ///
 pub fn is_valid_module(module: String) -> Bool {
-  case read_registry() {
-    Ok(modules) -> set.contains(modules, module)
-    Error(_) -> False
-  }
+  read_registry()
+  |> result.map(set.contains(_, module))
+  |> result.unwrap(False)
 }
 
-/// Registers a live module in the registry.
-/// Called during template compilation.
+/// The compiler calls this after successfully generating a live 
+/// template module. Adding the module to the registry at 
+/// compile time ensures the allowlist is always in sync with 
+/// the actual set of generated modules, without requiring a 
+/// separate configuration step.
 ///
 pub fn register_module(module: String, source: String) -> Result(Nil, String) {
-  let entries = case read_entries() {
-    Ok(e) -> e
-    Error(_) -> []
-  }
+  let entries = read_entries() |> result.unwrap([])
 
   // Update or add entry
   let updated =
@@ -52,30 +60,33 @@ pub fn register_module(module: String, source: String) -> Result(Nil, String) {
   write_entries(updated)
 }
 
-/// Unregisters a module from the registry.
-/// Called when a template is deleted.
+/// When a template file is deleted, its compiled module should 
+/// no longer be dispatchable. Removing it from the registry 
+/// ensures stale module names can't be exploited after the 
+/// template source is gone.
 ///
 pub fn unregister_module(module: String) -> Result(Nil, String) {
   case read_entries() {
-    Ok(entries) -> {
-      let filtered = list.filter(entries, fn(e) { e.module != module })
-      write_entries(filtered)
-    }
+    Ok(entries) ->
+      write_entries(list.filter(entries, fn(e) { e.module != module }))
     Error(_) -> Ok(Nil)
   }
 }
 
-/// Returns all registered modules.
+/// The compiler and diagnostic tools need to inspect the full 
+/// registry contents — for example, to rebuild all known 
+/// modules or display the list of live templates in development 
+/// tooling.
 ///
 pub fn list_modules() -> List(ModuleEntry) {
-  case read_entries() {
-    Ok(entries) -> entries
-    Error(_) -> []
-  }
+  read_entries() |> result.unwrap([])
 }
 
-/// Clears the registry and rebuilds from scratch.
-/// Called during full recompilation.
+/// A full recompilation starts fresh to avoid stale entries
+/// from renamed or deleted templates lingering in the registry. 
+/// Clearing first and re-registering during compilation 
+/// guarantees the registry exactly matches the current template 
+/// set.
 ///
 pub fn clear() -> Result(Nil, String) {
   write_entries([])
@@ -83,35 +94,37 @@ pub fn clear() -> Result(Nil, String) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Reads the registry and returns a set of valid module names.
+/// is_valid_module only needs module names, not full entries.
+/// Converting to a set here provides O(1) membership checks for 
+/// the hot path where every WebSocket init message triggers a 
+/// validation lookup.
 ///
 fn read_registry() -> Result(Set(String), Nil) {
-  case read_entries() {
-    Ok(entries) -> {
-      entries
-      |> list.map(fn(e) { e.module })
-      |> set.from_list
-      |> Ok
-    }
-    Error(_) -> Error(Nil)
-  }
+  read_entries()
+  |> result.map(fn(entries) {
+    list.map(entries, fn(e) { e.module }) |> set.from_list
+  })
 }
 
-/// Reads the registry entries from disk.
+/// The registry is persisted as JSON on disk so it survives
+/// application restarts without requiring recompilation.
+/// Returning an empty list on read failure (missing file) is 
+/// safe because a fresh install has no registered modules yet.
 ///
 fn read_entries() -> Result(List(ModuleEntry), Nil) {
   case simplifile.read(registry_path) {
     Error(_) -> Ok([])
-    Ok(content) -> {
-      case json.parse(content, entries_decoder()) {
-        Ok(entries) -> Ok(entries)
-        Error(_) -> Error(Nil)
-      }
-    }
+    Ok(content) ->
+      json.parse(content, decode.list(entry_decoder()))
+      |> result.map_error(fn(_) { Nil })
   }
 }
 
-/// Writes registry entries to disk.
+/// Persists the full entry list to disk as JSON. Creating the 
+/// directory tree first handles the cold-start case where the 
+/// storage directory doesn't exist yet. Writing the entire list 
+/// atomically avoids partial-update corruption from concurrent 
+/// compilations.
 ///
 fn write_entries(entries: List(ModuleEntry)) -> Result(Nil, String) {
   // Ensure directory exists
@@ -133,13 +146,10 @@ fn write_entries(entries: List(ModuleEntry)) -> Result(Nil, String) {
   |> result.replace_error("Failed to write loom registry")
 }
 
-/// Decoder for registry entries.
-///
-fn entries_decoder() -> decode.Decoder(List(ModuleEntry)) {
-  decode.list(entry_decoder())
-}
-
-/// Decoder for a single registry entry.
+/// The JSON schema must match write_entries exactly. Decoding 
+/// into a typed ModuleEntry ensures the registry data is well-
+/// formed before any module name reaches the dispatch 
+/// validation path.
 ///
 fn entry_decoder() -> decode.Decoder(ModuleEntry) {
   use module <- decode.field("module", decode.string)
