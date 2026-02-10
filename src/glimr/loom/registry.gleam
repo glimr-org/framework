@@ -8,6 +8,7 @@
 import gleam/dynamic/decode
 import gleam/json
 import gleam/list
+import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 import simplifile
@@ -76,7 +77,7 @@ pub fn list_modules() -> List(ModuleEntry) {
 /// Clears the registry and rebuilds from scratch.
 /// Called during full recompilation.
 ///
-pub fn clear_registry() -> Result(Nil, String) {
+pub fn clear() -> Result(Nil, String) {
   write_entries([])
 }
 
@@ -119,19 +120,17 @@ fn write_entries(entries: List(ModuleEntry)) -> Result(Nil, String) {
 
   let json_str =
     entries
-    |> list.map(fn(e) {
+    |> json.array(fn(entry) {
       json.object([
-        #("module", json.string(e.module)),
-        #("source", json.string(e.source)),
+        #("module", json.string(entry.module)),
+        #("source", json.string(entry.source)),
       ])
     })
-    |> json.array(fn(x) { x })
-    |> json.to_string
+    |> json.to_string()
 
-  case simplifile.write(registry_path, json_str) {
-    Ok(_) -> Ok(Nil)
-    Error(_) -> Error("Failed to write loom registry")
-  }
+  // Write new modules to file or throw a custom error
+  simplifile.write(registry_path, json_str)
+  |> result.replace_error("Failed to write loom registry")
 }
 
 /// Decoder for registry entries.

@@ -5,16 +5,18 @@
 //// text for the parser to process.
 ////
 
+import gleam/bool
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import glimr/utils/string as string_utils
 
 // ------------------------------------------------------------- Public Types
 
-/// Represents a token produced by the lexer. Each variant
-/// corresponds to a template syntax element like variables,
-/// directives, or component tags.
+/// The parser needs a structured representation of template
+/// syntax to build the AST. Each variant captures a distinct
+/// construct so the parser can pattern match on it directly.
 ///
 pub type Token {
   Text(String)
@@ -34,10 +36,10 @@ pub type Token {
   PropsDirective(props: List(#(String, String)), line: Int)
 }
 
-/// Represents an attribute on a component tag. Can be a
-/// string literal, an expression to evaluate, a boolean
-/// attribute with no value, or conditional class/style
-/// expressions.
+/// Component and element tags support several attribute
+/// flavors that need different code generation strategies.
+/// Separating them here lets the generator handle each
+/// without re-parsing attribute strings.
 ///
 pub type ComponentAttr {
   StringAttr(name: String, value: String)
@@ -60,9 +62,9 @@ pub type ComponentAttr {
   LmModel(prop: String, line: Int)
 }
 
-/// Errors that can occur during lexical analysis. Includes
-/// unterminated constructs, invalid names, and malformed
-/// directive syntax.
+/// Surfacing specific error variants allows the compiler
+/// to produce actionable messages with position info,
+/// so users can quickly locate malformed template syntax.
 ///
 pub type LexerError {
   UnterminatedExpression(position: Int)
@@ -80,9 +82,9 @@ pub type LexerError {
 
 // ------------------------------------------------------------- Public Functions
 
-/// Tokenizes template source into a list of tokens. Scans the
-/// input character by character, recognizing template syntax
-/// and returning errors for malformed constructs.
+/// Entry point for the lexer. Wraps the recursive loop so
+/// callers don't need to supply internal state like position,
+/// line number, or the tag stack.
 ///
 pub fn tokenize(input: String) -> Result(List(Token), LexerError) {
   // tag_stack tracks open HTML tags in LIFO order. Each entry is
@@ -94,12 +96,11 @@ pub fn tokenize(input: String) -> Result(List(Token), LexerError) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Main tokenization loop. Pattern matches on input prefixes
-/// to identify token types and delegates to specialized
-/// parsers for complex constructs. Tracks line numbers for
-/// error reporting.
-///
-/// tag_stack: Stack of open tags as (tag_name, is_dynamic) tuples.
+/// Recursive dispatch loop. Order of pattern matches matters
+/// because longer prefixes (e.g. "{{{") must be checked
+/// before shorter ones ("{{") to avoid mis-tokenizing.
+/// tag_stack tracks open HTML tags so closing tags can
+/// determine whether to emit ElementEnd or plain text.
 ///
 fn do_tokenize(
   input: String,
@@ -112,109 +113,42 @@ fn do_tokenize(
     "" -> Ok(list.reverse(tokens))
 
     "{{{" <> rest -> {
-      case string.split_once(rest, "}}}") {
-        Ok(#(expr, remaining)) -> {
-          let expr = string.trim(expr)
-          case expr {
-            "" -> Error(EmptyExpression(position))
-            _ -> {
-              let new_pos = position + 6 + string.length(expr)
-              let new_line = line + count_newlines("{{{" <> expr <> "}}}")
-              do_tokenize(
-                remaining,
-                new_pos,
-                new_line,
-                [RawVariable(expr, line), ..tokens],
-                tag_stack,
-              )
-            }
-          }
-        }
-        Error(_) -> Error(UnterminatedExpression(position))
-      }
+      parse_variable(
+        rest,
+        "{{{",
+        "}}}",
+        RawVariable,
+        position,
+        line,
+        tokens,
+        tag_stack,
+      )
     }
 
     "{{" <> rest -> {
-      case string.split_once(rest, "}}") {
-        Ok(#(expr, remaining)) -> {
-          let expr = string.trim(expr)
-          case expr {
-            "" -> Error(EmptyExpression(position))
-            _ -> {
-              let new_pos = position + 4 + string.length(expr)
-              let new_line = line + count_newlines("{{" <> expr <> "}}")
-              do_tokenize(
-                remaining,
-                new_pos,
-                new_line,
-                [Variable(expr, line), ..tokens],
-                tag_stack,
-              )
-            }
-          }
-        }
-        Error(_) -> Error(UnterminatedExpression(position))
-      }
+      parse_variable(
+        rest,
+        "{{",
+        "}}",
+        Variable,
+        position,
+        line,
+        tokens,
+        tag_stack,
+      )
     }
 
-    // Skip HTML comments entirely - don't parse their contents
-    "<!--" <> rest -> {
-      case string.split_once(rest, "-->") {
-        Ok(#(comment_content, remaining)) -> {
-          let full_comment = "<!--" <> comment_content <> "-->"
-          let new_pos = position + string.length(full_comment)
-          let new_line = line + count_newlines(full_comment)
-          // Emit the comment as plain text (so it appears in output)
-          case tokens {
-            [Text(prev), ..rest_tokens] ->
-              do_tokenize(
-                remaining,
-                new_pos,
-                new_line,
-                [Text(prev <> full_comment), ..rest_tokens],
-                tag_stack,
-              )
-            _ ->
-              do_tokenize(
-                remaining,
-                new_pos,
-                new_line,
-                [Text(full_comment), ..tokens],
-                tag_stack,
-              )
-          }
-        }
-        // Unclosed comment - just treat "<!--" as text
-        Error(_) -> {
-          case tokens {
-            [Text(prev), ..rest_tokens] ->
-              do_tokenize(
-                rest,
-                position + 4,
-                line,
-                [Text(prev <> "<!--"), ..rest_tokens],
-                tag_stack,
-              )
-            _ ->
-              do_tokenize(
-                rest,
-                position + 4,
-                line,
-                [Text("<!--"), ..tokens],
-                tag_stack,
-              )
-          }
-        }
-      }
-    }
+    "<!--" <> rest -> parse_comment(rest, position, line, tokens, tag_stack)
 
-    "@import(" <> rest ->
+    "@import(" <> rest -> {
       parse_import_directive(rest, position, line, tokens, tag_stack)
+    }
 
-    "@props(" <> rest ->
+    "@props(" <> rest -> {
       parse_props_directive(rest, position, line, tokens, tag_stack)
+    }
 
-    "@attributes" <> rest ->
+    "@attributes" <> rest -> {
       parse_simple_directive(
         rest,
         "@attributes",
@@ -224,39 +158,132 @@ fn do_tokenize(
         tokens,
         tag_stack,
       )
+    }
 
-    "<slot" <> rest ->
+    "<slot" <> rest -> {
       parse_slot_element(rest, position, line, tokens, tag_stack)
+    }
 
-    "</slot>" <> rest ->
+    "</slot>" <> rest -> {
       do_tokenize(rest, position + 7, line, [SlotDefEnd, ..tokens], tag_stack)
+    }
 
     "<x-" <> rest -> parse_component(rest, position, line, tokens, tag_stack)
 
-    "</x-" <> rest ->
+    "</x-" <> rest -> {
       parse_component_end(rest, position, line, tokens, tag_stack)
+    }
 
     "</" <> rest -> parse_element_end(rest, position, line, tokens, tag_stack)
 
-    "<" <> rest ->
-      try_parse_element(rest, position, line, tokens, input, tag_stack)
+    "<" <> rest -> {
+      try_parse_element(rest, position, line, tokens, tag_stack)
+    }
 
     _ -> consume_text(input, position, line, tokens, tag_stack)
   }
 }
 
-/// Counts newline characters in a string.
+/// Adjacent text characters should form a single Text token
+/// rather than many small ones, both for parser simplicity
+/// and output correctness. This coalesces them in O(1).
 ///
-fn count_newlines(s: String) -> Int {
-  s
+fn append_text(tokens: List(Token), text: String) -> List(Token) {
+  case tokens {
+    [Text(prev), ..rest] -> [Text(prev <> text), ..rest]
+    _ -> [Text(text), ..tokens]
+  }
+}
+
+/// Both {{ }} and {{{ }}} follow the same parsing logic,
+/// differing only in delimiters and token type. Sharing
+/// one implementation prevents the two paths from diverging.
+///
+fn parse_variable(
+  rest: String,
+  open: String,
+  close: String,
+  to_token: fn(String, Int) -> Token,
+  position: Int,
+  line: Int,
+  tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
+) -> Result(List(Token), LexerError) {
+  use #(expr, remaining) <- result.try(
+    string.split_once(rest, close)
+    |> result.replace_error(UnterminatedExpression(position)),
+  )
+
+  let expr = string.trim(expr)
+
+  // Throw an error if the expression is empty.
+  use <- bool.lazy_guard(expr == "", fn() { Error(EmptyExpression(position)) })
+
+  let open_close_len = string.length(open) + string.length(close)
+  let new_pos = position + open_close_len + string.length(expr)
+  let new_line = line + count_newlines(open <> expr <> close)
+
+  do_tokenize(
+    remaining,
+    new_pos,
+    new_line,
+    [to_token(expr, line), ..tokens],
+    tag_stack,
+  )
+}
+
+/// HTML comments must pass through untouched to preserve
+/// developer annotations in the rendered output. Unclosed
+/// comments are treated as text to match browser behaviour.
+///
+fn parse_comment(
+  rest: String,
+  position: Int,
+  line: Int,
+  tokens: List(Token),
+  tag_stack: List(#(String, Bool)),
+) -> Result(List(Token), LexerError) {
+  case string.split_once(rest, "-->") {
+    Ok(#(comment_content, remaining)) -> {
+      let full_comment = "<!--" <> comment_content <> "-->"
+      let new_pos = position + string.length(full_comment)
+      let new_line = line + count_newlines(full_comment)
+
+      do_tokenize(
+        remaining,
+        new_pos,
+        new_line,
+        append_text(tokens, full_comment),
+        tag_stack,
+      )
+    }
+    // Unclosed comment - just treat "<!--" as text
+    Error(_) -> {
+      do_tokenize(
+        rest,
+        position + 4,
+        line,
+        append_text(tokens, "<!--"),
+        tag_stack,
+      )
+    }
+  }
+}
+
+/// Line tracking must stay accurate across multi-line
+/// constructs so error messages point to the right line.
+/// Called after consuming each token to advance the count.
+///
+fn count_newlines(string: String) -> Int {
+  string
   |> string.to_graphemes
   |> list.filter(fn(c) { c == "\n" })
   |> list.length
 }
 
-/// Parses a component opening tag starting after "<x-".
-/// Extracts the name, attributes, and whether it's self
-/// closing, then continues tokenization.
+/// Components use the <x-name> convention to distinguish
+/// them from plain HTML. This extracts the full tag so
+/// the generator can resolve the component module.
 ///
 fn parse_component(
   input: String,
@@ -265,23 +292,28 @@ fn parse_component(
   tokens: List(Token),
   tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
-  case parse_component_tag(input, line) {
-    Ok(#(name, attrs, self_closing, rest)) -> {
-      let token = Component(name, attrs, self_closing)
-      let consumed =
-        "<x-"
-        <> string.slice(input, 0, string.length(input) - string.length(rest))
-      let len = string.length(input) - string.length(rest) + 3
-      let new_line = line + count_newlines(consumed)
-      do_tokenize(rest, position + len, new_line, [token, ..tokens], tag_stack)
-    }
-    Error(_) -> Error(UnterminatedComponent(position))
-  }
+  use #(name, attrs, self_closing, rest) <- result.try(
+    parse_component_tag(input, line)
+    |> result.replace_error(UnterminatedComponent(position)),
+  )
+
+  let token = Component(name, attrs, self_closing)
+  let consumed_len = string.length(input) - string.length(rest)
+  let consumed = "<x-" <> string.slice(input, 0, consumed_len)
+  let new_line = line + count_newlines(consumed)
+
+  do_tokenize(
+    rest,
+    position + consumed_len + 3,
+    new_line,
+    [token, ..tokens],
+    tag_stack,
+  )
 }
 
-/// Parses a component closing tag starting after "</x-".
-/// Extracts the component name and continues tokenization
-/// with the remaining input.
+/// Closing component tags must be paired with their opener
+/// so the generator knows where component content ends.
+/// The name is extracted to validate matching pairs later.
 ///
 fn parse_component_end(
   input: String,
@@ -290,116 +322,89 @@ fn parse_component_end(
   tokens: List(Token),
   tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
-  case string.split_once(input, ">") {
-    Ok(#(name, rest)) -> {
-      let name = string.trim(name)
-      let len = string.length(name) + 5
-      do_tokenize(
-        rest,
-        position + len,
-        line,
-        [ComponentEnd(name), ..tokens],
-        tag_stack,
-      )
-    }
-    Error(_) -> Error(UnterminatedComponent(position))
-  }
+  use #(name, rest) <- result.try(
+    string.split_once(input, ">")
+    |> result.replace_error(UnterminatedComponent(position)),
+  )
+
+  let name = string.trim(name)
+  let len = string.length(name) + 5
+
+  do_tokenize(
+    rest,
+    position + len,
+    line,
+    [ComponentEnd(name), ..tokens],
+    tag_stack,
+  )
 }
 
-/// Tries to parse an HTML element. If it has l-* attributes,
-/// emits an Element token. Otherwise, emits as text. Both cases
-/// push to tag_stack for proper closing tag matching.
+/// Only elements with dynamic attributes (l-*, :class, etc.)
+/// need dedicated tokens for code generation. Plain HTML is
+/// emitted as text for efficiency, but both push to tag_stack
+/// so their closing tags can be matched correctly.
 ///
 fn try_parse_element(
   input: String,
   position: Int,
   line: Int,
   tokens: List(Token),
-  _full_input: String,
   tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
   case parse_element_tag(input, line) {
     Ok(#(tag, attrs, self_closing, rest)) -> {
-      // Check if element has any dynamic attributes (l-*, :class, :style, :*)
-      case has_dynamic_attrs(attrs) {
+      let is_dynamic = has_dynamic_attrs(attrs)
+
+      let new_stack = case self_closing {
+        True -> tag_stack
+        False -> [#(tag, is_dynamic), ..tag_stack]
+      }
+
+      case is_dynamic {
         True -> {
           let token = Element(tag, attrs, self_closing)
-          let consumed =
-            "<"
-            <> string.slice(
-              input,
-              0,
-              string.length(input) - string.length(rest),
-            )
-          let len = string.length(input) - string.length(rest) + 1
+          let consumed_len = string.length(input) - string.length(rest)
+          let consumed = "<" <> string.slice(input, 0, consumed_len)
           let new_line = line + count_newlines(consumed)
-          // Push dynamic tag onto stack (only non-self-closing)
-          let new_stack = case self_closing {
-            True -> tag_stack
-            False -> [#(tag, True), ..tag_stack]
-          }
+
           do_tokenize(
             rest,
-            position + len,
+            position + consumed_len + 1,
             new_line,
             [token, ..tokens],
             new_stack,
           )
         }
+
+        // No l-* attributes - emit "<" as text
         False -> {
-          // No l-* attributes - emit as text, push plain tag onto stack
-          let new_stack = case self_closing {
-            True -> tag_stack
-            False -> [#(tag, False), ..tag_stack]
-          }
-          case tokens {
-            [Text(prev), ..rest_tokens] ->
-              do_tokenize(
-                input,
-                position + 1,
-                line,
-                [Text(prev <> "<"), ..rest_tokens],
-                new_stack,
-              )
-            _ ->
-              do_tokenize(
-                input,
-                position + 1,
-                line,
-                [Text("<"), ..tokens],
-                new_stack,
-              )
-          }
+          do_tokenize(
+            input,
+            position + 1,
+            line,
+            append_text(tokens, "<"),
+            new_stack,
+          )
         }
       }
     }
+
+    // Not a valid element - emit "<" as text
     Error(_) -> {
-      // Not a valid element, just consume the "<" and continue
-      case tokens {
-        [Text(prev), ..rest_tokens] ->
-          do_tokenize(
-            input,
-            position + 1,
-            line,
-            [Text(prev <> "<"), ..rest_tokens],
-            tag_stack,
-          )
-        _ ->
-          do_tokenize(
-            input,
-            position + 1,
-            line,
-            [Text("<"), ..tokens],
-            tag_stack,
-          )
-      }
+      do_tokenize(
+        input,
+        position + 1,
+        line,
+        append_text(tokens, "<"),
+        tag_stack,
+      )
     }
   }
 }
 
-/// Parses an HTML element closing tag starting after "</".
-/// Pops from tag_stack to determine if this closes a plain
-/// HTML tag (emit as text) or a dynamic Element (emit ElementEnd).
+/// Closing tags must consult the tag_stack to determine
+/// whether the matching opener was dynamic or plain HTML,
+/// because each requires a different token in the output.
 ///
 fn parse_element_end(
   input: String,
@@ -414,76 +419,50 @@ fn parse_element_end(
       let text = "</" <> tag <> ">"
       let len = string.length(text)
 
-      // Pop from stack to find the matching opening tag
       case pop_matching_tag(tag_stack, tag) {
-        // Found matching tag on stack
-        Ok(#(is_dynamic, new_stack)) -> {
-          case is_dynamic {
-            True -> {
-              // Closing a dynamic Element - emit ElementEnd
-              do_tokenize(
-                rest,
-                position + len,
-                line,
-                [ElementEnd(tag), ..tokens],
-                new_stack,
-              )
-            }
-            False -> {
-              // Closing a plain HTML tag - emit as text
-              case tokens {
-                [Text(prev), ..rest_tokens] ->
-                  do_tokenize(
-                    rest,
-                    position + len,
-                    line,
-                    [Text(prev <> text), ..rest_tokens],
-                    new_stack,
-                  )
-                _ ->
-                  do_tokenize(
-                    rest,
-                    position + len,
-                    line,
-                    [Text(text), ..tokens],
-                    new_stack,
-                  )
-              }
-            }
-          }
+        // Closing a dynamic Element - emit ElementEnd
+        Ok(#(True, new_stack)) -> {
+          do_tokenize(
+            rest,
+            position + len,
+            line,
+            [ElementEnd(tag), ..tokens],
+            new_stack,
+          )
         }
+
+        // Closing a plain HTML tag - emit as text
+        Ok(#(False, new_stack)) -> {
+          do_tokenize(
+            rest,
+            position + len,
+            line,
+            append_text(tokens, text),
+            new_stack,
+          )
+        }
+
         // No matching tag on stack - emit as text
         Error(_) -> {
-          case tokens {
-            [Text(prev), ..rest_tokens] ->
-              do_tokenize(
-                rest,
-                position + len,
-                line,
-                [Text(prev <> text), ..rest_tokens],
-                tag_stack,
-              )
-            _ ->
-              do_tokenize(
-                rest,
-                position + len,
-                line,
-                [Text(text), ..tokens],
-                tag_stack,
-              )
-          }
+          do_tokenize(
+            rest,
+            position + len,
+            line,
+            append_text(tokens, text),
+            tag_stack,
+          )
         }
       }
     }
-    Error(_) -> {
-      // Invalid closing tag, treat as text
-      consume_text("</" <> input, position, line, tokens, tag_stack)
-    }
+
+    // Invalid closing tag, treat as text
+    Error(_) -> consume_text("</" <> input, position, line, tokens, tag_stack)
   }
 }
 
-/// Pops the first matching tag from the stack.
-/// Returns Ok(is_dynamic, remaining_stack) if found, Error otherwise.
+/// HTML in templates can be malformed (e.g. unclosed tags),
+/// so we search the stack rather than just popping the top.
+/// This mirrors browser leniency and avoids false errors.
 ///
 fn pop_matching_tag(
   stack: List(#(String, Bool)),
@@ -492,20 +471,13 @@ fn pop_matching_tag(
   case stack {
     [] -> Error(Nil)
     [#(t, is_dynamic), ..rest] if t == tag -> Ok(#(is_dynamic, rest))
-    [_, ..rest] -> {
-      // Tag doesn't match - this is malformed HTML, but we handle it
-      // by continuing to search. In practice, browsers are lenient.
-      case pop_matching_tag(rest, tag) {
-        Ok(#(is_dynamic, remaining)) -> Ok(#(is_dynamic, remaining))
-        Error(_) -> Error(Nil)
-      }
-    }
+    [_, ..rest] -> pop_matching_tag(rest, tag)
   }
 }
 
-/// Checks if attribute list contains any dynamic attributes.
-/// Includes l-* directives, :class, :style, and expression
-/// bindings that require runtime evaluation.
+/// Plain HTML elements don't need code generation, only
+/// elements with dynamic attributes do. This check gates
+/// whether an Element token or plain text is emitted.
 ///
 fn has_dynamic_attrs(attrs: List(ComponentAttr)) -> Bool {
   list.any(attrs, fn(attr) {
@@ -518,34 +490,34 @@ fn has_dynamic_attrs(attrs: List(ComponentAttr)) -> Bool {
   })
 }
 
-/// Parses an HTML element tag. Returns tag name, attributes,
-/// self-closing flag, and remaining input after the closing
-/// bracket.
+/// Shared between element and component paths to extract
+/// tag structure. Returns enough info for the caller to
+/// decide how to tokenize the element.
 ///
 fn parse_element_tag(
   input: String,
   line: Int,
 ) -> Result(#(String, List(ComponentAttr), Bool, String), Nil) {
   let #(tag, rest) = take_component_name(input, "")
-  case tag {
-    "" -> Error(Nil)
-    // Don't parse x- prefixed tags as elements (they're components)
-    "x-" <> _ -> Error(Nil)
-    _ -> {
-      let #(attrs, rest) = parse_element_attrs(rest, [], line)
-      let rest = skip_whitespace(rest)
-      case rest {
-        "/>" <> remaining -> Ok(#(tag, attrs, True, remaining))
-        ">" <> remaining -> Ok(#(tag, attrs, False, remaining))
-        _ -> Error(Nil)
-      }
-    }
+
+  // Reject empty names and x- prefixed tags (those are components)
+  use <- bool.lazy_guard(tag == "" || string.starts_with(tag, "x-"), fn() {
+    Error(Nil)
+  })
+
+  let #(attrs, rest) = parse_element_attrs(rest, [], line)
+  let rest = skip_whitespace(rest)
+
+  case rest {
+    "/>" <> remaining -> Ok(#(tag, attrs, True, remaining))
+    ">" <> remaining -> Ok(#(tag, attrs, False, remaining))
+    _ -> Error(Nil)
   }
 }
 
-/// Parses attributes from an HTML element tag. Handles regular
-/// string and boolean attributes as well as l-* directive
-/// attributes for conditionals and loops.
+/// Element attributes are parsed recursively because l-*
+/// directives need special handling distinct from regular
+/// HTML attributes. Each prefix dispatches to a sub-parser.
 ///
 fn parse_element_attrs(
   input: String,
@@ -557,6 +529,7 @@ fn parse_element_attrs(
     ">" <> _ -> #(list.reverse(acc), input)
     "/>" <> _ -> #(list.reverse(acc), input)
     "" -> #(list.reverse(acc), input)
+
     ":" <> rest -> {
       case parse_expr_attr(rest) {
         Ok(#(attr, remaining)) ->
@@ -564,15 +537,17 @@ fn parse_element_attrs(
         Error(_) -> #(list.reverse(acc), input)
       }
     }
+
     "l-if=" <> rest -> {
-      case parse_lm_condition_attr(rest) {
+      case parse_quoted_value(rest) {
         Ok(#(condition, remaining)) ->
           parse_element_attrs(remaining, [LmIf(condition, line), ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
+
     "l-else-if=" <> rest -> {
-      case parse_lm_condition_attr(rest) {
+      case parse_quoted_value(rest) {
         Ok(#(condition, remaining)) ->
           parse_element_attrs(
             remaining,
@@ -582,10 +557,12 @@ fn parse_element_attrs(
         Error(_) -> #(list.reverse(acc), input)
       }
     }
+
     "l-else" <> rest -> {
       let rest = skip_whitespace(rest)
       parse_element_attrs(rest, [LmElse, ..acc], line)
     }
+
     "l-for=" <> rest -> {
       case parse_lm_for_attr(rest) {
         Ok(#(collection, items, loop_var, remaining)) ->
@@ -597,6 +574,7 @@ fn parse_element_attrs(
         Error(_) -> #(list.reverse(acc), input)
       }
     }
+
     "l-on:" <> rest -> {
       case parse_lm_on_attr(rest, line) {
         Ok(#(attr, remaining)) ->
@@ -604,6 +582,7 @@ fn parse_element_attrs(
         Error(_) -> #(list.reverse(acc), input)
       }
     }
+
     "l-model=" <> rest -> {
       case parse_lm_model_attr(rest, line) {
         Ok(#(attr, remaining)) ->
@@ -611,6 +590,7 @@ fn parse_element_attrs(
         Error(_) -> #(list.reverse(acc), input)
       }
     }
+
     _ -> {
       case parse_string_or_bool_attr(input) {
         Ok(#(attr, remaining)) ->
@@ -621,111 +601,57 @@ fn parse_element_attrs(
   }
 }
 
-/// Parses a condition value from l-if or l-else-if. Extracts
-/// the quoted condition string supporting both single and
-/// double quote delimiters.
-///
-fn parse_lm_condition_attr(input: String) -> Result(#(String, String), Nil) {
-  case input {
-    "\"" <> rest -> {
-      case take_until_quote(rest, "\"", "") {
-        Ok(#(value, remaining)) -> Ok(#(value, remaining))
-        Error(_) -> Error(Nil)
-      }
-    }
-    "'" <> rest -> {
-      case take_until_quote(rest, "'", "") {
-        Ok(#(value, remaining)) -> Ok(#(value, remaining))
-        Error(_) -> Error(Nil)
-      }
-    }
-    _ -> Error(Nil)
-  }
-}
-
-/// Parses an l-for attribute value. Supports syntax like
-/// "item in collection", "(key, val) in items", and optional
-/// loop variable: "item in collection, loop".
+/// l-for needs to extract multiple pieces (items, collection,
+/// optional loop var) from a single attribute value, so it
+/// has its own parser separate from other attributes.
 ///
 fn parse_lm_for_attr(
   input: String,
 ) -> Result(#(String, List(String), Option(String), String), Nil) {
-  case input {
-    "\"" <> rest -> {
-      case take_until_quote(rest, "\"", "") {
-        Ok(#(value, remaining)) -> {
-          case parse_lm_for_syntax(value) {
-            Ok(#(collection, items, loop_var)) ->
-              Ok(#(collection, items, loop_var, remaining))
-            Error(_) -> Error(Nil)
-          }
-        }
-        Error(_) -> Error(Nil)
-      }
-    }
-    "'" <> rest -> {
-      case take_until_quote(rest, "'", "") {
-        Ok(#(value, remaining)) -> {
-          case parse_lm_for_syntax(value) {
-            Ok(#(collection, items, loop_var)) ->
-              Ok(#(collection, items, loop_var, remaining))
-            Error(_) -> Error(Nil)
-          }
-        }
-        Error(_) -> Error(Nil)
-      }
-    }
-    _ -> Error(Nil)
-  }
+  use #(value, remaining) <- result.try(parse_quoted_value(input))
+  use #(collection, items, loop_var) <- result.try(parse_lm_for_syntax(value))
+
+  Ok(#(collection, items, loop_var, remaining))
 }
 
-/// Parses the inner l-for syntax after quotes are removed.
-/// Splits on " in " to separate item pattern from collection,
-/// then extracts optional loop variable after comma.
+/// The " in " keyword separates the binding pattern from
+/// the collection, following a familiar syntax convention.
+/// An optional comma suffix provides access to loop metadata.
 ///
 fn parse_lm_for_syntax(
   value: String,
 ) -> Result(#(String, List(String), Option(String)), Nil) {
-  case string.split_once(value, " in ") {
-    Ok(#(item_part, collection_part)) -> {
-      let item_part = string.trim(item_part)
-      let collection_part = string.trim(collection_part)
+  use #(item_part, collection_part) <- result.try(string.split_once(
+    value,
+    " in ",
+  ))
 
-      // Parse items (single or tuple)
-      let items = parse_item_pattern(item_part)
+  let items = parse_item_pattern(string.trim(item_part))
+  let #(collection, loop_var) =
+    parse_collection_and_loop(string.trim(collection_part))
 
-      // Parse collection and optional loop variable
-      let #(collection, loop_var) = parse_collection_and_loop(collection_part)
-
-      Ok(#(collection, items, loop_var))
-    }
-    Error(_) -> Error(Nil)
-  }
+  Ok(#(collection, items, loop_var))
 }
 
-/// Parses the item pattern from l-for.
-/// "item" -> ["item"]
-/// "(key, value)" -> ["key", "value"]
+/// Supports both single bindings and tuple destructuring
+/// so users can iterate over key-value pairs or plain
+/// lists with a unified l-for syntax.
 ///
 fn parse_item_pattern(pattern: String) -> List(String) {
   case string.starts_with(pattern, "(") {
-    True -> {
-      // Tuple: (key, value)
-      let inner =
-        pattern
-        |> string.drop_start(1)
-        |> string.drop_end(1)
-      inner
+    True ->
+      pattern
+      |> string.drop_start(1)
+      |> string.drop_end(1)
       |> string.split(",")
       |> list.map(string.trim)
-    }
     False -> [pattern]
   }
 }
 
-/// Parses collection name and optional loop variable.
-/// "items" -> ("items", None)
-/// "items, loop" -> ("items", Some("loop"))
+/// The optional loop variable after the comma gives
+/// templates access to index/count metadata without
+/// requiring a separate directive.
 ///
 fn parse_collection_and_loop(input: String) -> #(String, Option(String)) {
   case string.split_once(input, ",") {
@@ -737,37 +663,31 @@ fn parse_collection_and_loop(input: String) -> #(String, Option(String)) {
   }
 }
 
-/// Parses an l-on:event attribute. Extracts the event name,
-/// modifiers, and handler expression.
-/// Examples:
-///   l-on:click="count = count + 1"
-///   l-on:click.prevent="handler()"
-///   l-on:input.debounce-300="name = $value"
+/// Event handlers need the event name, modifiers, and
+/// handler expression separated so the generator can
+/// produce the correct LiveView event wiring code.
 ///
 fn parse_lm_on_attr(
   input: String,
   line: Int,
 ) -> Result(#(ComponentAttr, String), Nil) {
-  // Parse event name and modifiers (e.g., "click.prevent.stop")
   let #(event_part, rest) = take_until_equals_or_space(input, "")
-  case event_part, rest {
-    "", _ -> Error(Nil)
-    _, "=" <> remaining -> {
-      // Parse the handler value
-      case parse_quoted_value(remaining) {
-        Ok(#(handler, rest2)) -> {
-          let #(event, modifiers) = parse_event_and_modifiers(event_part)
-          Ok(#(LmOn(event, modifiers, handler, line), rest2))
-        }
-        Error(_) -> Error(Nil)
-      }
+  use <- bool.lazy_guard(event_part == "", fn() { Error(Nil) })
+
+  case rest {
+    "=" <> remaining -> {
+      use #(handler, rest2) <- result.try(parse_quoted_value(remaining))
+      let #(event, modifiers) = parse_event_and_modifiers(event_part)
+
+      Ok(#(LmOn(event, modifiers, handler, line), rest2))
     }
-    _, _ -> Error(Nil)
+    _ -> Error(Nil)
   }
 }
 
-/// Parses an l-model attribute. Extracts the prop name.
-/// Example: l-model="name"
+/// l-model provides two-way binding sugar so the generator
+/// can emit both the value attribute and the corresponding
+/// event handler from a single directive.
 ///
 fn parse_lm_model_attr(
   input: String,
@@ -779,7 +699,9 @@ fn parse_lm_model_attr(
   }
 }
 
-/// Takes characters until = or whitespace is found.
+/// Attribute names in HTML end at = or whitespace, so we
+/// consume until one of those delimiters to isolate the
+/// name from its value.
 ///
 fn take_until_equals_or_space(input: String, acc: String) -> #(String, String) {
   case string.pop_grapheme(input) {
@@ -793,8 +715,9 @@ fn take_until_equals_or_space(input: String, acc: String) -> #(String, String) {
   }
 }
 
-/// Parses event name and modifiers from a string like "click.prevent.stop".
-/// Returns (event_name, [modifiers]).
+/// Dots separate the event name from modifiers, following
+/// a convention similar to Vue. Splitting here lets the
+/// generator apply modifiers independently.
 ///
 fn parse_event_and_modifiers(input: String) -> #(String, List(String)) {
   case string.split(input, ".") {
@@ -803,87 +726,70 @@ fn parse_event_and_modifiers(input: String) -> #(String, List(String)) {
   }
 }
 
-/// Parses a quoted value (single or double quotes).
-/// Returns the value and remaining input.
+/// Attribute values may use either quote style so users
+/// can pick whichever avoids escaping in their Gleam
+/// expressions. Both must be supported uniformly.
 ///
 fn parse_quoted_value(input: String) -> Result(#(String, String), Nil) {
   case input {
-    "\"" <> rest -> {
-      case take_until_quote(rest, "\"", "") {
-        Ok(#(value, remaining)) -> Ok(#(value, remaining))
-        Error(_) -> Error(Nil)
-      }
-    }
-    "'" <> rest -> {
-      case take_until_quote(rest, "'", "") {
-        Ok(#(value, remaining)) -> Ok(#(value, remaining))
-        Error(_) -> Error(Nil)
-      }
-    }
+    "\"" <> rest -> take_until_quote(rest, "\"", "")
+    "'" <> rest -> take_until_quote(rest, "'", "")
     _ -> Error(Nil)
   }
 }
 
-/// Takes characters until a specific quote character is found.
-/// Used to extract attribute values enclosed in matching
-/// quote delimiters. Handles escaped quotes (\" or \').
+/// Attribute values can contain escaped quotes, so we must
+/// handle backslash sequences to avoid closing the value
+/// prematurely on an escaped delimiter.
 ///
 fn take_until_quote(
   input: String,
   quote: String,
   acc: String,
 ) -> Result(#(String, String), Nil) {
-  case string.pop_grapheme(input) {
-    Ok(#("\\", rest)) -> {
-      // Check if this is an escaped quote
-      case string.pop_grapheme(rest) {
-        Ok(#(next, rest2)) if next == quote -> {
-          // Escaped quote - include the quote (not the backslash) and continue
-          take_until_quote(rest2, quote, acc <> quote)
-        }
-        Ok(#(next, rest2)) -> {
-          // Backslash followed by something else - keep both
-          take_until_quote(rest2, quote, acc <> "\\" <> next)
-        }
-        Error(_) -> Error(Nil)
+  use #(char, rest) <- result.try(string.pop_grapheme(input))
+
+  case char {
+    "\\" -> {
+      use #(next, rest2) <- result.try(string.pop_grapheme(rest))
+      case next == quote {
+        True -> take_until_quote(rest2, quote, acc <> quote)
+        False -> take_until_quote(rest2, quote, acc <> "\\" <> next)
       }
     }
-    Ok(#(c, rest)) -> {
-      case c == quote {
+    _ -> {
+      case char == quote {
         True -> Ok(#(acc, rest))
-        False -> take_until_quote(rest, quote, acc <> c)
+        False -> take_until_quote(rest, quote, acc <> char)
       }
     }
-    Error(_) -> Error(Nil)
   }
 }
 
-/// Parses the full component tag structure. Returns the name,
-/// list of attributes, self-closing flag, and remaining
-/// input after the closing bracket.
+/// Component tags have the same attribute grammar as HTML
+/// elements but use the <x-name> prefix. Parsing them
+/// separately avoids confusing them with plain HTML.
 ///
 fn parse_component_tag(
   input: String,
   line: Int,
 ) -> Result(#(String, List(ComponentAttr), Bool, String), Nil) {
   let #(name, rest) = take_component_name(input, "")
-  case name {
-    "" -> Error(Nil)
-    _ -> {
-      let #(attrs, rest) = parse_component_attrs(rest, [], line)
-      let rest = skip_whitespace(rest)
-      case rest {
-        "/>" <> remaining -> Ok(#(name, attrs, True, remaining))
-        ">" <> remaining -> Ok(#(name, attrs, False, remaining))
-        _ -> Error(Nil)
-      }
-    }
+  use <- bool.lazy_guard(name == "", fn() { Error(Nil) })
+
+  let #(attrs, rest) = parse_component_attrs(rest, [], line)
+  let rest = skip_whitespace(rest)
+
+  case rest {
+    "/>" <> remaining -> Ok(#(name, attrs, True, remaining))
+    ">" <> remaining -> Ok(#(name, attrs, False, remaining))
+    _ -> Error(Nil)
   }
 }
 
-/// Extracts the component name from the input. Reads until
-/// whitespace, closing bracket, or slash is encountered,
-/// returning the name and remaining input.
+/// Tag names end at whitespace, >, or / — the same
+/// boundary rules as HTML. Isolating the name here
+/// keeps the tag parser focused on attributes.
 ///
 fn take_component_name(input: String, acc: String) -> #(String, String) {
   case string.pop_grapheme(input) {
@@ -897,9 +803,9 @@ fn take_component_name(input: String, acc: String) -> #(String, String) {
   }
 }
 
-/// Parses all attributes from a component tag. Handles
-/// expression attributes (prefixed with :), l-* directive
-/// attributes, and string/boolean attributes.
+/// Component attributes follow the same dispatch pattern
+/// as element attributes. Keeping them separate allows
+/// future divergence without breaking either path.
 ///
 fn parse_component_attrs(
   input: String,
@@ -919,14 +825,14 @@ fn parse_component_attrs(
       }
     }
     "l-if=" <> rest -> {
-      case parse_lm_condition_attr(rest) {
+      case parse_quoted_value(rest) {
         Ok(#(condition, remaining)) ->
           parse_component_attrs(remaining, [LmIf(condition, line), ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
     "l-else-if=" <> rest -> {
-      case parse_lm_condition_attr(rest) {
+      case parse_quoted_value(rest) {
         Ok(#(condition, remaining)) ->
           parse_component_attrs(
             remaining,
@@ -975,10 +881,10 @@ fn parse_component_attrs(
   }
 }
 
-/// Parses an expression attribute (starts with :). Extracts
-/// the attribute name and expression value from quoted
-/// string, supporting both single and double quotes.
-/// Special-cases :class and :style to return ClassAttr/StyleAttr.
+/// Expression attributes (prefixed with :) contain Gleam
+/// code rather than string literals. :class and :style
+/// get dedicated variants because the generator handles
+/// them differently from generic expression bindings.
 ///
 fn parse_expr_attr(input: String) -> Result(#(ComponentAttr, String), Nil) {
   let #(name, rest) = take_attr_name(input, "")
@@ -1002,9 +908,9 @@ fn parse_expr_attr(input: String) -> Result(#(ComponentAttr, String), Nil) {
   }
 }
 
-/// Creates an expression attribute, converting single quotes
-/// to double quotes so users can write :class="[#('x', True)]"
-/// which produces valid Gleam code with double-quoted strings.
+/// Users write single quotes inside double-quoted attribute
+/// values (e.g. :class="[#('x', True)]"). Normalizing to
+/// double quotes produces valid Gleam string literals.
 ///
 fn make_expr_attr(name: String, value: String) -> ComponentAttr {
   let normalized_value = normalize_quotes(value)
@@ -1015,18 +921,18 @@ fn make_expr_attr(name: String, value: String) -> ComponentAttr {
   }
 }
 
-/// Converts single quotes to double quotes in expression values.
-/// This allows users to write :class="[#('active', True)]" with
-/// single quotes inside double quotes, producing valid Gleam.
+/// Gleam only uses double-quoted strings, but HTML attribute
+/// values are already double-quoted. Single-to-double quote
+/// conversion bridges this syntax mismatch.
 ///
 fn normalize_quotes(value: String) -> String {
   value
   |> string.replace("'", "\"")
 }
 
-/// Parses a string or boolean attribute. If an equals sign
-/// and quoted value follow the name, returns StringAttr.
-/// Otherwise returns BoolAttr with just the name.
+/// HTML supports both value attributes (name="val") and
+/// boolean attributes (disabled). Distinguishing them
+/// lets the generator emit the correct HTML output.
 ///
 fn parse_string_or_bool_attr(
   input: String,
@@ -1052,9 +958,9 @@ fn parse_string_or_bool_attr(
   }
 }
 
-/// Extracts an attribute name from input. Reads characters
-/// until whitespace, equals, closing bracket, or slash is
-/// found, returning name and remaining input.
+/// Attribute names end at the same delimiters as tag names,
+/// plus the equals sign. Isolating the name allows the
+/// caller to determine the attribute flavour from context.
 ///
 fn take_attr_name(input: String, acc: String) -> #(String, String) {
   case string.pop_grapheme(input) {
@@ -1068,9 +974,9 @@ fn take_attr_name(input: String, acc: String) -> #(String, String) {
   }
 }
 
-/// Skips leading whitespace characters from the input.
-/// Consumes spaces, tabs, newlines, and carriage returns,
-/// returning the remaining non-whitespace content.
+/// Whitespace between attributes and around tag content
+/// is insignificant. Skipping it here keeps individual
+/// parsers from duplicating whitespace handling.
 ///
 fn skip_whitespace(input: String) -> String {
   case input {
@@ -1082,9 +988,9 @@ fn skip_whitespace(input: String) -> String {
   }
 }
 
-/// Parses a simple directive without arguments. Verifies
-/// the directive isn't part of a longer word, then emits
-/// the token and continues tokenization.
+/// Argument-less directives like @attributes could be a
+/// prefix of a longer word (e.g. @attributesSomething).
+/// The alphanumeric check prevents false matches.
 ///
 fn parse_simple_directive(
   rest: String,
@@ -1095,48 +1001,30 @@ fn parse_simple_directive(
   tokens: List(Token),
   tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
-  let directive_len = string.length(directive)
-  case rest {
-    "" ->
+  // If the next char is alphanumeric, this isn't a real
+  // directive (e.g. @attributesSomething) — treat as text
+  let is_false_match = case string.first(rest) {
+    Ok(c) -> string_utils.is_alphanumeric(c)
+    _ -> False
+  }
+
+  case is_false_match {
+    True -> consume_text(directive <> rest, position, line, tokens, tag_stack)
+    False -> {
       do_tokenize(
-        "",
-        position + directive_len,
+        rest,
+        position + string.length(directive),
         line,
         [token, ..tokens],
         tag_stack,
       )
-    _ -> {
-      case string.first(rest) {
-        Ok(c) -> {
-          case string_utils.is_alphanumeric(c) {
-            True ->
-              consume_text(directive <> rest, position, line, tokens, tag_stack)
-            False ->
-              do_tokenize(
-                rest,
-                position + directive_len,
-                line,
-                [token, ..tokens],
-                tag_stack,
-              )
-          }
-        }
-        _ ->
-          do_tokenize(
-            rest,
-            position + directive_len,
-            line,
-            [token, ..tokens],
-            tag_stack,
-          )
-      }
     }
   }
 }
 
-/// Parses an @import directive. Extracts the content between
-/// parentheses and emits an ImportDirective token.
-/// Example: @import(app/models/user.{type User})
+/// @import directives can contain nested parentheses in
+/// type signatures (e.g. List(String)), so we use
+/// find_matching_paren instead of a simple split.
 ///
 fn parse_import_directive(
   input: String,
@@ -1145,32 +1033,32 @@ fn parse_import_directive(
   tokens: List(Token),
   tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
-  case find_matching_paren(input, 0, "") {
-    Ok(#(import_str, rest)) -> {
-      let import_str = string.trim(import_str)
-      case import_str {
-        "" -> Error(InvalidImportDirective("empty import", line))
-        _ -> {
-          // @import( + content + )
-          let len = 8 + string.length(import_str) + 1
-          let new_line = line + count_newlines(import_str)
-          do_tokenize(
-            rest,
-            position + len,
-            new_line,
-            [ImportDirective(import_str, line), ..tokens],
-            tag_stack,
-          )
-        }
-      }
-    }
-    Error(_) -> Error(UnterminatedImportDirective(line))
-  }
+  use #(import_str, rest) <- result.try(
+    find_matching_paren(input, 0, "")
+    |> result.replace_error(UnterminatedImportDirective(line)),
+  )
+
+  let import_str = string.trim(import_str)
+  use <- bool.lazy_guard(import_str == "", fn() {
+    Error(InvalidImportDirective("empty import", line))
+  })
+
+  // @import( + content + )
+  let len = 8 + string.length(import_str) + 1
+  let new_line = line + count_newlines(import_str)
+
+  do_tokenize(
+    rest,
+    position + len,
+    new_line,
+    [ImportDirective(import_str, line), ..tokens],
+    tag_stack,
+  )
 }
 
-/// Parses a @props directive. Extracts prop name:type pairs
-/// from the parentheses content.
-/// Example: @props(name: String, items: List(User))
+/// @props also uses nested parentheses for types like
+/// List(#(String, Int)), requiring the same balanced
+/// paren extraction as @import.
 ///
 fn parse_props_directive(
   input: String,
@@ -1179,55 +1067,51 @@ fn parse_props_directive(
   tokens: List(Token),
   tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
-  case find_matching_paren(input, 0, "") {
-    Ok(#(props_str, rest)) -> {
-      case parse_props_content(props_str) {
-        Ok(props) -> {
-          // @props( + content + )
-          let len = 7 + string.length(props_str) + 1
-          let new_line = line + count_newlines(props_str)
-          do_tokenize(
-            rest,
-            position + len,
-            new_line,
-            [PropsDirective(props, line), ..tokens],
-            tag_stack,
-          )
-        }
-        Error(reason) -> Error(InvalidPropsDirective(reason, line))
-      }
-    }
-    Error(_) -> Error(UnterminatedPropsDirective(line))
-  }
+  use #(props_str, rest) <- result.try(
+    find_matching_paren(input, 0, "")
+    |> result.replace_error(UnterminatedPropsDirective(line)),
+  )
+
+  use props <- result.try(
+    parse_props_content(props_str)
+    |> result.map_error(InvalidPropsDirective(_, line)),
+  )
+
+  // @props( + content + )
+  let len = 7 + string.length(props_str) + 1
+  let new_line = line + count_newlines(props_str)
+
+  do_tokenize(
+    rest,
+    position + len,
+    new_line,
+    [PropsDirective(props, line), ..tokens],
+    tag_stack,
+  )
 }
 
-/// Finds the matching closing parenthesis, handling nested parens.
-/// Returns the content inside and the remaining input after ')'.
+/// Directive arguments can contain nested parens (e.g. type
+/// signatures), so a simple split on ")" would break. This
+/// tracks depth to find the true closing paren.
 ///
 fn find_matching_paren(
   input: String,
   depth: Int,
   acc: String,
 ) -> Result(#(String, String), Nil) {
-  case string.pop_grapheme(input) {
-    Error(_) -> Error(Nil)
-    Ok(#(char, rest)) -> {
-      case char {
-        "(" -> find_matching_paren(rest, depth + 1, acc <> char)
-        ")" -> {
-          case depth {
-            0 -> Ok(#(acc, rest))
-            _ -> find_matching_paren(rest, depth - 1, acc <> char)
-          }
-        }
-        _ -> find_matching_paren(rest, depth, acc <> char)
-      }
-    }
+  use #(char, rest) <- result.try(string.pop_grapheme(input))
+
+  case char, depth {
+    "(", _ -> find_matching_paren(rest, depth + 1, acc <> char)
+    ")", 0 -> Ok(#(acc, rest))
+    ")", _ -> find_matching_paren(rest, depth - 1, acc <> char)
+    _, _ -> find_matching_paren(rest, depth, acc <> char)
   }
 }
 
-/// Parses the content of @props() into a list of (name, type) pairs.
-/// Handles nested types like List(#(String, Int)).
+/// Props content like "name: String, items: List(#(String, Int))"
+/// contains commas inside nested types, so it can't be split
+/// naively — it needs depth-aware comma splitting.
 ///
 fn parse_props_content(
   content: String,
@@ -1242,12 +1126,18 @@ fn parse_props_content(
   }
 }
 
-/// Splits props on commas at depth 0, handling nested parens.
+/// Only commas at paren depth 0 are true prop separators.
+/// Commas inside type expressions like #(String, Int)
+/// must be preserved as part of the type string.
 ///
 fn split_props_at_commas(input: String) -> List(String) {
   split_props_helper(input, 0, "", [])
 }
 
+/// Recursive loop for split_props_at_commas. Tracks paren
+/// depth so commas inside nested types are not treated
+/// as prop separators.
+///
 fn split_props_helper(
   input: String,
   depth: Int,
@@ -1256,26 +1146,25 @@ fn split_props_helper(
 ) -> List(String) {
   case string.pop_grapheme(input) {
     Error(_) -> {
-      case string.trim(current) {
+      let trimmed = string.trim(current)
+      case trimmed {
         "" -> list.reverse(acc)
-        trimmed -> list.reverse([trimmed, ..acc])
+        _ -> list.reverse([trimmed, ..acc])
       }
     }
-    Ok(#(char, rest)) -> {
-      case char {
-        "(" -> split_props_helper(rest, depth + 1, current <> char, acc)
-        ")" -> split_props_helper(rest, depth - 1, current <> char, acc)
-        "," if depth == 0 -> {
-          let trimmed = string.trim(current)
-          split_props_helper(rest, 0, "", [trimmed, ..acc])
-        }
-        _ -> split_props_helper(rest, depth, current <> char, acc)
+    Ok(#(char, rest)) ->
+      case char, depth {
+        "(", _ -> split_props_helper(rest, depth + 1, current <> char, acc)
+        ")", _ -> split_props_helper(rest, depth - 1, current <> char, acc)
+        ",", 0 -> split_props_helper(rest, 0, "", [string.trim(current), ..acc])
+        _, _ -> split_props_helper(rest, depth, current <> char, acc)
       }
-    }
   }
 }
 
-/// Parses individual prop parts (name: Type) into tuples.
+/// After splitting on commas, each part must be validated
+/// as a well-formed "name: Type" pair. Errors here give
+/// users specific messages about malformed props.
 ///
 fn parse_prop_parts(
   parts: List(String),
@@ -1292,7 +1181,9 @@ fn parse_prop_parts(
   }
 }
 
-/// Parses a single prop "name: Type" into a tuple.
+/// Validates a single prop has both a name and type with
+/// a colon separator. Specific error messages help users
+/// fix common mistakes like missing types or names.
 ///
 fn parse_single_prop(part: String) -> Result(#(String, String), String) {
   case string.split_once(part, ":") {
@@ -1310,11 +1201,9 @@ fn parse_single_prop(part: String) -> Result(#(String, String), String) {
   }
 }
 
-/// Parses a <slot> element. Handles:
-/// - <slot /> → Slot(None)
-/// - <slot name="x" /> → Slot(Some("x"))
-/// - <slot> → SlotDef(None)
-/// - <slot name="x"> → SlotDef(Some("x"))
+/// Slots can be either insertion points (self-closing) or
+/// default content definitions (opening). The parser needs
+/// to distinguish these to handle component composition.
 ///
 fn parse_slot_element(
   input: String,
@@ -1351,9 +1240,9 @@ fn parse_slot_element(
   }
 }
 
-/// Parses slot attributes and determines if self-closing or
-/// opening. Extracts the name attribute if present and emits
-/// the appropriate Slot or SlotDef token.
+/// Named slots require attribute parsing to extract the
+/// name value. Self-closing vs opening determines whether
+/// this is a slot reference (Slot) or definition (SlotDef).
 ///
 fn parse_slot_with_attrs(
   input: String,
@@ -1362,53 +1251,38 @@ fn parse_slot_with_attrs(
   tokens: List(Token),
   tag_stack: List(#(String, Bool)),
 ) -> Result(List(Token), LexerError) {
-  // Find the end of the tag (either /> or >)
-  case find_slot_tag_end(input) {
-    Ok(#(attrs_part, self_closing, rest)) -> {
-      let name = extract_slot_name(attrs_part)
-      // <slot + space + attrs + ("/> " or ">")
-      let len =
-        5
-        + 1
-        + string.length(attrs_part)
-        + case self_closing {
-          True -> 2
-          False -> 1
-        }
-      case self_closing {
-        True ->
-          do_tokenize(
-            rest,
-            position + len,
-            line,
-            [Slot(name), ..tokens],
-            tag_stack,
-          )
-        False ->
-          do_tokenize(
-            rest,
-            position + len,
-            line,
-            [SlotDef(name), ..tokens],
-            tag_stack,
-          )
-      }
-    }
-    Error(_) -> Error(UnterminatedComponent(position))
+  use #(attrs_part, self_closing, rest) <- result.try(
+    find_slot_tag_end(input)
+    |> result.replace_error(UnterminatedComponent(position)),
+  )
+
+  let name = extract_slot_name(attrs_part)
+  let closing_len = case self_closing {
+    True -> 2
+    False -> 1
   }
+
+  // <slot + space + attrs + ("/>" or ">")
+  let len = 5 + 1 + string.length(attrs_part) + closing_len
+  let token = case self_closing {
+    True -> Slot(name)
+    False -> SlotDef(name)
+  }
+
+  do_tokenize(rest, position + len, line, [token, ..tokens], tag_stack)
 }
 
-/// Finds the end of a slot tag. Returns the attribute string,
-/// whether it's self-closing (/> vs >), and the remaining
-/// input after the tag.
+/// Slot tags don't use the full component attribute grammar,
+/// so a simpler scan for /> or > suffices to delimit the
+/// attribute content.
 ///
 fn find_slot_tag_end(input: String) -> Result(#(String, Bool, String), Nil) {
   find_slot_tag_end_loop(input, "")
 }
 
-/// Recursive helper for finding slot tag end. Accumulates
-/// characters until /> or > is found, tracking whether the
-/// tag is self-closing.
+/// Recursive loop for find_slot_tag_end. Pattern matches
+/// on /> and > first so multi-char sequences are checked
+/// before consuming individual characters.
 ///
 fn find_slot_tag_end_loop(
   input: String,
@@ -1427,9 +1301,9 @@ fn find_slot_tag_end_loop(
   }
 }
 
-/// Extracts the name value from slot tag attributes. Looks
-/// for the name="value" or name='value' pattern and returns
-/// the extracted name or None if not present.
+/// Named slots use a name attribute to target specific
+/// insertion points. Both quote styles are supported
+/// for consistency with other attribute parsing.
 ///
 fn extract_slot_name(attrs: String) -> Option(String) {
   // Look for name="value" pattern
@@ -1455,10 +1329,9 @@ fn extract_slot_name(attrs: String) -> Option(String) {
   }
 }
 
-/// Consumes plain text until a special sequence is found.
-/// Accumulates characters into a Text token, stopping when
-/// template syntax markers are encountered. Merges with
-/// previous Text token if present.
+/// Everything that isn't a recognized template construct
+/// should pass through as plain text. This fallback path
+/// coalesces characters until the next special sequence.
 ///
 fn consume_text(
   input: String,
@@ -1477,25 +1350,13 @@ fn consume_text(
             "\n" -> line + 1
             _ -> line
           }
-          // Merge with previous text token if exists
-          case tokens {
-            [Text(prev), ..rest_tokens] ->
-              do_tokenize(
-                remaining,
-                position + 1,
-                new_line,
-                [Text(prev <> char), ..rest_tokens],
-                tag_stack,
-              )
-            _ ->
-              do_tokenize(
-                remaining,
-                position + 1,
-                new_line,
-                [Text(char), ..tokens],
-                tag_stack,
-              )
-          }
+          do_tokenize(
+            remaining,
+            position + 1,
+            new_line,
+            append_text(tokens, char),
+            tag_stack,
+          )
         }
         Error(_) -> Ok(list.reverse(tokens))
       }
@@ -1503,32 +1364,14 @@ fn consume_text(
     _ -> {
       let new_pos = position + string.length(text)
       let new_line = line + count_newlines(text)
-      // Merge with previous text token if exists
-      case tokens {
-        [Text(prev), ..rest_tokens] ->
-          do_tokenize(
-            rest,
-            new_pos,
-            new_line,
-            [Text(prev <> text), ..rest_tokens],
-            tag_stack,
-          )
-        _ ->
-          do_tokenize(
-            rest,
-            new_pos,
-            new_line,
-            [Text(text), ..tokens],
-            tag_stack,
-          )
-      }
+      do_tokenize(rest, new_pos, new_line, append_text(tokens, text), tag_stack)
     }
   }
 }
 
-/// Scans input until a template syntax marker is found.
-/// Returns accumulated text and remaining input when a
-/// variable, directive, or component tag is encountered.
+/// Batch-scans text to avoid calling do_tokenize for every
+/// plain character. Stops at any prefix that do_tokenize
+/// would handle, keeping the two in sync.
 ///
 fn take_until_special(input: String, accumulated: String) -> #(String, String) {
   case input {
@@ -1565,31 +1408,13 @@ fn take_until_special(input: String, accumulated: String) -> #(String, String) {
   }
 }
 
-/// Checks if input starting with "<" is a potential HTML
-/// element. Returns true if followed by a letter, indicating
-/// a tag name rather than a comparison operator.
+/// A bare "<" in template expressions (e.g. x < 10) must
+/// not be mistaken for a tag. Checking for a following
+/// letter disambiguates tags from comparison operators.
 ///
 fn is_potential_element_start(input: String) -> Bool {
   case string.drop_start(input, 1) |> string.first {
-    Ok(c) -> is_letter(c)
+    Ok(c) -> string_utils.is_letter(c)
     Error(_) -> False
-  }
-}
-
-/// Checks if a character is a letter. Returns true for
-/// uppercase A-Z and lowercase a-z characters used to
-/// identify the start of HTML tag names.
-///
-fn is_letter(char: String) -> Bool {
-  case char {
-    "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" ->
-      True
-    "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" ->
-      True
-    "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" ->
-      True
-    "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z" ->
-      True
-    _ -> False
   }
 }

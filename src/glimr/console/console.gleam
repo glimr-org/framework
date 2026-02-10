@@ -199,6 +199,14 @@ pub fn print(output: Output) -> Nil {
   do_print(output.lines)
 }
 
+/// Immediately terminates the BEAM process with the given exit 
+/// code. Use this to signal success (0) or failure (non-zero) 
+/// to the calling shell or parent process.
+///
+pub fn halt(code: Int) -> Nil {
+  do_halt(code)
+}
+
 // ------------------------------------------------------------- Private Functions
 
 /// Recursively prints each line in the list to the console.
@@ -215,3 +223,12 @@ fn do_print(lines: List(String)) -> Nil {
     [] -> Nil
   }
 }
+
+// ------------------------------------------------------------- FFI Bindings
+
+/// FFI binding to Erlang's halt/1 which forces an immediate 
+/// shutdown of the runtime. Bypasses normal cleanup so it 
+/// should only be used for final exits.
+///
+@external(erlang, "erlang", "halt")
+fn do_halt(code: Int) -> Nil
