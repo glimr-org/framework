@@ -73,6 +73,35 @@ pub fn upgrade(request: HttpRequest(Connection)) -> HttpResponse(ResponseData) {
   )
 }
 
+/// Verifies a signed init token and extracts the props JSON.
+/// The token contains `module_name:props_json` signed with the
+/// app key. Verification ensures the signature is valid and the
+/// embedded module name matches the claimed module, preventing
+/// token reuse across modules or tampered props.
+///
+pub fn verify_init_token(
+  token: String,
+  module_name: String,
+  app_key: String,
+) -> Result(String, Nil) {
+  use payload_bits <- result.try(
+    crypto.verify_signed_message(token, <<app_key:utf8>>)
+    |> result.replace_error(Nil),
+  )
+
+  use payload <- result.try(
+    bit_array.to_string(payload_bits) |> result.replace_error(Nil),
+  )
+
+  use #(token_module, props_json) <- result.try(
+    string.split_once(payload, ":") |> result.replace_error(Nil),
+  )
+
+  use <- bool.guard(token_module != module_name, Error(Nil))
+
+  Ok(props_json)
+}
+
 // ------------------------------------------------------------- Private Functions
 
 /// Actor creation is deferred until the client sends an init
@@ -175,17 +204,11 @@ fn handle_init(
         use <- bool.guard(!registry.is_valid_module(init.module), Error(Nil))
 
         let assert Ok(app_key) = env.get_string("APP_KEY")
-        use payload_bits <- result.try(
-          crypto.verify_signed_message(init.token, <<app_key:utf8>>)
-          |> result.replace_error(Nil),
-        )
-        use payload <- result.try(
-          bit_array.to_string(payload_bits) |> result.replace_error(Nil),
-        )
-        use #(token_module, props_json) <- result.try(
-          string.split_once(payload, ":") |> result.replace_error(Nil),
-        )
-        use <- bool.guard(token_module != init.module, Error(Nil))
+        use props_json <- result.try(verify_init_token(
+          init.token,
+          init.module,
+          app_key,
+        ))
 
         live_socket.start(state.reply_subject, init.module, props_json)
         |> result.replace_error(Nil)
