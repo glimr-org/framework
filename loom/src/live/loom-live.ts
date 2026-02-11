@@ -1,12 +1,14 @@
 import morphdom from "morphdom";
 import { CONFIG, EVENT_TYPES } from "@/config";
-import type {
-  EventPayload,
-  FocusState,
-  Modifiers,
-  ServerMessage,
-  SpecialVars,
-} from "@/types";
+import type { EventPayload, Modifiers, ServerMessage } from "@/types";
+import {
+  buildWsUrl,
+  collectSpecialVars,
+  getNodeKey,
+  parseModifiers,
+  restoreFocus,
+  saveFocus,
+} from "@/live/utils";
 
 /**
  * Debounce timers are stored per-element in a WeakMap so that
@@ -62,16 +64,7 @@ export class LoomLive {
    * scattered across the class.
    */
   private connect(): void {
-    let wsUrl: string;
-
-    if (this.wsUrlOverride && this.wsUrlOverride.startsWith("ws")) {
-      wsUrl = this.wsUrlOverride;
-    } else {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const path = this.wsUrlOverride || CONFIG.wsPath;
-
-      wsUrl = `${protocol}//${window.location.host}${path}`;
-    }
+    const wsUrl = buildWsUrl(this.wsUrlOverride, window.location);
 
     this.socket = new WebSocket(wsUrl);
 
@@ -196,64 +189,6 @@ export class LoomLive {
   }
 
   /**
-   * morphdom replaces DOM nodes, which destroys the browser's
-   * active focus and cursor position. Capturing focus state
-   * before the patch and restoring it after prevents the jarring
-   * experience of losing your place in a text input every time
-   * the server sends an update.
-   *
-   * The handlerId lookup uses data-l-* attributes as stable
-   * identifiers because morphdom may replace the element
-   * reference itself, so we need a way to find the "same" input
-   * in the new DOM.
-   */
-  private saveFocus(): FocusState {
-    const el = document.activeElement;
-    const input = el as HTMLInputElement | null;
-    const isInput =
-      !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
-    return {
-      element: el,
-      isInput,
-      selectionStart: input?.selectionStart ?? null,
-      selectionEnd: input?.selectionEnd ?? null,
-      handlerId:
-        (el as HTMLElement)?.dataset?.lInput ||
-        (el as HTMLElement)?.dataset?.lChange ||
-        el?.id,
-    };
-  }
-
-  /**
-   * After morphdom replaces nodes, the previously focused input
-   * exists as a new DOM element. This re-finds it by handler ID,
-   * restores focus, and resets the cursor position so the user
-   * can keep typing without interruption. The try/catch guards
-   * against elements like date or color inputs that don't support
-   * setSelectionRange.
-   */
-  private restoreFocus(saved: FocusState): void {
-    if (!saved.isInput || !saved.handlerId) return;
-
-    const el = this.container.querySelector(
-      `[data-l-input="${saved.handlerId}"], [data-l-change="${saved.handlerId}"], #${saved.handlerId}`,
-    ) as HTMLInputElement | null;
-    if (!el) return;
-
-    el.focus();
-    if (
-      typeof saved.selectionStart === "number" &&
-      typeof saved.selectionEnd === "number"
-    ) {
-      try {
-        el.setSelectionRange(saved.selectionStart, saved.selectionEnd);
-      } catch {
-        // Not all elements support setSelectionRange
-      }
-    }
-  }
-
-  /**
    * Replacing innerHTML wholesale would destroy input state,
    * focus, scroll position, and trigger unnecessary reflows.
    * morphdom diffs the old and new DOM trees and applies only the
@@ -267,25 +202,14 @@ export class LoomLive {
    * previous render.
    */
   private applyPatch(html: string): void {
-    const saved = this.saveFocus();
+    const saved = saveFocus();
 
     const temp = document.createElement("div");
     temp.innerHTML = html;
 
     morphdom(this.container, temp, {
       childrenOnly: true,
-      getNodeKey: (node) => {
-        if (node.nodeType !== 1) return null;
-        const el = node as HTMLElement;
-        return (
-          el.dataset?.lInput ||
-          el.dataset?.lClick ||
-          el.dataset?.lChange ||
-          el.dataset?.lSubmit ||
-          el.id ||
-          null
-        );
-      },
+      getNodeKey,
       onBeforeElUpdated: (fromEl, toEl) => {
         if (fromEl === saved.element && saved.isInput) {
           (toEl as HTMLInputElement).value = (fromEl as HTMLInputElement).value;
@@ -295,7 +219,7 @@ export class LoomLive {
     });
 
     this.attachEventListeners();
-    this.restoreFocus(saved);
+    restoreFocus(this.container, saved);
   }
 
   /**
@@ -326,7 +250,7 @@ export class LoomLive {
     if (element._loomAttached) return;
     element._loomAttached = true;
 
-    const modifiers = this.parseModifiers(element);
+    const modifiers = parseModifiers(element);
 
     EVENT_TYPES.forEach((eventType) => {
       const handlerId =
@@ -339,23 +263,6 @@ export class LoomLive {
         this.handleEvent(e, eventType, handlerId, modifiers);
       });
     });
-  }
-
-  /**
-   * Event modifiers like preventDefault and stopPropagation  are
-   * common needs that would otherwise require custom JS. Parsing
-   * them from data attributes lets template authors control event
-   * behavior declaratively in HTML without writing client-side
-   * code.
-   */
-  private parseModifiers(element: HTMLElement): Modifiers {
-    return {
-      prevent: element.dataset.lPrevent === "true",
-      stop: element.dataset.lStop === "true",
-      shouldDebounce: element.dataset.lDebounce !== undefined,
-      debounce:
-        parseInt(element.dataset.lDebounce || "") || CONFIG.defaultDebounce,
-    };
   }
 
   /**
@@ -377,7 +284,7 @@ export class LoomLive {
     const payload: EventPayload = {
       handler: handlerId,
       event: eventType,
-      special_vars: this.collectSpecialVars(e),
+      special_vars: collectSpecialVars(e),
     };
 
     if (modifiers.shouldDebounce) {
@@ -385,31 +292,6 @@ export class LoomLive {
     } else {
       this.send(payload);
     }
-  }
-
-  /**
-   * Server-side handlers need access to values that only exist in
-   * the browser — the current input value, whether a checkbox is
-   * checked, or which key was pressed. These "special variables"
-   * are extracted from the DOM event and sent alongside the
-   * handler ID so the server can update props without a round-
-   * trip to read form state.
-   */
-  private collectSpecialVars(e: Event): SpecialVars {
-    const vars: SpecialVars = {};
-    const target = e.target as HTMLInputElement;
-
-    if (target.value !== undefined) {
-      vars.value = target.value;
-    }
-    if (target.type === "checkbox" || target.type === "radio") {
-      vars.checked = target.checked;
-    }
-    if ((e as KeyboardEvent).key !== undefined) {
-      vars.key = (e as KeyboardEvent).key;
-    }
-
-    return vars;
   }
 
   /**

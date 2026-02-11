@@ -16,7 +16,7 @@
  */
 
 import { CONFIG } from "@/config";
-import { LoomLive } from "@/loom-live";
+import { LoomLive } from "@/live/loom-live";
 
 /**
  * Multiple live containers can exist on the same page, each
