@@ -1,0 +1,14 @@
+{
+  "name": "glimr-loom",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/index.ts --outfile=../priv/static/loom.js --bundle --minify"
+  },
+  "dependencies": {
+    "morphdom": "^2.7.8"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

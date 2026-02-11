@@ -1,15 +1,19 @@
 //// Glimr Mist Handler
 ////
-//// Drop-in replacement for wisp_mist.handler that adds WebSocket
-//// support for Loom Live templates. Intercepts WebSocket upgrade
-//// requests for /loom/ws, serves /loom.js from framework priv,
-//// and delegates all other requests to the normal wisp handler.
+//// Wisp has no built-in WebSocket support, but Loom Live needs 
+//// it for real-time template updates. Rather than requiring 
+//// users to manually wire up WebSocket routes and static file 
+//// serving, this drop-in replacement for wisp_mist.handler 
+//// transparently intercepts the two Loom-specific paths 
+//// (/loom/ws and /loom.js) while passing everything else 
+//// through to wisp unchanged.
 ////
 
 import gleam/bytes_tree
 import gleam/http/request.{type Request as HttpRequest}
 import gleam/http/response.{type Response as HttpResponse}
 import gleam/list
+import gleam/result
 import gleam/string
 import glimr/loom/live
 import mist
@@ -17,10 +21,13 @@ import simplifile
 import wisp
 import wisp/wisp_mist
 
-/// Convert a Wisp request handler into a function that can be run with
-/// the Mist web server, with automatic WebSocket support for Loom Live.
-///
-/// This is a drop-in replacement for wisp_mist.handler. Simply change:
+// ------------------------------------------------------------- Public Functions
+
+/// Users shouldn't need to understand WebSocket plumbing to use 
+/// Loom Live — swapping one import is enough. This function 
+/// wraps wisp_mist.handler with a routing layer that intercepts 
+/// Loom paths before they reach wisp, keeping the upgrade 
+/// seamless and reversible.
 ///
 /// ```gleam
 /// // Before:
@@ -56,57 +63,58 @@ pub fn handler(
   }
 }
 
-/// Serves the loom.js file from the framework's priv/static directory.
+// ------------------------------------------------------------- Private Functions
+
+/// The Loom Live client-side JS is bundled with the framework,
+/// not the user's app. Serving it from the framework's priv
+/// directory means users don't need to copy or manage the
+/// script file — it's always available and in sync with the 
+/// framework version they're running.
 ///
 fn serve_loom_js() -> HttpResponse(mist.ResponseData) {
-  // Get the framework's priv directory
-  case wisp.priv_directory("glimr") {
-    Ok(priv_path) -> {
-      let js_path = priv_path <> "/static/loom.js"
-      case simplifile.read(js_path) {
-        Ok(content) ->
-          response.new(200)
-          |> response.set_header("content-type", "application/javascript")
-          |> response.set_body(mist.Bytes(bytes_tree.from_string(content)))
-        Error(_) ->
-          response.new(404)
-          |> response.set_body(
-            mist.Bytes(bytes_tree.from_string("loom.js not found")),
-          )
-      }
-    }
+  let content = {
+    use priv_path <- result.try(
+      wisp.priv_directory("glimr") |> result.replace_error(Nil),
+    )
+    simplifile.read(priv_path <> "/static/loom.js")
+    |> result.replace_error(Nil)
+  }
+
+  case content {
+    Ok(js) ->
+      response.new(200)
+      |> response.set_header("content-type", "application/javascript")
+      |> response.set_body(mist.Bytes(bytes_tree.from_string(js)))
     Error(_) ->
       response.new(404)
       |> response.set_body(
-        mist.Bytes(bytes_tree.from_string(
-          "loom.js not found: priv directory not found",
-        )),
+        mist.Bytes(bytes_tree.from_string("loom.js not found")),
       )
   }
 }
 
-/// Checks if a request is a WebSocket upgrade request.
+/// A request to /loom/ws could be a regular HTTP request (e.g., 
+/// a browser navigating directly to the URL) rather than a 
+/// WebSocket upgrade. Checking the Connection and Upgrade 
+/// headers ensures we only hand off to mist's WebSocket handler 
+/// when the client actually wants one, falling back to wisp for 
+/// normal HTTP otherwise.
 ///
 fn is_websocket_upgrade(request: HttpRequest(mist.Connection)) -> Bool {
-  let connection_header =
-    request.headers
-    |> list.find(fn(h) { string.lowercase(h.0) == "connection" })
+  let result = {
+    use #(_, conn) <- result.try(
+      list.find(request.headers, fn(h) { string.lowercase(h.0) == "connection" }),
+    )
 
-  let upgrade_header =
-    request.headers
-    |> list.find(fn(h) { string.lowercase(h.0) == "upgrade" })
+    use #(_, upgrade) <- result.try(
+      list.find(request.headers, fn(h) { string.lowercase(h.0) == "upgrade" }),
+    )
 
-  case connection_header, upgrade_header {
-    Ok(#(_, conn_value)), Ok(#(_, upgrade_value)) -> {
-      let has_upgrade =
-        conn_value
-        |> string.lowercase
-        |> string.contains("upgrade")
-
-      let is_websocket = string.lowercase(upgrade_value) == "websocket"
-
-      has_upgrade && is_websocket
-    }
-    _, _ -> False
+    Ok(
+      string.lowercase(conn) |> string.contains("upgrade")
+      && string.lowercase(upgrade) == "websocket",
+    )
   }
+
+  result |> result.unwrap(False)
 }

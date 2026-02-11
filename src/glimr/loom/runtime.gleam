@@ -277,12 +277,13 @@ pub fn inject_live_wrapper(
     <> "\" data-l-props='"
     <> props_json
     <> "'>"
-  let close_div = "</div><script src=\"/loom.js\"></script>"
 
-  // Find and inject after <body...>
+  // Inject <script defer> before </head> for early fetch
+  let html = inject_before_head_close(html)
+  // Inject live container after <body...>
   let html = inject_after_body_open(html, open_div)
-  // Find and inject before </body>
-  string.replace(html, "</body>", close_div <> "</body>")
+  // Close the container before </body>
+  string.replace(html, "</body>", "</div></body>")
 }
 
 // ------------------------------------------------------------- Private Functions
@@ -384,10 +385,23 @@ fn ensure_semicolon(value: String) -> String {
   }
 }
 
+/// Inserting the script tag before </head> lets the browser
+/// start fetching loom.js while it still parses the body. The
+/// defer attribute ensures execution waits until the DOM is
+/// ready, so init() always finds the live containers.
+///
+fn inject_before_head_close(html: String) -> String {
+  let script = "<script defer src=\"/loom.js\"></script>"
+  case string.split_once(html, "</head>") {
+    Ok(#(before, after)) -> before <> script <> "</head>" <> after
+    Error(_) -> html
+  }
+}
+
 /// The <body> tag may carry attributes (class, onload, etc.)
-/// that must be preserved during injection. Splitting on "<body" 
-/// first and then on ">" ensures the injected content appears 
-/// after the complete opening tag without clobbering any 
+/// that must be preserved during injection. Splitting on "<body"
+/// first and then on ">" ensures the injected content appears
+/// after the complete opening tag without clobbering any
 /// existing body attributes.
 ///
 fn inject_after_body_open(html: String, content: String) -> String {
@@ -402,7 +416,7 @@ fn inject_after_body_open(html: String, content: String) -> String {
     }
     Error(_) -> {
       // No body tag found - wrap the whole thing (fallback)
-      content <> html <> "</div><script src=\"/loom.js\"></script>"
+      content <> html <> "</div>"
     }
   }
 }
