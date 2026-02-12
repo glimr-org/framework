@@ -26,6 +26,8 @@ import glimr/loom/runtime
 ///
 pub type LiveSocketState {
   LiveSocketState(
+    /// Component ID for multiplexed WebSocket routing
+    id: String,
     /// Subject to send responses back to the WebSocket handler
     reply_to: Subject(SocketMessage),
     /// Module name for dynamic dispatch (e.g., "compiled/loom/counter")
@@ -53,6 +55,7 @@ pub type LiveSocket =
 /// ensuring patches reach the right browser tab.
 ///
 pub fn start(
+  id: String,
   reply_to: Subject(SocketMessage),
   module: String,
   props_json: String,
@@ -60,14 +63,14 @@ pub fn start(
   // Render initial tree and send it to the client
   let prev_tree_json = case live_dispatch.call_render_tree_json(module, props_json) {
     Ok(tree_json) -> {
-      process.send(reply_to, SendTrees(tree_json))
+      process.send(reply_to, SendTrees(id, tree_json))
       tree_json
     }
     Error(_) -> "{}"
   }
 
   let initial_state =
-    LiveSocketState(reply_to:, module:, props_json:, prev_tree_json:)
+    LiveSocketState(id:, reply_to:, module:, props_json:, prev_tree_json:)
 
   actor.new(initial_state)
   |> actor.on_message(handle_message)
@@ -123,7 +126,7 @@ fn handle_message(
           let diff = runtime.diff_tree_json(state.prev_tree_json, new_tree_json)
           case diff {
             "{}" -> Nil
-            _ -> process.send(state.reply_to, SendPatch(diff))
+            _ -> process.send(state.reply_to, SendPatch(state.id, diff))
           }
           actor.continue(LiveSocketState(
             ..state,
@@ -136,7 +139,7 @@ fn handle_message(
       }
     }
 
-    SendTrees(_) | SendPatch(_) | loom.SendRedirect(_) -> actor.continue(state)
+    SendTrees(_, _) | SendPatch(_, _) | loom.SendRedirect(_) -> actor.continue(state)
     Stop -> actor.stop()
   }
 }

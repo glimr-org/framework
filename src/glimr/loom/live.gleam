@@ -2,17 +2,18 @@
 ////
 //// Live templates need a persistent bidirectional channel
 //// between the browser and server to push UI updates in
-//// response to user events. This module implements the
-//// WebSocket handler that bridges mist's connection lifecycle 
-//// with the live_socket actor, translating raw JSON frames 
-//// into typed messages and routing actor responses back as 
-//// WebSocket text frames.
+//// response to user events. This module implements a
+//// multiplexed WebSocket handler that routes multiple live
+//// components over a single connection, tagging each message
+//// with a component ID so the server dispatches to the correct
+//// actor.
 ////
 
 import dot_env/env
 import gleam/bit_array
 import gleam/bool
 import gleam/crypto
+import gleam/dict.{type Dict}
 import gleam/dynamic/decode
 import gleam/erlang/process.{type Subject}
 import gleam/http/request.{type Request as HttpRequest}
@@ -33,36 +34,49 @@ import mist.{
 
 // ------------------------------------------------------------- Public Types
 
-/// The WebSocket connection has two phases: before the client
-/// sends an init message (socket is None) and after (socket is 
-/// Some). Tracking both the actor subject and the reply subject 
-/// lets the handler forward events to the actor and receive 
-/// patches back over the same connection.
+/// A single WebSocket connection multiplexes multiple live
+/// components. Each component's actor is stored in a dict keyed
+/// by the client-assigned component ID. The shared reply_subject
+/// receives messages from all actors; the id field in each
+/// message identifies which component it belongs to.
 ///
 pub type WsState {
   WsState(
-    socket: Option(Subject(SocketMessage)),
+    actors: Dict(String, Subject(SocketMessage)),
     reply_subject: Subject(SocketMessage),
   )
 }
 
-/// The client must identify which template module to run and
-/// provide the initial props as JSON. A typed init message
-/// ensures both fields are present before the handler attempts 
-/// to start a live_socket actor, avoiding partial 
-/// initialization.
+/// The client sends a join message to register a new live
+/// component on the multiplexed connection. The id is assigned
+/// by the client, the module identifies the template, and the
+/// token carries signed initial props.
 ///
-pub type InitMessage {
-  InitMessage(module: String, token: String)
+pub type JoinMessage {
+  JoinMessage(id: String, module: String, token: String)
+}
+
+/// An event message targets a specific component by id and
+/// carries the handler name, event type, and special variables.
+///
+pub type EventMessage {
+  EventMessage(id: String, event: ClientEvent)
+}
+
+/// A leave message tells the server to stop the actor for
+/// the given component id.
+///
+pub type LeaveMessage {
+  LeaveMessage(id: String)
 }
 
 // ------------------------------------------------------------- Public Functions
 
 /// The router calls this to hand off an HTTP request to the
 /// WebSocket subsystem. Wiring up on_init, on_close, and
-/// handle_message here keeps the connection lifecycle in one 
-/// place while delegating state management to the live_socket 
-/// actor.
+/// handle_message here keeps the connection lifecycle in one
+/// place while delegating state management to the live_socket
+/// actors.
 ///
 pub fn upgrade(request: HttpRequest(Connection)) -> HttpResponse(ResponseData) {
   mist.websocket(
@@ -104,43 +118,36 @@ pub fn verify_init_token(
 
 // ------------------------------------------------------------- Private Functions
 
-/// Actor creation is deferred until the client sends an init
-/// message with module and props because the WebSocket opens 
-/// before we know which template to run. The reply subject and 
-/// selector are set up immediately so the handler is ready to 
-/// receive actor messages once started.
+/// The reply subject and selector are set up once at connection
+/// start. All actors share the same reply_subject — the id
+/// field in each message identifies the target component. The
+/// actors dict starts empty and is populated as join messages
+/// arrive.
 ///
 fn on_init(
   _conn: WebsocketConnection,
 ) -> #(WsState, Option(process.Selector(SocketMessage))) {
-  // Create a subject for receiving replies from the actor
   let reply_subject = process.new_subject()
 
-  // Create a selector to receive messages from the reply subject
   let selector =
     process.new_selector()
     |> process.select(reply_subject)
 
-  #(WsState(socket: None, reply_subject: reply_subject), Some(selector))
+  #(WsState(actors: dict.new(), reply_subject: reply_subject), Some(selector))
 }
 
-/// When the browser navigates away or the connection drops, the 
-/// live_socket actor must be stopped to free its resources. 
-/// Checking for Some guards against the case where the 
-/// connection closes before the init message was received.
+/// When the connection drops, all component actors must be
+/// stopped to free their resources.
 ///
 fn on_close(state: WsState) -> Nil {
-  case state.socket {
-    Some(socket) -> process.send(socket, loom.Stop)
-    None -> Nil
-  }
+  dict.each(state.actors, fn(_id, actor) {
+    process.send(actor, loom.Stop)
+  })
 }
 
 /// Central dispatch for all WebSocket traffic. Client text
-/// frames carry either init or event JSON, actor messages carry 
-/// patches or redirects to send back. Routing both directions 
-/// through one handler keeps the protocol logic cohesive and 
-/// the state transitions explicit.
+/// frames carry join, event, or leave JSON. Actor messages
+/// carry patches or redirects tagged with a component id.
 ///
 fn handle_message(
   state: WsState,
@@ -148,34 +155,38 @@ fn handle_message(
   conn: WebsocketConnection,
 ) -> mist.Next(WsState, SocketMessage) {
   case message {
-    // Handle text messages from client
     mist.Text(text) -> {
-      case state.socket {
-        // Not yet initialized - expect init message
-        None -> handle_init(state, text)
-
-        // Already initialized - expect event messages
-        Some(socket) -> {
-          case parse_client_message(text) {
-            Ok(event) -> process.send(socket, loom.Event(event))
-            Error(_) -> Nil
-          }
-          mist.continue(state)
-        }
+      case parse_message_type(text) {
+        Ok("join") -> handle_join(state, text)
+        Ok("event") -> handle_event(state, text)
+        Ok("leave") -> handle_leave(state, text)
+        _ -> mist.continue(state)
       }
     }
 
     mist.Binary(_) -> mist.continue(state)
 
-    // Handle messages from the socket actor
     mist.Custom(socket_msg) -> {
       case socket_msg {
-        loom.SendTrees(tree_json) -> {
-          send_raw_json(conn, "{\"type\":\"trees\"," <> string.drop_start(tree_json, 1))
+        loom.SendTrees(id, tree_json) -> {
+          send_raw_json(
+            conn,
+            "{\"type\":\"trees\",\"id\":\""
+              <> id
+              <> "\","
+              <> string.drop_start(tree_json, 1),
+          )
           mist.continue(state)
         }
-        loom.SendPatch(diff) -> {
-          send_raw_json(conn, "{\"type\":\"patch\",\"d\":" <> diff <> "}")
+        loom.SendPatch(id, diff) -> {
+          send_raw_json(
+            conn,
+            "{\"type\":\"patch\",\"id\":\""
+              <> id
+              <> "\",\"d\":"
+              <> diff
+              <> "}",
+          )
           mist.continue(state)
         }
         loom.SendRedirect(url) -> {
@@ -191,45 +202,87 @@ fn handle_message(
   }
 }
 
-/// The first client message must be an init with a valid module 
-/// name. Validating against the registry prevents arbitrary 
-/// module execution, and starting the actor only on a 
-/// successful init avoids orphaned actors from malformed or 
-/// malicious init attempts.
+/// Validates the module against the registry, verifies the
+/// token, and starts a new live_socket actor for this component.
+/// A failed join sends an error message but does NOT kill the
+/// connection — other components on the same page continue
+/// working.
 ///
-fn handle_init(
+fn handle_join(
   state: WsState,
   text: String,
 ) -> mist.Next(WsState, SocketMessage) {
-  case parse_init_message(text) {
+  case parse_join_message(text) {
     Error(_) -> mist.continue(state)
-    Ok(init) -> {
+    Ok(join) -> {
       let result = {
-        use <- bool.guard(!registry.is_valid_module(init.module), Error(Nil))
+        use <- bool.guard(!registry.is_valid_module(join.module), Error(Nil))
 
         let assert Ok(app_key) = env.get_string("APP_KEY")
         use props_json <- result.try(verify_init_token(
-          init.token,
-          init.module,
+          join.token,
+          join.module,
           app_key,
         ))
 
-        live_socket.start(state.reply_subject, init.module, props_json)
+        live_socket.start(join.id, state.reply_subject, join.module, props_json)
         |> result.replace_error(Nil)
       }
 
       case result {
-        Ok(socket) -> mist.continue(WsState(..state, socket: Some(socket)))
-        Error(_) -> mist.stop()
+        Ok(actor) -> {
+          let actors = dict.insert(state.actors, join.id, actor)
+          mist.continue(WsState(..state, actors: actors))
+        }
+        Error(_) -> mist.continue(state)
       }
     }
   }
 }
 
-/// The client-side JS runtime expects JSON frames with a "type" 
-/// field and a payload field. Centralizing the serialization 
-/// here ensures all outbound messages share the same envelope 
-/// format, making the client protocol parser straightforward.
+/// Looks up the actor by component id and forwards the event.
+/// Unknown ids are silently ignored — the component may have
+/// been removed by a concurrent leave.
+///
+fn handle_event(
+  state: WsState,
+  text: String,
+) -> mist.Next(WsState, SocketMessage) {
+  case parse_event_message(text) {
+    Ok(msg) -> {
+      case dict.get(state.actors, msg.id) {
+        Ok(actor) -> process.send(actor, loom.Event(msg.event))
+        Error(_) -> Nil
+      }
+    }
+    Error(_) -> Nil
+  }
+  mist.continue(state)
+}
+
+/// Stops the actor for the given component and removes it from
+/// the dict.
+///
+fn handle_leave(
+  state: WsState,
+  text: String,
+) -> mist.Next(WsState, SocketMessage) {
+  case parse_leave_message(text) {
+    Ok(leave) -> {
+      case dict.get(state.actors, leave.id) {
+        Ok(actor) -> {
+          process.send(actor, loom.Stop)
+          let actors = dict.delete(state.actors, leave.id)
+          mist.continue(WsState(..state, actors: actors))
+        }
+        Error(_) -> mist.continue(state)
+      }
+    }
+    Error(_) -> mist.continue(state)
+  }
+}
+
+/// Sends a JSON message with a type and a single key-value pair.
 ///
 fn send_json(
   conn: WebsocketConnection,
@@ -244,41 +297,43 @@ fn send_json(
 }
 
 /// Sends a pre-built JSON string directly as a WebSocket text
-/// frame. Used for tree and patch messages where the JSON is
-/// already constructed by the runtime.
+/// frame.
 ///
 fn send_raw_json(conn: WebsocketConnection, raw_json: String) -> Nil {
   let assert Ok(_) = mist.send_text_frame(conn, raw_json)
   Nil
 }
 
-/// Init messages must be validated before starting an actor
-/// because the module name drives dynamic dispatch. Parsing
-/// into a typed InitMessage with a type-field check rejects
-/// non-init messages early without attempting actor creation.
+/// Extracts just the "type" field from a JSON message to
+/// determine which handler to dispatch to.
 ///
-fn parse_init_message(text: String) -> Result(InitMessage, Nil) {
+fn parse_message_type(text: String) -> Result(String, Nil) {
   let decoder = {
     use msg_type <- decode.field("type", decode.string)
-    use module <- decode.field("module", decode.string)
-    use token <- decode.field("token", decode.string)
-    case msg_type {
-      "init" -> decode.success(InitMessage(module: module, token: token))
-      _ -> decode.failure(InitMessage("", ""), "init")
-    }
+    decode.success(msg_type)
   }
 
   json.parse(from: text, using: decoder)
   |> result.replace_error(Nil)
 }
 
-/// Event messages carry handler ID, event type, and optional
-/// special variables ($value, $checked, $key). Parsing them
-/// into a typed ClientEvent ensures the live_socket actor
-/// receives well-formed data and can pattern match on fields 
-/// without runtime JSON access.
+/// Parses a join message: {type: "join", id, module, token}.
 ///
-fn parse_client_message(text: String) -> Result(ClientEvent, Nil) {
+fn parse_join_message(text: String) -> Result(JoinMessage, Nil) {
+  let decoder = {
+    use id <- decode.field("id", decode.string)
+    use module <- decode.field("module", decode.string)
+    use token <- decode.field("token", decode.string)
+    decode.success(JoinMessage(id: id, module: module, token: token))
+  }
+
+  json.parse(from: text, using: decoder)
+  |> result.replace_error(Nil)
+}
+
+/// Parses an event message: {type: "event", id, handler, event, special_vars}.
+///
+fn parse_event_message(text: String) -> Result(EventMessage, Nil) {
   let special_vars_decoder = {
     use value <- decode.optional_field(
       "value",
@@ -299,15 +354,30 @@ fn parse_client_message(text: String) -> Result(ClientEvent, Nil) {
   }
 
   let decoder = {
+    use id <- decode.field("id", decode.string)
     use handler <- decode.field("handler", decode.string)
     use event <- decode.field("event", decode.string)
     use special_vars <- decode.field("special_vars", special_vars_decoder)
-
-    decode.success(ClientEvent(
-      handler: handler,
-      event: event,
-      special_vars: special_vars,
+    decode.success(EventMessage(
+      id: id,
+      event: ClientEvent(
+        handler: handler,
+        event: event,
+        special_vars: special_vars,
+      ),
     ))
+  }
+
+  json.parse(from: text, using: decoder)
+  |> result.replace_error(Nil)
+}
+
+/// Parses a leave message: {type: "leave", id}.
+///
+fn parse_leave_message(text: String) -> Result(LeaveMessage, Nil) {
+  let decoder = {
+    use id <- decode.field("id", decode.string)
+    decode.success(LeaveMessage(id: id))
   }
 
   json.parse(from: text, using: decoder)

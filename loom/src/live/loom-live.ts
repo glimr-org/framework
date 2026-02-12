@@ -1,8 +1,8 @@
 import morphdom from "morphdom";
-import { CONFIG, EVENT_TYPES } from "@/config";
+import { EVENT_TYPES } from "@/config";
 import type { EventPayload, Modifiers, ServerMessage } from "@/types";
+import type { LoomSocket } from "@/live/loom-socket";
 import {
-  buildWsUrl,
   collectSpecialVars,
   getNodeKey,
   parseModifiers,
@@ -20,149 +20,76 @@ import { applyDiff, reconstruct } from "@/live/tree";
 const debounceTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
 
 /**
- * Each live container on the page needs its own isolated
- * WebSocket connection, event wiring, and DOM patching
- * lifecycle. Encapsulating all of this in a class ties the
- * connection lifetime to the container element and prevents
- * cross-contamination between multiple live regions on the same
- * page.
- *
- * The two-phase initialization (connect first, then wait for
- * the server to accept the init message) lets the class queue
- * events that fire before the handshake completes, so no user
- * interactions are lost during the brief startup window.
+ * Each live container on the page gets its own LoomLive
+ * instance that manages event wiring and DOM patching, but
+ * shares a single WebSocket connection via LoomSocket. The
+ * component registers itself with an auto-assigned ID and
+ * re-joins automatically after reconnects.
  */
 export class LoomLive {
   private container: HTMLElement;
   private module: string;
   private token: string;
-  private wsUrlOverride: string | null;
-  private socket: WebSocket | null = null;
-  private reconnectAttempts = 0;
-  private connected = false;
+  private id: string;
+  private loomSocket: LoomSocket;
   private initialized = false;
   private pendingEvents: EventPayload[] = [];
   private statics: any | null = null;
   private dynamics: any[] | null = null;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, loomSocket: LoomSocket) {
     this.container = container;
     this.module = container.dataset.lLive!;
     this.token = container.dataset.lToken!;
-    this.wsUrlOverride = container.dataset.lWs || null;
+    this.loomSocket = loomSocket;
+    this.id = loomSocket.allocateId();
 
-    this.connect();
+    loomSocket.register(this.id, (msg) => this.handleMessage(msg));
+    loomSocket.onReconnect(() => this.rejoin());
+
+    this.sendJoin();
     this.attachEventListeners();
   }
 
   /**
-   * The WebSocket URL must adapt to the page's protocol (ws/wss)
-   * and host so the client works behind proxies and on any domain
-   * without hardcoded URLs. The optional data-l-ws override
-   * exists for development setups where the WebSocket server runs
-   * on a different port than the page server.
-   *
-   * Wiring all four socket callbacks here keeps the full
-   * connection lifecycle visible in one place rather than
-   * scattered across the class.
+   * Sends a join message to register this component with the
+   * server. Flushes any events that were queued before the
+   * join completed.
    */
-  private connect(): void {
-    const wsUrl = buildWsUrl(this.wsUrlOverride, window.location);
-
-    this.socket = new WebSocket(wsUrl);
-
-    this.socket.onopen = () => {
-      console.log("[Loom] Connected:", this.module);
-
-      this.connected = true;
-      this.reconnectAttempts = 0;
-      this.sendInit();
-    };
-
-    this.socket.onmessage = (event) => {
-      this.handleMessage(JSON.parse(event.data));
-    };
-
-    this.socket.onclose = () => {
-      console.log("[Loom] Disconnected:", this.module);
-
-      this.connected = false;
-      this.initialized = false;
-      this.attemptReconnect();
-    };
-
-    this.socket.onerror = (error) => {
-      console.error("[Loom] WebSocket error:", error);
-    };
-  }
-
-  /**
-   * The server-side actor can't start until it knows which
-   * template module to run and what the initial props are.
-   * Sending this as the first message after connection lets the
-   * server validate the module name against its registry before
-   * accepting any events.
-   *
-   * Flushing pendingEvents immediately after ensures that any
-   * interactions the user performed during the brief connection
-   * window are delivered in order.
-   */
-  private sendInit(): void {
-    this.socket!.send(
-      JSON.stringify({
-        type: "init",
-        module: this.module,
-        token: this.token,
-      }),
-    );
+  private sendJoin(): void {
+    this.loomSocket.send({
+      type: "join",
+      id: this.id,
+      module: this.module,
+      token: this.token,
+    });
     this.initialized = true;
 
     while (this.pendingEvents.length > 0) {
-      this.send(this.pendingEvents.shift()!);
+      this.sendEvent(this.pendingEvents.shift()!);
     }
   }
 
   /**
-   * Network interruptions and server restarts are expected in
-   * production. Exponential backoff avoids hammering the server
-   * with rapid reconnect attempts while still recovering quickly
-   * from brief hiccups. The attempt cap prevents infinite retries
-   * when the server is genuinely down.
+   * Called after a reconnect to re-register the component with
+   * the server. Resets statics/dynamics so the initial trees
+   * message is accepted as fresh state.
    */
-  private attemptReconnect(): void {
-    if (this.reconnectAttempts >= CONFIG.maxReconnectAttempts) {
-      console.error("[Loom] Max reconnect attempts reached");
-      return;
-    }
-
-    this.reconnectAttempts++;
-    const delay =
-      CONFIG.reconnectInterval * Math.pow(2, this.reconnectAttempts - 1);
-
-    console.log(
-      `[Loom] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`,
-    );
-
-    setTimeout(() => {
-      if (!this.connected) {
-        this.connect();
-      }
-    }, delay);
+  private rejoin(): void {
+    this.initialized = false;
+    this.statics = null;
+    this.dynamics = null;
+    this.sendJoin();
   }
 
   /**
-   * Events can fire before the WebSocket handshake completes —
-   * for example, a user clicking a button while the connection is
-   * still opening. Queuing these events and flushing them after
-   * init ensures no user interaction is silently dropped.
+   * Sends an event payload through the shared socket, tagged
+   * with this component's id and type. Events fired before the
+   * join completes are queued.
    */
-  private send(data: EventPayload): void {
-    if (
-      this.connected &&
-      this.initialized &&
-      this.socket?.readyState === WebSocket.OPEN
-    ) {
-      this.socket.send(JSON.stringify(data));
+  private sendEvent(data: EventPayload): void {
+    if (this.initialized) {
+      this.loomSocket.send(data);
     } else {
       this.pendingEvents.push(data);
     }
@@ -190,9 +117,6 @@ export class LoomLive {
           const html = reconstruct(this.statics, this.dynamics);
           this.applyPatch(html);
         }
-        break;
-      case "redirect":
-        window.location.href = message.url!;
         break;
       case "error":
         console.error("[Loom] Server error:", message.error);
@@ -296,6 +220,8 @@ export class LoomLive {
     if (modifiers.stop) e.stopPropagation();
 
     const payload: EventPayload = {
+      type: "event",
+      id: this.id,
       handler: handlerId,
       event: eventType,
       special_vars: collectSpecialVars(e),
@@ -304,7 +230,7 @@ export class LoomLive {
     if (modifiers.shouldDebounce) {
       this.debouncedSend(e.target as Element, payload, modifiers.debounce);
     } else {
-      this.send(payload);
+      this.sendEvent(payload);
     }
   }
 
@@ -328,25 +254,18 @@ export class LoomLive {
       element,
       setTimeout(() => {
         debounceTimers.delete(element);
-        this.send(payload);
+        this.sendEvent(payload);
       }, delay),
     );
   }
 
   /**
-   * Explicitly closing the socket and resetting state prevents
-   * the reconnect logic from firing when a container is
-   * intentionally removed — for example, during SPA navigation.
-   * Without this, the auto-reconnect would keep trying to revive
-   * a connection for a component that no longer exists in the DOM.
+   * Unregisters from the shared socket so the server stops the
+   * actor. Called when the container is intentionally removed,
+   * e.g. during SPA navigation.
    */
   destroy(): void {
-    if (this.socket) {
-      this.socket.close();
-      this.socket = null;
-    }
-
-    this.connected = false;
+    this.loomSocket.unregister(this.id);
     this.initialized = false;
   }
 }

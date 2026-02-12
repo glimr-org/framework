@@ -1,13 +1,13 @@
 /**
  * The WebSocket protocol uses a discriminated union on "type"
  * so the client can route each message to the correct handler
- * without inspecting the payload. Optional fields keep the
- * interface flat — each message type only populates the fields
- * it needs, avoiding wrapper objects for what are simple one-
- * payload messages.
+ * without inspecting the payload. The "id" field identifies
+ * which multiplexed component the message belongs to (absent
+ * for page-global messages like redirect).
  */
 export interface ServerMessage {
   type: "trees" | "patch" | "redirect" | "error";
+  id?: string;
   s?: any[];
   d?: any;
   html?: string;
@@ -16,17 +16,43 @@ export interface ServerMessage {
 }
 
 /**
+ * Sent by the client to register a new live component on the
+ * multiplexed WebSocket connection.
+ */
+export interface JoinPayload {
+  type: "join";
+  id: string;
+  module: string;
+  token: string;
+}
+
+/**
  * Matches the server-side ClientEvent structure so the JSON
  * serialized by the client deserializes directly into the Gleam
- * type without transformation. Keeping the shape identical on
- * both sides avoids a translation layer and makes the protocol
- * self-documenting.
+ * type without transformation. The type and id fields route the
+ * event to the correct server-side actor.
  */
 export interface EventPayload {
+  type: "event";
+  id: string;
   handler: string;
   event: string;
   special_vars: SpecialVars;
 }
+
+/**
+ * Sent by the client when a live component is destroyed (e.g.
+ * SPA navigation) to tell the server to stop the actor.
+ */
+export interface LeavePayload {
+  type: "leave";
+  id: string;
+}
+
+/**
+ * Union of all client-to-server message types.
+ */
+export type ClientMessage = JoinPayload | EventPayload | LeavePayload;
 
 /**
  * Server-side handlers need browser-only state — input values,

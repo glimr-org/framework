@@ -88,9 +88,9 @@ pub type SocketMessage {
   /// Event received from the client via WebSocket
   Event(ClientEvent)
   /// Send initial statics + dynamics tree to client
-  SendTrees(json: String)
+  SendTrees(id: String, json: String)
   /// Send changed dynamics only to client
-  SendPatch(diff: String)
+  SendPatch(id: String, diff: String)
   /// Send a redirect back to the client
   SendRedirect(url: String)
   /// Stop the actor

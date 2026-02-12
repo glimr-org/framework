@@ -413,6 +413,7 @@ fn generate_module(
       generate_live_functions(
         template,
         module_name,
+        is_component,
         component_data,
         component_slots,
         handler_lookup,
@@ -431,6 +432,7 @@ fn generate_module(
 fn generate_live_functions(
   template: Template,
   module_name: String,
+  is_component: Bool,
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
   handler_lookup: HandlerLookup,
@@ -468,7 +470,7 @@ fn generate_live_functions(
 
   // Generate JSON wrapper functions for dynamic dispatch
   let handle_json_fn = generate_handle_json_function(template, used_vars)
-  let render_json_fn = generate_render_json_function(template)
+  let render_json_fn = generate_render_json_function(template, is_component)
 
   // Generate tree functions for statics/dynamics
   let tree_fn =
@@ -760,12 +762,15 @@ fn generate_handle_json_function(
 /// the typed render function so the runtime can trigger 
 /// re-renders without knowing prop types.
 ///
-fn generate_render_json_function(template: Template) -> String {
+fn generate_render_json_function(
+  template: Template,
+  is_component: Bool,
+) -> String {
   // Generate the props decoder (same as handle_json)
   let props_decoder = generate_props_decoder(template.props)
 
   // Generate the call to render() with extracted props
-  let render_call = generate_render_call(template.props)
+  let render_call = generate_render_call(template.props, is_component)
 
   "/// JSON wrapper for render() - used by live_socket for dynamic dispatch.\n"
   <> "/// Parses props from JSON, calls render(), returns HTML string.\n"
@@ -871,17 +876,33 @@ fn generate_handle_call(
 /// arguments matching the render function's signature so the 
 /// JSON wrapper can call render() correctly.
 ///
-fn generate_render_call(props: List(#(String, String))) -> String {
+fn generate_render_call(
+  props: List(#(String, String)),
+  is_component: Bool,
+) -> String {
+  let attrs_arg = case is_component {
+    True -> ", attributes: []"
+    False -> ""
+  }
+
   case props {
-    [] -> "render()"
-    [single] -> "render(" <> single.0 <> ": props)"
+    [] -> "render(" <> case is_component {
+      True -> "attributes: []"
+      False -> ""
+    } <> ")"
+    [single] -> "render(" <> single.0 <> ": props" <> attrs_arg <> ")"
     _ -> {
       // Destructure the tuple and pass as named args
       let pattern =
         "#(" <> string.join(list.map(props, fn(p) { p.0 }), ", ") <> ")"
       let args =
         string.join(list.map(props, fn(p) { p.0 <> ": " <> p.0 }), ", ")
-      "{ let " <> pattern <> " = props\n      render(" <> args <> ") }"
+      "{ let "
+      <> pattern
+      <> " = props\n      render("
+      <> args
+      <> attrs_arg
+      <> ") }"
     }
   }
 }
@@ -895,7 +916,7 @@ fn generate_result_encoder(props: List(#(String, String))) -> String {
   case props {
     [] -> "      \"{}\"\n"
     [single] -> {
-      let encoder = type_to_encoder(single.0, single.1)
+      let encoder = type_to_encoder("result", single.1)
       "      json.to_string(json.object([#(\""
       <> single.0
       <> "\", "
@@ -991,12 +1012,26 @@ fn generate_imports(template: Template) -> String {
 
   // For live templates, import additional modules for handle/render JSON wrappers
   let live_imports = case template.is_live {
-    True -> [
-      "import gleam/option",
-      "import gleam/json",
-      "import gleam/dynamic/decode",
-      "import glimr/loom/loom",
-    ]
+    True -> {
+      let handlers =
+        handler_parser.collect_handlers(template) |> result.unwrap([])
+      let used_vars = collect_used_special_vars(handlers)
+      let needs_option = used_vars.value || used_vars.checked || used_vars.key
+
+      let option_import = case needs_option {
+        True -> ["import gleam/option"]
+        False -> []
+      }
+
+      list.flatten([
+        option_import,
+        [
+          "import gleam/json",
+          "import gleam/dynamic/decode",
+          "import glimr/loom/loom",
+        ],
+      ])
+    }
     False -> []
   }
 
