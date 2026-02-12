@@ -719,7 +719,10 @@ pub fn generate_component_with_expr_attr_test() {
   let tmpl =
     template([ComponentNode("input", [ExprAttr("value", "data.name")], [])])
   // Create component props map with "value" as a known prop for "input" component
-  let component_props = dict.from_list([#("input", [#("value", "String")])])
+  let component_props =
+    dict.from_list([
+      #("input", generator.ComponentData(props: [#("value", "String")], is_live: False)),
+    ])
   let result =
     generator.generate(tmpl, "form", False, component_props, dict.new())
 

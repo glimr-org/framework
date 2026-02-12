@@ -173,10 +173,10 @@ fn collect_handlers_from_nodes(
   }
 }
 
-/// Each node type contributes handlers differently — elements 
-/// and components carry attributes directly, while control flow 
-/// nodes (if, each) contain handlers in their child branches. 
-/// Pattern matching here keeps the per-node dispatch clear and 
+/// Each node type contributes handlers differently — elements
+/// and components carry attributes directly, while control flow
+/// nodes (if, each) contain handlers in their child branches.
+/// Pattern matching here keeps the per-node dispatch clear and
 /// exhaustive.
 ///
 fn collect_handlers_from_node(
@@ -215,9 +215,9 @@ fn collect_handlers_from_node(
   }
 }
 
-/// IfNode branches each contain independent node trees that may 
-/// hold handlers. Iterating through all branches ensures 
-/// handlers inside conditional blocks are still collected and 
+/// IfNode branches each contain independent node trees that may
+/// hold handlers. Iterating through all branches ensures
+/// handlers inside conditional blocks are still collected and
 /// assigned unique IDs.
 ///
 fn collect_handlers_from_branches(
@@ -240,8 +240,8 @@ fn collect_handlers_from_branches(
 
 /// This is where handlers are actually discovered — in the
 /// attribute lists of elements and components. l-on:*
-/// attributes are parsed into Handler structs, and l-model is 
-/// desugared into an equivalent l-on:input so both produce 
+/// attributes are parsed into Handler structs, and l-model is
+/// desugared into an equivalent l-on:input so both produce
 /// uniform output for the code generator.
 ///
 fn collect_handlers_from_attrs(

@@ -342,8 +342,9 @@ fn compile_file(
     |> result.map_error(fn(_) { "Failed to write: " <> output_file }),
   )
 
-  // Register live modules (non-components) in the registry
-  case template.is_live && !is_component {
+  // Register live modules in the registry (pages and components alike,
+  // since live components now get their own data-l-live containers)
+  case template.is_live {
     True -> {
       let _ = registry.register_module(module_name, path)
       Nil
@@ -390,7 +391,7 @@ fn build_component_maps(
       let name = component_name_from_template_path(path)
       let slot_info = generator.extract_slot_info(template)
 
-      Ok(#(name, template.props, slot_info))
+      Ok(#(name, template.props, template.is_live, slot_info))
     })
   }
 
@@ -398,9 +399,12 @@ fn build_component_maps(
     entries
     |> list.fold(#(dict.new(), dict.new()), fn(acc, e) {
       let #(data, slots) = acc
-      let #(name, props, slot_info) = e
+      let #(name, props, is_live, slot_info) = e
 
-      #(dict.insert(data, name, props), dict.insert(slots, name, slot_info))
+      #(
+        dict.insert(data, name, generator.ComponentData(props:, is_live:)),
+        dict.insert(slots, name, slot_info),
+      )
     })
   }
 
