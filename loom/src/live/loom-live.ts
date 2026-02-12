@@ -149,6 +149,10 @@ export class LoomLive {
       childrenOnly: true,
       getNodeKey,
       onBeforeElUpdated: (fromEl, toEl) => {
+        // Don't let parent patches overwrite nested live components
+        if (fromEl !== this.container && fromEl.hasAttribute("data-l-live")) {
+          return false;
+        }
         if (fromEl === saved.element && saved.isInput) {
           (toEl as HTMLInputElement).value = (fromEl as HTMLInputElement).value;
         }
@@ -172,7 +176,11 @@ export class LoomLive {
       "[data-l-click], [data-l-input], [data-l-change], [data-l-submit], [data-l-keydown], [data-l-keyup], [data-l-focus], [data-l-blur]",
     );
 
-    elements.forEach((el) => this.attachElementListeners(el as HTMLElement));
+    elements.forEach((el) => {
+      // Skip elements owned by a nested live component
+      if (el.closest("[data-l-live]") !== this.container) return;
+      this.attachElementListeners(el as HTMLElement);
+    });
   }
 
   /**

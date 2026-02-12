@@ -29,8 +29,12 @@ import glimr/utils/string as string_util
 /// component so defaults can be generated at compile time
 /// rather than failing at runtime.
 ///
+pub type ComponentData {
+  ComponentData(props: List(#(String, String)), is_live: Bool)
+}
+
 pub type ComponentDataMap =
-  Dict(String, List(#(String, String)))
+  Dict(String, ComponentData)
 
 /// Components may accept a default slot, named slots, or
 /// neither. The generator needs this information to decide
@@ -388,7 +392,7 @@ fn generate_module(
 //// .loom.html template file and run `./glimr loom:compile`.
 ////
 "
-  let imports = generate_imports(template)
+  let imports = generate_imports(template, component_data)
 
   // Collect handlers for live templates
   let handler_lookup = case template.is_live {
@@ -437,7 +441,9 @@ fn generate_live_functions(
   component_slots: ComponentSlotMap,
   handler_lookup: HandlerLookup,
 ) -> String {
-  let handlers = handler_parser.collect_handlers(template) |> result.unwrap([])
+  let handlers =
+    handler_parser.collect_handlers(template)
+    |> result.unwrap([])
 
   let handlers_list =
     handlers
@@ -990,7 +996,9 @@ fn type_to_encoder(name: String, gleam_type: String) -> String {
 /// consistent IDs across both the attribute emission and the 
 /// handle function's case branches.
 ///
-fn build_handler_lookup(template: Template) -> HandlerLookup {
+fn build_handler_lookup(
+  template: Template,
+) -> HandlerLookup {
   handler_parser.collect_handlers(template)
   |> result.unwrap([])
   |> list.fold(dict.new(), fn(acc, item) {
@@ -1006,7 +1014,10 @@ fn build_handler_lookup(template: Template) -> HandlerLookup {
 /// Collecting them here ensures the generated module compiles 
 /// without missing dependencies.
 ///
-fn generate_imports(template: Template) -> String {
+fn generate_imports(
+  template: Template,
+  component_data: ComponentDataMap,
+) -> String {
   // Base imports - runtime is always needed
   let base_imports = ["import glimr/loom/runtime"]
 
@@ -1032,7 +1043,14 @@ fn generate_imports(template: Template) -> String {
         ],
       ])
     }
-    False -> []
+    False -> {
+      // Non-live pages that embed live components need json for props serialization
+      let embeds_live = has_live_component_embeddings(template, component_data)
+      case embeds_live {
+        True -> ["import gleam/json"]
+        False -> []
+      }
+    }
   }
 
   // User imports from @import directives (copied verbatim as "import <content>")
@@ -1058,9 +1076,27 @@ fn generate_imports(template: Template) -> String {
   )
 }
 
+/// Checks whether any component embedded in this template is a
+/// live component. Used to conditionally add the json import for
+/// non-live pages that embed live components.
+///
+fn has_live_component_embeddings(
+  template: Template,
+  component_data: ComponentDataMap,
+) -> Bool {
+  let component_names = collect_component_names(template.nodes, set.new())
+  set.to_list(component_names)
+  |> list.any(fn(name) {
+    case dict.get(component_data, name) {
+      Ok(data) -> data.is_live
+      Error(_) -> False
+    }
+  })
+}
+
 /// Every component used anywhere in the template — including
 /// inside conditionals, loops, and nested slots — needs an
-/// import statement. Recursive collection ensures no component 
+/// import statement. Recursive collection ensures no component
 /// reference is missed regardless of how deeply it is nested.
 ///
 fn collect_component_names(nodes: List(Node), acc: Set(String)) -> Set(String) {
@@ -1701,19 +1737,51 @@ fn generate_node_code_with_loop_vars(
         False -> ""
       }
 
-      pad
-      <> "<> "
-      <> module_alias
-      <> ".render(\n"
-      <> props_code
-      <> named_slots_code
-      <> slot_code
-      <> pad
-      <> "    attributes: "
-      <> extra_attrs_code
-      <> ",\n"
-      <> pad
-      <> "  )\n"
+      let render_expr =
+        module_alias
+        <> ".render(\n"
+        <> props_code
+        <> named_slots_code
+        <> slot_code
+        <> pad
+        <> "    attributes: "
+        <> extra_attrs_code
+        <> ",\n"
+        <> pad
+        <> "  )"
+
+      // If this is a live component, wrap in a data-l-live container
+      let is_live_component = case dict.get(component_data, name) {
+        Ok(data) -> data.is_live
+        Error(_) -> False
+      }
+
+      case is_live_component {
+        False -> pad <> "<> " <> render_expr <> "\n"
+        True -> {
+          let component_module =
+            "compiled/loom/components/"
+            <> string.replace(name, ":", "/")
+          let props_json_expr =
+            generate_component_props_json(name, attributes, component_data)
+          pad
+          <> "<> runtime.live_component_wrapper(\n"
+          <> pad
+          <> "    "
+          <> render_expr
+          <> ",\n"
+          <> pad
+          <> "    \""
+          <> component_module
+          <> "\",\n"
+          <> pad
+          <> "    "
+          <> props_json_expr
+          <> ",\n"
+          <> pad
+          <> "  )\n"
+        }
+      }
     }
 
     parser.AttributesNode(base_attrs) -> {
@@ -1793,7 +1861,7 @@ fn generate_component_attrs(
   // Get the expected props for this component
   let expected_prop_names = case dict.get(component_data, component_name) {
     Error(_) -> []
-    Ok(props) -> list.map(props, fn(p) { p.0 })
+    Ok(data) -> list.map(data.props, fn(p) { p.0 })
   }
 
   // Get explicitly provided props from expression attributes AND boolean attributes that match prop names
@@ -1859,8 +1927,8 @@ fn generate_component_attrs(
   // Look up component's expected props and generate defaults for missing ones
   let default_props_code = case dict.get(component_data, component_name) {
     Error(_) -> ""
-    Ok(expected_props) -> {
-      expected_props
+    Ok(data) -> {
+      data.props
       |> list.filter_map(fn(prop) {
         let #(prop_name, prop_type) = prop
         // Skip if explicitly provided
@@ -2673,6 +2741,45 @@ fn escape_gleam_string(input: String) -> String {
 /// import statement that the generated render calls can 
 /// reference.
 ///
+/// Generates a JSON serialization expression for a component's
+/// props, used when wrapping a live component in a data-l-live
+/// container. Builds json.to_string(json.object([...])) from
+/// the attribute bindings and component prop types.
+///
+fn generate_component_props_json(
+  component_name: String,
+  attributes: List(lexer.ComponentAttr),
+  component_data: ComponentDataMap,
+) -> String {
+  let props = case dict.get(component_data, component_name) {
+    Ok(data) -> data.props
+    Error(_) -> []
+  }
+
+  let fields =
+    props
+    |> list.map(fn(prop) {
+      let #(prop_name, prop_type) = prop
+      // Find the expression for this prop from the attributes
+      let expr = case
+        list.find(attributes, fn(attr) {
+          case attr {
+            lexer.ExprAttr(name, _) -> to_field_name(name) == prop_name
+            _ -> False
+          }
+        })
+      {
+        Ok(lexer.ExprAttr(_, value)) -> value
+        _ -> default_for_type(prop_type)
+      }
+      let encoder = type_to_encoder(expr, prop_type)
+      "#(\"" <> prop_name <> "\", " <> encoder <> ")"
+    })
+    |> string.join(", ")
+
+  "json.to_string(json.object([" <> fields <> "]))"
+}
+
 fn component_module_alias(name: String) -> String {
   "components_"
   <> name
@@ -3193,10 +3300,35 @@ fn generate_node_tree(
           loop_vars,
           handler_lookup,
         )
+
+      // If this is a live component, wrap in a data-l-live container
+      let is_live_component = case dict.get(component_data, name) {
+        Ok(data) -> data.is_live
+        Error(_) -> False
+      }
+
+      let wrapped_code = case is_live_component {
+        False -> component_code
+        True -> {
+          let component_module =
+            "compiled/loom/components/"
+            <> string.replace(name, ":", "/")
+          let props_json_expr =
+            generate_component_props_json(name, attributes, component_data)
+          "runtime.live_component_wrapper("
+          <> component_code
+          <> ", \""
+          <> component_module
+          <> "\", "
+          <> props_json_expr
+          <> ")"
+        }
+      }
+
       TreeAcc(
         current_static: "",
         dynamics: [
-          "loom.DynString(" <> component_code <> ")",
+          "loom.DynString(" <> wrapped_code <> ")",
           ..acc.dynamics
         ],
         statics: [acc.current_static, ..acc.statics],

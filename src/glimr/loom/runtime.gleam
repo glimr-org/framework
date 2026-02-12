@@ -262,6 +262,35 @@ pub fn live_ws_url() -> String {
   }
 }
 
+/// Wraps a live component's rendered HTML in a data-l-live
+/// container with a signed token. Used when a live component is
+/// embedded inside a page — gives the component its own
+/// independent WebSocket actor via multiplexing.
+///
+pub fn live_component_wrapper(
+  html: String,
+  module_name: String,
+  props_json: String,
+) -> String {
+  let ws_url = live_ws_url()
+  let assert Ok(app_key) = env.get_string("APP_KEY")
+  let payload = module_name <> ":" <> props_json
+
+  let token = {
+    crypto.sign_message(<<payload:utf8>>, <<app_key:utf8>>, crypto.Sha256)
+  }
+
+  "<div data-l-live=\""
+  <> module_name
+  <> "\" data-l-ws=\""
+  <> ws_url
+  <> "\" data-l-token=\""
+  <> token
+  <> "\">"
+  <> html
+  <> "</div>"
+}
+
 /// Live templates render through layout components that produce 
 /// the <html>/<body> structure. The live container div and 
 /// script tag must be injected inside the body rather than 
@@ -290,8 +319,6 @@ pub fn inject_live_wrapper(
     <> token
     <> "\">"
 
-  // Inject <script defer> before </head> for early fetch
-  let html = inject_before_head_close(html)
   // Inject live container after <body...>
   let html = inject_after_body_open(html, open_div)
   // Close the container before </body>
@@ -665,19 +692,6 @@ fn ensure_semicolon(value: String) -> String {
   case string.ends_with(trimmed, ";") {
     True -> trimmed
     False -> trimmed <> ";"
-  }
-}
-
-/// Inserting the script tag before </head> lets the browser
-/// start fetching loom.js while it still parses the body. The
-/// defer attribute ensures execution waits until the DOM is
-/// ready, so init() always finds the live containers.
-///
-fn inject_before_head_close(html: String) -> String {
-  let script = "<script defer src=\"/loom.js\"></script>"
-  case string.split_once(html, "</head>") {
-    Ok(#(before, after)) -> before <> script <> "</head>" <> after
-    Error(_) -> html
   }
 }
 
