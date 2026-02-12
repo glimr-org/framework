@@ -11,9 +11,13 @@
 
 import dot_env/env
 import gleam/crypto
+import gleam/dynamic/decode
 import gleam/int
+import gleam/json
 import gleam/list
 import gleam/string
+import glimr/loom/loom.{type Dynamic, type LiveTree, DynList, DynString, DynTree,
+  LiveTree}
 import houdini
 
 // ------------------------------------------------------------- Public Types
@@ -292,6 +296,277 @@ pub fn inject_live_wrapper(
   let html = inject_after_body_open(html, open_div)
   // Close the container before </body>
   string.replace(html, "</body>", "</div></body>")
+}
+
+// ------------------------------------------------------------- Tree Functions
+
+/// Interleave statics and dynamics into a single HTML string.
+/// statics[0] + flatten(dynamics[0]) + statics[1] + ...
+///
+pub fn flatten_tree(tree: LiveTree) -> String {
+  flatten_tree_helper(tree.statics, tree.dynamics, "")
+}
+
+fn flatten_tree_helper(
+  statics: List(String),
+  dynamics: List(Dynamic),
+  acc: String,
+) -> String {
+  case statics, dynamics {
+    [s], [] -> acc <> s
+    [s, ..rest_s], [d, ..rest_d] ->
+      flatten_tree_helper(rest_s, rest_d, acc <> s <> flatten_dynamic(d))
+    _, _ -> acc
+  }
+}
+
+fn flatten_dynamic(dyn: Dynamic) -> String {
+  case dyn {
+    DynString(s) -> s
+    DynTree(tree) -> flatten_tree(tree)
+    DynList(trees) ->
+      list.map(trees, flatten_tree) |> string.join("")
+  }
+}
+
+/// Serialize a LiveTree to the JSON wire format for initial
+/// send. Format: { "s": [...statics], "d": [...dynamics] }
+///
+pub fn tree_to_json(tree: LiveTree) -> String {
+  json.to_string(tree_to_json_value(tree))
+}
+
+fn tree_to_json_value(tree: LiveTree) -> json.Json {
+  json.object([
+    #("s", json.array(tree.statics, json.string)),
+    #("d", json.preprocessed_array(
+      list.map(tree.dynamics, dynamic_to_json_value),
+    )),
+  ])
+}
+
+fn dynamic_to_json_value(dyn: Dynamic) -> json.Json {
+  case dyn {
+    DynString(s) -> json.string(s)
+    DynTree(tree) -> tree_to_json_value(tree)
+    DynList(trees) ->
+      json.preprocessed_array(list.map(trees, tree_to_json_value))
+  }
+}
+
+/// Compare two JSON-serialized trees and return a JSON diff
+/// containing only the changed dynamics, keyed by index.
+/// Returns "{}" if nothing changed.
+///
+pub fn diff_tree_json(old_json: String, new_json: String) -> String {
+  case old_json == new_json {
+    True -> "{}"
+    False -> {
+      // Parse both trees and diff structurally
+      case parse_tree_json(old_json), parse_tree_json(new_json) {
+        Ok(old_tree), Ok(new_tree) -> diff_trees_to_json(old_tree, new_tree)
+        _, _ -> new_json
+      }
+    }
+  }
+}
+
+/// Diff two LiveTrees structurally and return the diff as JSON.
+///
+fn diff_trees_to_json(old: LiveTree, new: LiveTree) -> String {
+  let diff_pairs = diff_dynamics(old.dynamics, new.dynamics, 0, [])
+  case diff_pairs {
+    [] -> "{}"
+    _ ->
+      json.to_string(json.object(
+        list.map(diff_pairs, fn(pair) {
+          #(int.to_string(pair.0), pair.1)
+        }),
+      ))
+  }
+}
+
+fn diff_dynamics(
+  old: List(Dynamic),
+  new: List(Dynamic),
+  index: Int,
+  acc: List(#(Int, json.Json)),
+) -> List(#(Int, json.Json)) {
+  case old, new {
+    [], [] -> list.reverse(acc)
+    [old_d, ..old_rest], [new_d, ..new_rest] -> {
+      let new_acc = case diff_single_dynamic(old_d, new_d) {
+        Ok(diff_json) -> [#(index, diff_json), ..acc]
+        Error(_) -> acc
+      }
+      diff_dynamics(old_rest, new_rest, index + 1, new_acc)
+    }
+    // Length mismatch — send all new dynamics
+    _, _ -> {
+      list.index_map(new, fn(d, i) {
+        #(i, dynamic_to_json_value(d))
+      })
+    }
+  }
+}
+
+/// Returns Ok(json) if the dynamic changed, Error(Nil) if same.
+///
+fn diff_single_dynamic(
+  old: Dynamic,
+  new: Dynamic,
+) -> Result(json.Json, Nil) {
+  case old, new {
+    DynString(a), DynString(b) ->
+      case a == b {
+        True -> Error(Nil)
+        False -> Ok(json.string(b))
+      }
+    DynTree(old_tree), DynTree(new_tree) -> {
+      // If statics changed (branch flip), send whole subtree
+      case old_tree.statics == new_tree.statics {
+        False -> Ok(tree_to_json_value(new_tree))
+        True -> {
+          // Same statics, diff dynamics recursively
+          let inner_diff =
+            diff_dynamics(old_tree.dynamics, new_tree.dynamics, 0, [])
+          case inner_diff {
+            [] -> Error(Nil)
+            _ ->
+              Ok(json.object([
+                #("d", json.object(
+                  list.map(inner_diff, fn(pair) {
+                    #(int.to_string(pair.0), pair.1)
+                  }),
+                )),
+              ]))
+          }
+        }
+      }
+    }
+    DynList(old_trees), DynList(new_trees) -> {
+      case list.length(old_trees) == list.length(new_trees) {
+        False ->
+          // Length changed, send whole list
+          Ok(json.preprocessed_array(
+            list.map(new_trees, tree_to_json_value),
+          ))
+        True -> {
+          // Same length, diff per item
+          let item_diffs =
+            diff_list_items(old_trees, new_trees, 0, [])
+          case item_diffs {
+            [] -> Error(Nil)
+            _ ->
+              Ok(json.object(
+                list.map(item_diffs, fn(pair) {
+                  #(int.to_string(pair.0), pair.1)
+                }),
+              ))
+          }
+        }
+      }
+    }
+    // Type changed entirely — send new value
+    _, _ -> Ok(dynamic_to_json_value(new))
+  }
+}
+
+fn diff_list_items(
+  old: List(LiveTree),
+  new: List(LiveTree),
+  index: Int,
+  acc: List(#(Int, json.Json)),
+) -> List(#(Int, json.Json)) {
+  case old, new {
+    [], [] -> list.reverse(acc)
+    [old_tree, ..old_rest], [new_tree, ..new_rest] -> {
+      let new_acc = case old_tree.statics == new_tree.statics {
+        False -> [#(index, tree_to_json_value(new_tree)), ..acc]
+        True -> {
+          let inner_diff =
+            diff_dynamics(old_tree.dynamics, new_tree.dynamics, 0, [])
+          case inner_diff {
+            [] -> acc
+            _ -> [
+              #(index, json.object([
+                #("d", json.object(
+                  list.map(inner_diff, fn(pair) {
+                    #(int.to_string(pair.0), pair.1)
+                  }),
+                )),
+              ])),
+              ..acc
+            ]
+          }
+        }
+      }
+      diff_list_items(old_rest, new_rest, index + 1, new_acc)
+    }
+    _, _ -> list.reverse(acc)
+  }
+}
+
+/// Parse a JSON string into a LiveTree for structural diffing.
+/// Uses a simple recursive JSON parser based on string scanning.
+///
+fn parse_tree_json(input: String) -> Result(LiveTree, Nil) {
+  case json.parse(input, tree_decoder()) {
+    Ok(tree) -> Ok(tree)
+    Error(_) -> Error(Nil)
+  }
+}
+
+fn tree_decoder() -> decode.Decoder(LiveTree) {
+  use statics <- decode.field("s", decode.list(decode.string))
+  use dynamics <- decode.field("d", decode.list(dynamic_decoder()))
+  decode.success(LiveTree(statics:, dynamics:))
+}
+
+fn dynamic_decoder() -> decode.Decoder(Dynamic) {
+  decode.one_of(
+    // Try as tree first (has "s" and "d" keys — must come before string
+    // since string would match on the raw JSON object)
+    tree_decoder() |> decode.map(DynTree),
+    [
+      // Try as list of trees
+      decode.list(tree_decoder()) |> decode.map(DynList),
+      // Try as string (most common leaf value)
+      decode.string |> decode.map(DynString),
+    ],
+  )
+}
+
+/// Like append_each but returns a DynList for tree mode.
+///
+pub fn map_each(
+  items: List(item),
+  render_fn: fn(item) -> LiveTree,
+) -> Dynamic {
+  DynList(list.map(items, render_fn))
+}
+
+/// Like append_each_with_loop but returns a DynList for tree mode.
+///
+pub fn map_each_with_loop(
+  items: List(item),
+  render_fn: fn(item, Loop) -> LiveTree,
+) -> Dynamic {
+  let count = list.length(items)
+  DynList(list.index_map(items, fn(item, index) {
+    let loop =
+      Loop(
+        index: index,
+        iteration: index + 1,
+        first: index == 0,
+        last: index == count - 1,
+        even: index % 2 == 0,
+        odd: index % 2 != 0,
+        count: count,
+        remaining: count - index - 1,
+      )
+    render_fn(item, loop)
+  }))
 }
 
 // ------------------------------------------------------------- Private Functions

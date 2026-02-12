@@ -170,8 +170,12 @@ fn handle_message(
     // Handle messages from the socket actor
     mist.Custom(socket_msg) -> {
       case socket_msg {
-        loom.SendPatch(html) -> {
-          send_json(conn, "patch", "html", html)
+        loom.SendTrees(tree_json) -> {
+          send_raw_json(conn, "{\"type\":\"trees\"," <> string.drop_start(tree_json, 1))
+          mist.continue(state)
+        }
+        loom.SendPatch(diff) -> {
+          send_raw_json(conn, "{\"type\":\"patch\",\"d\":" <> diff <> "}")
           mist.continue(state)
         }
         loom.SendRedirect(url) -> {
@@ -236,6 +240,15 @@ fn send_json(
   let response =
     json.object([#("type", json.string(msg_type)), #(key, json.string(value))])
   let assert Ok(_) = mist.send_text_frame(conn, json.to_string(response))
+  Nil
+}
+
+/// Sends a pre-built JSON string directly as a WebSocket text
+/// frame. Used for tree and patch messages where the JSON is
+/// already constructed by the runtime.
+///
+fn send_raw_json(conn: WebsocketConnection, raw_json: String) -> Nil {
+  let assert Ok(_) = mist.send_text_frame(conn, raw_json)
   Nil
 }
 

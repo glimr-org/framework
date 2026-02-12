@@ -62,6 +62,18 @@ pub fn call_render_json(
   call_module_fn(module, "render_json", [dynamic.string(props_json)])
 }
 
+/// After handle_json updates the props, the actor needs a fresh
+/// tree JSON to diff against the previous tree. Calling
+/// render_tree_json dynamically produces the statics/dynamics
+/// JSON for any template module.
+///
+pub fn call_render_tree_json(
+  module: String,
+  props_json: String,
+) -> Result(String, String) {
+  call_module_fn(module, "render_tree_json", [dynamic.string(props_json)])
+}
+
 /// The registry needs to distinguish live modules from static
 /// ones at startup. Probing for the is_live export via apply 
 /// avoids maintaining a separate manifest — the generated 

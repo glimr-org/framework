@@ -60,17 +60,37 @@ pub type SpecialVars {
   SpecialVars(value: Option(String), checked: Option(Bool), key: Option(String))
 }
 
-/// The live socket actor communicates with the WebSocket 
-/// handler via typed messages. Separating event receipt, HTML 
-/// patches, redirects, and shutdown into variants gives the 
-/// actor a clear protocol without ad-hoc string-based message 
+/// A template split into static HTML fragments and dynamic
+/// expressions. Statics never change between renders; only
+/// dynamics are diffed and sent over the WebSocket.
+///
+pub type LiveTree {
+  LiveTree(statics: List(String), dynamics: List(Dynamic))
+}
+
+/// A single dynamic slot in a LiveTree. Can be a leaf string,
+/// a nested subtree (conditional/component), or a list of
+/// subtrees (loop output).
+///
+pub type Dynamic {
+  DynString(String)
+  DynTree(LiveTree)
+  DynList(List(LiveTree))
+}
+
+/// The live socket actor communicates with the WebSocket
+/// handler via typed messages. Separating event receipt, HTML
+/// patches, redirects, and shutdown into variants gives the
+/// actor a clear protocol without ad-hoc string-based message
 /// passing.
 ///
 pub type SocketMessage {
   /// Event received from the client via WebSocket
   Event(ClientEvent)
-  /// Send an HTML patch back to the client
-  SendPatch(html: String)
+  /// Send initial statics + dynamics tree to client
+  SendTrees(json: String)
+  /// Send changed dynamics only to client
+  SendPatch(diff: String)
   /// Send a redirect back to the client
   SendRedirect(url: String)
   /// Stop the actor

@@ -9,6 +9,7 @@ import {
   restoreFocus,
   saveFocus,
 } from "@/live/utils";
+import { applyDiff, reconstruct } from "@/live/tree";
 
 /**
  * Debounce timers are stored per-element in a WeakMap so that
@@ -41,6 +42,8 @@ export class LoomLive {
   private connected = false;
   private initialized = false;
   private pendingEvents: EventPayload[] = [];
+  private statics: any | null = null;
+  private dynamics: any[] | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -174,8 +177,19 @@ export class LoomLive {
    */
   private handleMessage(message: ServerMessage): void {
     switch (message.type) {
+      case "trees":
+        // Store statics + dynamics from initial tree.
+        // Don't apply to DOM — server-rendered HTML is already there.
+        this.statics = message.s!;
+        this.dynamics = message.d!;
+        break;
       case "patch":
-        this.applyPatch(message.html!);
+        if (this.statics && this.dynamics) {
+          // Apply diff to dynamics, reconstruct, and morph
+          applyDiff(this.dynamics, message.d);
+          const html = reconstruct(this.statics, this.dynamics);
+          this.applyPatch(html);
+        }
         break;
       case "redirect":
         window.location.href = message.url!;

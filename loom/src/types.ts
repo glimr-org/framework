@@ -7,7 +7,9 @@
  * payload messages.
  */
 export interface ServerMessage {
-  type: "patch" | "redirect" | "error";
+  type: "trees" | "patch" | "redirect" | "error";
+  s?: any[];
+  d?: any;
   html?: string;
   url?: string;
   error?: string;

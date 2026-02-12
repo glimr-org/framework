@@ -13,14 +13,15 @@ import gleam/option
 import gleam/otp/actor
 import gleam/result
 import glimr/loom/live_dispatch
-import glimr/loom/loom.{type SocketMessage, Event, SendPatch, Stop}
+import glimr/loom/loom.{type SocketMessage, Event, SendPatch, SendTrees, Stop}
+import glimr/loom/runtime
 
 // ------------------------------------------------------------- Public Types
 
-/// The actor needs the reply subject to push patches back, the 
+/// The actor needs the reply subject to push patches back, the
 /// module name for dynamic dispatch into the generated
-/// handle_json/render_json functions, and the current props as 
-/// JSON so they can be passed through the handle/render cycle 
+/// handle_json/render_json functions, and the current props as
+/// JSON so they can be passed through the handle/render cycle
 /// without the actor knowing the actual prop types.
 ///
 pub type LiveSocketState {
@@ -31,6 +32,8 @@ pub type LiveSocketState {
     module: String,
     /// Current props state as JSON string
     props_json: String,
+    /// Previous tree JSON for diffing (set after initial render)
+    prev_tree_json: String,
   )
 }
 
@@ -54,7 +57,17 @@ pub fn start(
   module: String,
   props_json: String,
 ) -> Result(Subject(SocketMessage), actor.StartError) {
-  let initial_state = LiveSocketState(reply_to:, module:, props_json:)
+  // Render initial tree and send it to the client
+  let prev_tree_json = case live_dispatch.call_render_tree_json(module, props_json) {
+    Ok(tree_json) -> {
+      process.send(reply_to, SendTrees(tree_json))
+      tree_json
+    }
+    Error(_) -> "{}"
+  }
+
+  let initial_state =
+    LiveSocketState(reply_to:, module:, props_json:, prev_tree_json:)
 
   actor.new(initial_state)
   |> actor.on_message(handle_message)
@@ -87,7 +100,7 @@ fn handle_message(
 
       let key = option.unwrap(client_event.special_vars.key, "")
 
-      let result = {
+      let handle_result = {
         use new_props_json <- result.try(live_dispatch.call_handle_json(
           state.module,
           client_event.handler,
@@ -97,25 +110,33 @@ fn handle_message(
           key,
         ))
 
-        use html <- result.try(live_dispatch.call_render_json(
+        use new_tree_json <- result.try(live_dispatch.call_render_tree_json(
           state.module,
           new_props_json,
         ))
 
-        Ok(#(new_props_json, html))
+        Ok(#(new_props_json, new_tree_json))
       }
 
-      case result {
-        Ok(#(new_props_json, html)) -> {
-          process.send(state.reply_to, SendPatch(html))
-          actor.continue(LiveSocketState(..state, props_json: new_props_json))
+      case handle_result {
+        Ok(#(new_props_json, new_tree_json)) -> {
+          let diff = runtime.diff_tree_json(state.prev_tree_json, new_tree_json)
+          case diff {
+            "{}" -> Nil
+            _ -> process.send(state.reply_to, SendPatch(diff))
+          }
+          actor.continue(LiveSocketState(
+            ..state,
+            props_json: new_props_json,
+            prev_tree_json: new_tree_json,
+          ))
         }
 
         Error(_) -> actor.continue(state)
       }
     }
 
-    SendPatch(_) | loom.SendRedirect(_) -> actor.continue(state)
+    SendTrees(_) | SendPatch(_) | loom.SendRedirect(_) -> actor.continue(state)
     Stop -> actor.stop()
   }
 }
