@@ -278,7 +278,12 @@ fn parse_nodes(
       )
       case node {
         Some(n) -> {
-          let acc = flush_pending_if(acc, pending_if)
+          // When new_pending is Some, the node is a flushed IfNode from
+          // a replaced pending chain — don't double-flush
+          let acc = case new_pending {
+            Some(_) -> acc
+            None -> flush_pending_if(acc, pending_if)
+          }
           parse_nodes(remaining, [n, ..acc], new_pending)
         }
         None -> {
@@ -294,7 +299,10 @@ fn parse_nodes(
       )
       case node {
         Some(n) -> {
-          let acc = flush_pending_if(acc, pending_if)
+          let acc = case new_pending {
+            Some(_) -> acc
+            None -> flush_pending_if(acc, pending_if)
+          }
           parse_nodes(remaining, [n, ..acc], new_pending)
         }
         None -> {
@@ -488,11 +496,28 @@ fn handle_conditional_chain(
   remaining: List(Token),
 ) -> Result(#(Option(Node), List(Token), Option(PendingIf)), ParserError) {
   case lm_if, lm_else_if, has_lm_else, pending_if {
-    // l-if: start new chain
-    Some(#(condition, line)), _, _, _ -> {
-      // If there's a pending chain, it will be flushed by caller
+    // l-if: start new chain (no existing pending)
+    Some(#(condition, line)), _, _, None -> {
       Ok(#(
         None,
+        remaining,
+        Some(PendingIf(
+          first_condition: condition,
+          first_line: line,
+          first_body: [node],
+          branches: [],
+          has_else: False,
+        )),
+      ))
+    }
+
+    // l-if: start new chain, flush existing pending as a completed IfNode
+    Some(#(condition, line)), _, _, Some(p) -> {
+      let first_branch = #(Some(p.first_condition), p.first_line, p.first_body)
+      let all_branches = [first_branch, ..list.reverse(p.branches)]
+      let flushed = IfNode(all_branches)
+      Ok(#(
+        Some(flushed),
         remaining,
         Some(PendingIf(
           first_condition: condition,
@@ -771,7 +796,10 @@ fn parse_body(
       )
       case node {
         Some(n) -> {
-          let acc = flush_pending_if(acc, pending_if)
+          let acc = case new_pending {
+            Some(_) -> acc
+            None -> flush_pending_if(acc, pending_if)
+          }
           parse_body(remaining, context, [n, ..acc], new_pending)
         }
         None -> parse_body(remaining, context, acc, new_pending)
@@ -784,7 +812,10 @@ fn parse_body(
       )
       case node {
         Some(n) -> {
-          let acc = flush_pending_if(acc, pending_if)
+          let acc = case new_pending {
+            Some(_) -> acc
+            None -> flush_pending_if(acc, pending_if)
+          }
           parse_body(remaining, context, [n, ..acc], new_pending)
         }
         None -> parse_body(remaining, context, acc, new_pending)

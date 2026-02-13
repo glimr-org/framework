@@ -1091,3 +1091,36 @@ pub fn pipeline_lm_if_chain_with_complex_expressions_test() {
   )
   |> should.be_true
 }
+
+pub fn two_separate_l_if_blocks_both_preserved_test() {
+  // Two independent l-if blocks (not an if/else chain) must produce
+  // two separate IfNodes. The first one must not be silently dropped
+  // when the second l-if starts a new pending chain.
+  let template =
+    "@props(items: List(String))
+<ul l-if=\"items != []\">
+  <li l-for=\"item in items\">{{ item }}</li>
+</ul>
+<p l-if=\"items == []\">No items</p>"
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+
+  // Should produce TWO IfNodes, not one.
+  // Whitespace between them is skipped (pending_if active),
+  // so they appear as adjacent nodes.
+  case parsed.nodes {
+    [parser.IfNode(branches1), parser.IfNode(branches2)] -> {
+      // First IfNode: items != []
+      case branches1 {
+        [#(Some("items != []"), _, _)] -> Nil
+        _ -> panic as "First IfNode should have condition 'items != []'"
+      }
+      // Second IfNode: items == []
+      case branches2 {
+        [#(Some("items == []"), _, _)] -> Nil
+        _ -> panic as "Second IfNode should have condition 'items == []'"
+      }
+    }
+    _ -> panic as "Expected two separate IfNodes"
+  }
+}
