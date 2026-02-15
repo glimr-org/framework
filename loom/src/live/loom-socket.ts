@@ -65,10 +65,17 @@ export class LoomSocket {
 
   /**
    * Registers a callback invoked after a successful reconnect.
-   * Components use this to re-send their join messages.
+   * Components use this to re-send their join messages. Returns
+   * an unsubscribe function that removes the callback — call it
+   * in destroy() to prevent stale callbacks from firing after
+   * the component is torn down.
    */
-  onReconnect(callback: () => void): void {
+  onReconnect(callback: () => void): () => void {
     this.reconnectCallbacks.push(callback);
+    return () => {
+      const idx = this.reconnectCallbacks.indexOf(callback);
+      if (idx !== -1) this.reconnectCallbacks.splice(idx, 1);
+    };
   }
 
   /**
@@ -135,7 +142,11 @@ export class LoomSocket {
    */
   private routeMessage(msg: ServerMessage): void {
     if (msg.type === "redirect") {
-      window.location.href = msg.url!;
+      if (window.Loom?.nav) {
+        window.Loom.nav.navigate(msg.url!);
+      } else {
+        window.location.href = msg.url!;
+      }
       return;
     }
 

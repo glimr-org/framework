@@ -17,8 +17,10 @@
 import { CONFIG } from "@/config";
 import { LoomSocket } from "@/live/loom-socket";
 import { LoomLive } from "@/live/loom-live";
+import { LoomNav } from "@/live/loom-nav";
 
 let sharedSocket: LoomSocket | null = null;
+let activeLiveInstances: LoomLive[] = [];
 
 /**
  * Multiple live containers can exist on the same page, each
@@ -44,12 +46,44 @@ const init = () => {
         return;
       }
 
-      container._loomInstance = new LoomLive(container, sharedSocket!);
+      const instance = new LoomLive(container, sharedSocket!);
+      container._loomInstance = instance;
+      activeLiveInstances.push(instance);
     },
   );
 
   console.log(`[Loom] Initialized ${containers.length} live component(s)`);
 };
+
+/**
+ * Destroys all active LoomLive instances and clears the
+ * tracking array. Called by LoomNav before a DOM swap so each
+ * component sends its "leave" message to the server.
+ */
+const destroyLiveComponents = () => {
+  activeLiveInstances.forEach((instance) => instance.destroy());
+  activeLiveInstances = [];
+
+  document
+    .querySelectorAll<HTMLElement & { _loomInstance?: LoomLive }>(
+      "[data-l-live]",
+    )
+    .forEach((container) => {
+      delete container._loomInstance;
+    });
+};
+
+/**
+ * Scans for new [data-l-live] containers and initializes them.
+ * Called by LoomNav after a DOM swap to bring up live components
+ * on the new page.
+ */
+const initLiveComponents = () => {
+  init();
+};
+
+const nav = new LoomNav(destroyLiveComponents, initLiveComponents);
+nav.enable();
 
 init();
 
@@ -69,8 +103,11 @@ declare global {
       reinit: typeof init;
       LoomLive: typeof LoomLive;
       LoomSocket: typeof LoomSocket;
+      LoomNav: typeof LoomNav;
       CONFIG: typeof CONFIG;
       socket: LoomSocket | null;
+      nav: LoomNav | null;
+      navigate: (url: string) => Promise<void>;
     };
   }
 }
@@ -80,8 +117,13 @@ window.Loom = {
   reinit: init,
   LoomLive,
   LoomSocket,
+  LoomNav,
   CONFIG,
   get socket() {
     return sharedSocket;
   },
+  get nav() {
+    return nav;
+  },
+  navigate: (url: string) => nav.navigate(url),
 };

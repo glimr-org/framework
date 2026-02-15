@@ -83,6 +83,30 @@ export interface Modifiers {
 }
 
 /**
+ * Cached page data from a prefetch or navigation fetch. Stores
+ * the parsed body HTML, document title, and head elements so the
+ * DOM can be swapped without re-fetching.
+ */
+export interface NavCacheEntry {
+  html: string;
+  title: string;
+  headMeta: string[];
+  headLinks: string[];
+  headStyles: string[];
+  resolvedUrl?: string;
+  timestamp: number;
+}
+
+/**
+ * Stored in history.state so popstate can identify Loom-managed
+ * entries and restore the correct scroll position.
+ */
+export interface NavHistoryState {
+  loomNavId: string;
+  url: string;
+}
+
+/**
  * morphdom replaces DOM nodes during patching, destroying the
  * browser's focus and cursor position. Capturing this state
  * before a patch and restoring it after lets the user keep

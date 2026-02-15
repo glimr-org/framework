@@ -11,6 +11,9 @@ export const CONFIG = {
   reconnectInterval: 1000,
   maxReconnectAttempts: 10,
   defaultDebounce: 150,
+  navPrefetchDelay: 65,
+  navCacheTTL: 30_000,
+  navCacheMaxEntries: 20,
 };
 
 /**

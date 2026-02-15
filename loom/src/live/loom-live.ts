@@ -56,6 +56,7 @@ export class LoomLive {
   private statics: any | null = null;
   private dynamics: any[] | null = null;
   private loadingElements = new Map<HTMLElement, LoadingState>();
+  private unsubReconnect: () => void;
 
   constructor(container: HTMLElement, loomSocket: LoomSocket) {
     this.container = container;
@@ -65,7 +66,7 @@ export class LoomLive {
     this.id = loomSocket.allocateId();
 
     loomSocket.register(this.id, (msg) => this.handleMessage(msg));
-    loomSocket.onReconnect(() => this.rejoin());
+    this.unsubReconnect = loomSocket.onReconnect(() => this.rejoin());
 
     this.sendJoin();
     this.attachEventListeners();
@@ -472,6 +473,7 @@ export class LoomLive {
    * e.g. during SPA navigation.
    */
   destroy(): void {
+    this.unsubReconnect();
     this.loomSocket.unregister(this.id);
     this.initialized = false;
   }
