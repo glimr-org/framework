@@ -721,7 +721,10 @@ pub fn generate_component_with_expr_attr_test() {
   // Create component props map with "value" as a known prop for "input" component
   let component_props =
     dict.from_list([
-      #("input", generator.ComponentData(props: [#("value", "String")], is_live: False)),
+      #(
+        "input",
+        generator.ComponentData(props: [#("value", "String")], is_live: False),
+      ),
     ])
   let result =
     generator.generate(tmpl, "form", False, component_props, dict.new())
@@ -739,7 +742,10 @@ pub fn generate_component_string_attr_as_prop_test() {
     template([ComponentNode("card", [StringAttr("title", "Welcome")], [])])
   let component_props =
     dict.from_list([
-      #("card", generator.ComponentData(props: [#("title", "String")], is_live: False)),
+      #(
+        "card",
+        generator.ComponentData(props: [#("title", "String")], is_live: False),
+      ),
     ])
   let result =
     generator.generate(tmpl, "page", False, component_props, dict.new())
@@ -756,7 +762,10 @@ pub fn generate_component_string_attr_not_prop_stays_as_attribute_test() {
     template([ComponentNode("card", [StringAttr("class", "card")], [])])
   let component_props =
     dict.from_list([
-      #("card", generator.ComponentData(props: [#("title", "String")], is_live: False)),
+      #(
+        "card",
+        generator.ComponentData(props: [#("title", "String")], is_live: False),
+      ),
     ])
   let result =
     generator.generate(tmpl, "page", False, component_props, dict.new())

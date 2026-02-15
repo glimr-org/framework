@@ -139,8 +139,7 @@ pub fn handler_id_test() {
 // ------------------------------------------------------------- Error Tests
 
 pub fn side_effect_expression_test() {
-  let assert Ok(handler) =
-    handler_parser.parse("click", [], "count + 1", 1)
+  let assert Ok(handler) = handler_parser.parse("click", [], "count + 1", 1)
 
   handler.targets |> should.equal([])
   handler.expression |> should.equal("count + 1")

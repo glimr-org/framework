@@ -140,9 +140,7 @@ fn on_init(
 /// stopped to free their resources.
 ///
 fn on_close(state: WsState) -> Nil {
-  dict.each(state.actors, fn(_id, actor) {
-    process.send(actor, loom.Stop)
-  })
+  dict.each(state.actors, fn(_id, actor) { process.send(actor, loom.Stop) })
 }
 
 /// Central dispatch for all WebSocket traffic. Client text
@@ -181,11 +179,7 @@ fn handle_message(
         loom.SendPatch(id, diff) -> {
           send_raw_json(
             conn,
-            "{\"type\":\"patch\",\"id\":\""
-              <> id
-              <> "\",\"d\":"
-              <> diff
-              <> "}",
+            "{\"type\":\"patch\",\"id\":\"" <> id <> "\",\"d\":" <> diff <> "}",
           )
           mist.continue(state)
         }

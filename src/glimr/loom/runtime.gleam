@@ -16,8 +16,9 @@ import gleam/int
 import gleam/json
 import gleam/list
 import gleam/string
-import glimr/loom/loom.{type Dynamic, type LiveTree, DynList, DynString, DynTree,
-  LiveTree}
+import glimr/loom/loom.{
+  type Dynamic, type LiveTree, DynList, DynString, DynTree, LiveTree,
+}
 import houdini
 
 // ------------------------------------------------------------- Public Types
@@ -351,8 +352,7 @@ fn flatten_dynamic(dyn: Dynamic) -> String {
   case dyn {
     DynString(s) -> s
     DynTree(tree) -> flatten_tree(tree)
-    DynList(trees) ->
-      list.map(trees, flatten_tree) |> string.join("")
+    DynList(trees) -> list.map(trees, flatten_tree) |> string.join("")
   }
 }
 
@@ -366,9 +366,10 @@ pub fn tree_to_json(tree: LiveTree) -> String {
 fn tree_to_json_value(tree: LiveTree) -> json.Json {
   json.object([
     #("s", json.array(tree.statics, json.string)),
-    #("d", json.preprocessed_array(
-      list.map(tree.dynamics, dynamic_to_json_value),
-    )),
+    #(
+      "d",
+      json.preprocessed_array(list.map(tree.dynamics, dynamic_to_json_value)),
+    ),
   ])
 }
 
@@ -405,11 +406,11 @@ fn diff_trees_to_json(old: LiveTree, new: LiveTree) -> String {
   case diff_pairs {
     [] -> "{}"
     _ ->
-      json.to_string(json.object(
-        list.map(diff_pairs, fn(pair) {
-          #(int.to_string(pair.0), pair.1)
-        }),
-      ))
+      json.to_string(
+        json.object(
+          list.map(diff_pairs, fn(pair) { #(int.to_string(pair.0), pair.1) }),
+        ),
+      )
   }
 }
 
@@ -430,19 +431,14 @@ fn diff_dynamics(
     }
     // Length mismatch — send all new dynamics
     _, _ -> {
-      list.index_map(new, fn(d, i) {
-        #(i, dynamic_to_json_value(d))
-      })
+      list.index_map(new, fn(d, i) { #(i, dynamic_to_json_value(d)) })
     }
   }
 }
 
 /// Returns Ok(json) if the dynamic changed, Error(Nil) if same.
 ///
-fn diff_single_dynamic(
-  old: Dynamic,
-  new: Dynamic,
-) -> Result(json.Json, Nil) {
+fn diff_single_dynamic(old: Dynamic, new: Dynamic) -> Result(json.Json, Nil) {
   case old, new {
     DynString(a), DynString(b) ->
       case a == b {
@@ -460,13 +456,18 @@ fn diff_single_dynamic(
           case inner_diff {
             [] -> Error(Nil)
             _ ->
-              Ok(json.object([
-                #("d", json.object(
-                  list.map(inner_diff, fn(pair) {
-                    #(int.to_string(pair.0), pair.1)
-                  }),
-                )),
-              ]))
+              Ok(
+                json.object([
+                  #(
+                    "d",
+                    json.object(
+                      list.map(inner_diff, fn(pair) {
+                        #(int.to_string(pair.0), pair.1)
+                      }),
+                    ),
+                  ),
+                ]),
+              )
           }
         }
       }
@@ -475,21 +476,20 @@ fn diff_single_dynamic(
       case list.length(old_trees) == list.length(new_trees) {
         False ->
           // Length changed, send whole list
-          Ok(json.preprocessed_array(
-            list.map(new_trees, tree_to_json_value),
-          ))
+          Ok(json.preprocessed_array(list.map(new_trees, tree_to_json_value)))
         True -> {
           // Same length, diff per item
-          let item_diffs =
-            diff_list_items(old_trees, new_trees, 0, [])
+          let item_diffs = diff_list_items(old_trees, new_trees, 0, [])
           case item_diffs {
             [] -> Error(Nil)
             _ ->
-              Ok(json.object(
-                list.map(item_diffs, fn(pair) {
-                  #(int.to_string(pair.0), pair.1)
-                }),
-              ))
+              Ok(
+                json.object(
+                  list.map(item_diffs, fn(pair) {
+                    #(int.to_string(pair.0), pair.1)
+                  }),
+                ),
+              )
           }
         }
       }
@@ -516,13 +516,19 @@ fn diff_list_items(
           case inner_diff {
             [] -> acc
             _ -> [
-              #(index, json.object([
-                #("d", json.object(
-                  list.map(inner_diff, fn(pair) {
-                    #(int.to_string(pair.0), pair.1)
-                  }),
-                )),
-              ])),
+              #(
+                index,
+                json.object([
+                  #(
+                    "d",
+                    json.object(
+                      list.map(inner_diff, fn(pair) {
+                        #(int.to_string(pair.0), pair.1)
+                      }),
+                    ),
+                  ),
+                ]),
+              ),
               ..acc
             ]
           }
@@ -566,10 +572,7 @@ fn dynamic_decoder() -> decode.Decoder(Dynamic) {
 
 /// Like append_each but returns a DynList for tree mode.
 ///
-pub fn map_each(
-  items: List(item),
-  render_fn: fn(item) -> LiveTree,
-) -> Dynamic {
+pub fn map_each(items: List(item), render_fn: fn(item) -> LiveTree) -> Dynamic {
   DynList(list.map(items, render_fn))
 }
 
@@ -580,20 +583,22 @@ pub fn map_each_with_loop(
   render_fn: fn(item, Loop) -> LiveTree,
 ) -> Dynamic {
   let count = list.length(items)
-  DynList(list.index_map(items, fn(item, index) {
-    let loop =
-      Loop(
-        index: index,
-        iteration: index + 1,
-        first: index == 0,
-        last: index == count - 1,
-        even: index % 2 == 0,
-        odd: index % 2 != 0,
-        count: count,
-        remaining: count - index - 1,
-      )
-    render_fn(item, loop)
-  }))
+  DynList(
+    list.index_map(items, fn(item, index) {
+      let loop =
+        Loop(
+          index: index,
+          iteration: index + 1,
+          first: index == 0,
+          last: index == count - 1,
+          even: index % 2 == 0,
+          odd: index % 2 != 0,
+          count: count,
+          remaining: count - index - 1,
+        )
+      render_fn(item, loop)
+    }),
+  )
 }
 
 // ------------------------------------------------------------- Private Functions

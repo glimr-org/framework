@@ -18,7 +18,8 @@ fn test_html() -> String {
 
 pub fn inject_live_wrapper_emits_data_l_token_test() {
   let assert Ok(_) = env.set("APP_KEY", "test-secret-key")
-  let result = runtime.inject_live_wrapper(test_html(), "counter", "{\"count\":0}")
+  let result =
+    runtime.inject_live_wrapper(test_html(), "counter", "{\"count\":0}")
 
   string.contains(result, "data-l-token=\"")
   |> should.be_true
@@ -34,7 +35,8 @@ pub fn inject_live_wrapper_token_is_verifiable_test() {
     runtime.inject_live_wrapper(test_html(), "counter", "{\"count\":0}")
 
   // Extract the token from data-l-token="..."
-  let assert Ok(#(_, after_token)) = string.split_once(result, "data-l-token=\"")
+  let assert Ok(#(_, after_token)) =
+    string.split_once(result, "data-l-token=\"")
   let assert Ok(#(token, _)) = string.split_once(after_token, "\"")
 
   // Verify the token with the same secret
@@ -49,10 +51,10 @@ pub fn inject_live_wrapper_token_is_verifiable_test() {
 pub fn inject_live_wrapper_token_binds_module_test() {
   let secret = "test-secret-key"
   let assert Ok(_) = env.set("APP_KEY", secret)
-  let result =
-    runtime.inject_live_wrapper(test_html(), "my_module", "{}")
+  let result = runtime.inject_live_wrapper(test_html(), "my_module", "{}")
 
-  let assert Ok(#(_, after_token)) = string.split_once(result, "data-l-token=\"")
+  let assert Ok(#(_, after_token)) =
+    string.split_once(result, "data-l-token=\"")
   let assert Ok(#(token, _)) = string.split_once(after_token, "\"")
 
   let assert Ok(payload_bits) =
@@ -69,7 +71,8 @@ pub fn inject_live_wrapper_token_rejected_with_wrong_key_test() {
   let result =
     runtime.inject_live_wrapper(test_html(), "counter", "{\"count\":0}")
 
-  let assert Ok(#(_, after_token)) = string.split_once(result, "data-l-token=\"")
+  let assert Ok(#(_, after_token)) =
+    string.split_once(result, "data-l-token=\"")
   let assert Ok(#(token, _)) = string.split_once(after_token, "\"")
 
   // Verification with wrong key should fail
@@ -239,17 +242,18 @@ pub fn style_helper_mixed_static_and_conditional_test() {
 // ------------------------------------------------------------- flatten_tree Tests
 
 pub fn flatten_tree_simple_test() {
-  let tree = LiveTree(statics: ["<p>Count: ", "</p>"], dynamics: [DynString("42")])
+  let tree =
+    LiveTree(statics: ["<p>Count: ", "</p>"], dynamics: [DynString("42")])
   runtime.flatten_tree(tree)
   |> should.equal("<p>Count: 42</p>")
 }
 
 pub fn flatten_tree_multiple_dynamics_test() {
   let tree =
-    LiveTree(
-      statics: ["<p>", " and ", "</p>"],
-      dynamics: [DynString("hello"), DynString("world")],
-    )
+    LiveTree(statics: ["<p>", " and ", "</p>"], dynamics: [
+      DynString("hello"),
+      DynString("world"),
+    ])
   runtime.flatten_tree(tree)
   |> should.equal("<p>hello and world</p>")
 }
@@ -262,8 +266,7 @@ pub fn flatten_tree_no_dynamics_test() {
 
 pub fn flatten_tree_nested_subtree_test() {
   let inner = LiveTree(statics: ["<b>", "</b>"], dynamics: [DynString("bold")])
-  let tree =
-    LiveTree(statics: ["<p>", "</p>"], dynamics: [DynTree(inner)])
+  let tree = LiveTree(statics: ["<p>", "</p>"], dynamics: [DynTree(inner)])
   runtime.flatten_tree(tree)
   |> should.equal("<p><b>bold</b></p>")
 }
@@ -273,8 +276,7 @@ pub fn flatten_tree_list_dynamics_test() {
     LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("a")]),
     LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("b")]),
   ]
-  let tree =
-    LiveTree(statics: ["<ul>", "</ul>"], dynamics: [DynList(items)])
+  let tree = LiveTree(statics: ["<ul>", "</ul>"], dynamics: [DynList(items)])
   runtime.flatten_tree(tree)
   |> should.equal("<ul><li>a</li><li>b</li></ul>")
 }
@@ -285,19 +287,19 @@ pub fn tree_to_json_simple_test() {
   let tree = LiveTree(statics: ["<p>", "</p>"], dynamics: [DynString("42")])
   let result = runtime.tree_to_json(tree)
   // Parse and verify structure
-  let assert Ok(parsed) = json.parse(result, {
-    use s <- decode.field("s", decode.list(decode.string))
-    use d <- decode.field("d", decode.list(decode.string))
-    decode.success(#(s, d))
-  })
+  let assert Ok(parsed) =
+    json.parse(result, {
+      use s <- decode.field("s", decode.list(decode.string))
+      use d <- decode.field("d", decode.list(decode.string))
+      decode.success(#(s, d))
+    })
   parsed.0 |> should.equal(["<p>", "</p>"])
   parsed.1 |> should.equal(["42"])
 }
 
 pub fn tree_to_json_nested_test() {
   let inner = LiveTree(statics: ["<b>", "</b>"], dynamics: [DynString("x")])
-  let tree =
-    LiveTree(statics: ["<p>", "</p>"], dynamics: [DynTree(inner)])
+  let tree = LiveTree(statics: ["<p>", "</p>"], dynamics: [DynTree(inner)])
   let result = runtime.tree_to_json(tree)
   // Should contain nested object with s and d keys
   string.contains(result, "\"s\"")
@@ -318,7 +320,8 @@ pub fn diff_tree_json_no_changes_test() {
 pub fn diff_tree_json_single_value_changed_test() {
   let old = LiveTree(statics: ["<p>", "</p>"], dynamics: [DynString("0")])
   let new = LiveTree(statics: ["<p>", "</p>"], dynamics: [DynString("1")])
-  let diff = runtime.diff_tree_json(runtime.tree_to_json(old), runtime.tree_to_json(new))
+  let diff =
+    runtime.diff_tree_json(runtime.tree_to_json(old), runtime.tree_to_json(new))
   // Diff should contain index "0" with value "1"
   string.contains(diff, "\"0\"")
   |> should.be_true
@@ -328,16 +331,17 @@ pub fn diff_tree_json_single_value_changed_test() {
 
 pub fn diff_tree_json_multiple_values_only_changed_test() {
   let old =
-    LiveTree(
-      statics: ["<p>", " ", "</p>"],
-      dynamics: [DynString("a"), DynString("b")],
-    )
+    LiveTree(statics: ["<p>", " ", "</p>"], dynamics: [
+      DynString("a"),
+      DynString("b"),
+    ])
   let new =
-    LiveTree(
-      statics: ["<p>", " ", "</p>"],
-      dynamics: [DynString("a"), DynString("c")],
-    )
-  let diff = runtime.diff_tree_json(runtime.tree_to_json(old), runtime.tree_to_json(new))
+    LiveTree(statics: ["<p>", " ", "</p>"], dynamics: [
+      DynString("a"),
+      DynString("c"),
+    ])
+  let diff =
+    runtime.diff_tree_json(runtime.tree_to_json(old), runtime.tree_to_json(new))
   // Only index "1" should be in the diff (index "0" unchanged)
   string.contains(diff, "\"1\"")
   |> should.be_true
@@ -347,20 +351,15 @@ pub fn diff_tree_json_multiple_values_only_changed_test() {
 
 pub fn diff_tree_json_branch_flip_sends_full_subtree_test() {
   let old =
-    LiveTree(
-      statics: ["", ""],
-      dynamics: [
-        DynTree(LiveTree(statics: ["<p>yes</p>"], dynamics: [])),
-      ],
-    )
+    LiveTree(statics: ["", ""], dynamics: [
+      DynTree(LiveTree(statics: ["<p>yes</p>"], dynamics: [])),
+    ])
   let new =
-    LiveTree(
-      statics: ["", ""],
-      dynamics: [
-        DynTree(LiveTree(statics: ["<p>no</p>"], dynamics: [])),
-      ],
-    )
-  let diff = runtime.diff_tree_json(runtime.tree_to_json(old), runtime.tree_to_json(new))
+    LiveTree(statics: ["", ""], dynamics: [
+      DynTree(LiveTree(statics: ["<p>no</p>"], dynamics: [])),
+    ])
+  let diff =
+    runtime.diff_tree_json(runtime.tree_to_json(old), runtime.tree_to_json(new))
   // Full subtree with "s" key should be in diff
   string.contains(diff, "\"s\"")
   |> should.be_true
@@ -370,25 +369,20 @@ pub fn diff_tree_json_branch_flip_sends_full_subtree_test() {
 
 pub fn diff_tree_json_list_length_change_sends_full_list_test() {
   let old =
-    LiveTree(
-      statics: ["<ul>", "</ul>"],
-      dynamics: [
-        DynList([
-          LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("a")]),
-        ]),
-      ],
-    )
+    LiveTree(statics: ["<ul>", "</ul>"], dynamics: [
+      DynList([
+        LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("a")]),
+      ]),
+    ])
   let new =
-    LiveTree(
-      statics: ["<ul>", "</ul>"],
-      dynamics: [
-        DynList([
-          LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("a")]),
-          LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("b")]),
-        ]),
-      ],
-    )
-  let diff = runtime.diff_tree_json(runtime.tree_to_json(old), runtime.tree_to_json(new))
+    LiveTree(statics: ["<ul>", "</ul>"], dynamics: [
+      DynList([
+        LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("a")]),
+        LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("b")]),
+      ]),
+    ])
+  let diff =
+    runtime.diff_tree_json(runtime.tree_to_json(old), runtime.tree_to_json(new))
   // Should contain the full list (array)
   diff |> should.not_equal("{}")
   string.contains(diff, "\"0\"")
@@ -397,26 +391,21 @@ pub fn diff_tree_json_list_length_change_sends_full_list_test() {
 
 pub fn diff_tree_json_same_length_list_per_item_diff_test() {
   let old =
-    LiveTree(
-      statics: ["<ul>", "</ul>"],
-      dynamics: [
-        DynList([
-          LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("a")]),
-          LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("b")]),
-        ]),
-      ],
-    )
+    LiveTree(statics: ["<ul>", "</ul>"], dynamics: [
+      DynList([
+        LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("a")]),
+        LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("b")]),
+      ]),
+    ])
   let new =
-    LiveTree(
-      statics: ["<ul>", "</ul>"],
-      dynamics: [
-        DynList([
-          LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("a")]),
-          LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("c")]),
-        ]),
-      ],
-    )
-  let diff = runtime.diff_tree_json(runtime.tree_to_json(old), runtime.tree_to_json(new))
+    LiveTree(statics: ["<ul>", "</ul>"], dynamics: [
+      DynList([
+        LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("a")]),
+        LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("c")]),
+      ]),
+    ])
+  let diff =
+    runtime.diff_tree_json(runtime.tree_to_json(old), runtime.tree_to_json(new))
   // Only item 1 changed, item 0 unchanged
   diff |> should.not_equal("{}")
   string.contains(diff, "\"c\"")
@@ -426,9 +415,10 @@ pub fn diff_tree_json_same_length_list_per_item_diff_test() {
 // ------------------------------------------------------------- map_each Tests
 
 pub fn map_each_returns_dyn_list_test() {
-  let result = runtime.map_each(["a", "b", "c"], fn(item) {
-    LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString(item)])
-  })
+  let result =
+    runtime.map_each(["a", "b", "c"], fn(item) {
+      LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString(item)])
+    })
   case result {
     DynList(trees) -> {
       let html =
@@ -442,9 +432,10 @@ pub fn map_each_returns_dyn_list_test() {
 }
 
 pub fn map_each_empty_list_test() {
-  let result = runtime.map_each([], fn(_item: String) {
-    LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("x")])
-  })
+  let result =
+    runtime.map_each([], fn(_item: String) {
+      LiveTree(statics: ["<li>", "</li>"], dynamics: [DynString("x")])
+    })
   case result {
     DynList(trees) -> list.length(trees) |> should.equal(0)
     _ -> should.fail()
@@ -452,13 +443,14 @@ pub fn map_each_empty_list_test() {
 }
 
 pub fn map_each_with_loop_test() {
-  let result = runtime.map_each_with_loop(["x", "y"], fn(item, loop) {
-    let idx = int.to_string(loop.index)
-    LiveTree(
-      statics: ["<li>", ": ", "</li>"],
-      dynamics: [DynString(idx), DynString(item)],
-    )
-  })
+  let result =
+    runtime.map_each_with_loop(["x", "y"], fn(item, loop) {
+      let idx = int.to_string(loop.index)
+      LiveTree(statics: ["<li>", ": ", "</li>"], dynamics: [
+        DynString(idx),
+        DynString(item),
+      ])
+    })
   case result {
     DynList(trees) -> {
       let html =

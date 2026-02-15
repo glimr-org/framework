@@ -61,7 +61,9 @@ pub fn start(
   props_json: String,
 ) -> Result(Subject(SocketMessage), actor.StartError) {
   // Render initial tree and send it to the client
-  let prev_tree_json = case live_dispatch.call_render_tree_json(module, props_json) {
+  let prev_tree_json = case
+    live_dispatch.call_render_tree_json(module, props_json)
+  {
     Ok(tree_json) -> {
       process.send(reply_to, SendTrees(id, tree_json))
       tree_json
@@ -127,18 +129,21 @@ fn handle_message(
           // even when the diff is empty
           let diff = runtime.diff_tree_json(state.prev_tree_json, new_tree_json)
           process.send(state.reply_to, SendPatch(state.id, diff))
-          actor.continue(LiveSocketState(
-            ..state,
-            props_json: new_props_json,
-            prev_tree_json: new_tree_json,
-          ))
+          actor.continue(
+            LiveSocketState(
+              ..state,
+              props_json: new_props_json,
+              prev_tree_json: new_tree_json,
+            ),
+          )
         }
 
         Error(_) -> actor.continue(state)
       }
     }
 
-    SendTrees(_, _) | SendPatch(_, _) | loom.SendRedirect(_) -> actor.continue(state)
+    SendTrees(_, _) | SendPatch(_, _) | loom.SendRedirect(_) ->
+      actor.continue(state)
     Stop -> actor.stop()
   }
 }

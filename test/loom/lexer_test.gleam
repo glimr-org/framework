@@ -81,16 +81,14 @@ pub fn tokenize_escaped_braces_with_text_test() {
 }
 
 pub fn tokenize_escaped_braces_next_to_real_variable_test() {
-  let assert Ok(tokens) =
-    lexer.tokenize("\\{{ escaped }} and {{ real }}")
+  let assert Ok(tokens) = lexer.tokenize("\\{{ escaped }} and {{ real }}")
 
   tokens
   |> should.equal([Text("{{ escaped }} and "), Variable("real", 1)])
 }
 
 pub fn tokenize_escaped_triple_braces_next_to_real_test() {
-  let assert Ok(tokens) =
-    lexer.tokenize("\\{{{ raw }}} and {{{ actual }}}")
+  let assert Ok(tokens) = lexer.tokenize("\\{{{ raw }}} and {{{ actual }}}")
 
   tokens
   |> should.equal([Text("{{{ raw }}} and "), RawVariable("actual", 1)])

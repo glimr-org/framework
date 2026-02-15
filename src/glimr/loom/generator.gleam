@@ -807,7 +807,10 @@ fn generate_render_json_function(
   <> "\n"
   <> "  case json.parse(props_json, decoder) {\n"
   <> "    Ok("
-  <> case template.props { [] -> "_" _ -> "props" }
+  <> case template.props {
+    [] -> "_"
+    _ -> "props"
+  }
   <> ") -> "
   <> render_call
   <> "\n"
@@ -912,10 +915,13 @@ fn generate_render_call(
   }
 
   case props {
-    [] -> "render(" <> case is_component {
-      True -> "attributes: []"
-      False -> ""
-    } <> ")"
+    [] ->
+      "render("
+      <> case is_component {
+        True -> "attributes: []"
+        False -> ""
+      }
+      <> ")"
     [single] -> "render(" <> single.0 <> ": props" <> attrs_arg <> ")"
     _ -> {
       // Destructure the tuple and pass as named args
@@ -1016,9 +1022,7 @@ fn type_to_encoder(name: String, gleam_type: String) -> String {
 /// consistent IDs across both the attribute emission and the 
 /// handle function's case branches.
 ///
-fn build_handler_lookup(
-  template: Template,
-) -> HandlerLookup {
+fn build_handler_lookup(template: Template) -> HandlerLookup {
   handler_parser.collect_handlers(template)
   |> result.unwrap([])
   |> list.fold(dict.new(), fn(acc, item) {
@@ -1412,8 +1416,7 @@ fn generate_if_branches_recursive(
       case is_root {
         True ->
           pad <> "<> {\n" <> pad <> "  \"\"\n" <> body_code <> pad <> "}\n"
-        False ->
-          pad <> "{\n" <> pad <> "  \"\"\n" <> body_code <> pad <> "}\n"
+        False -> pad <> "{\n" <> pad <> "  \"\"\n" <> body_code <> pad <> "}\n"
       }
     }
     [#(Some(cond), _line, body), ..rest] -> {
@@ -1794,8 +1797,7 @@ fn generate_node_code_with_loop_vars(
         False -> pad <> "<> " <> render_expr <> "\n"
         True -> {
           let component_module =
-            "compiled/loom/components/"
-            <> string.replace(name, ":", "/")
+            "compiled/loom/components/" <> string.replace(name, ":", "/")
           let props_json_expr =
             generate_component_props_json(name, attributes, component_data)
           pad
@@ -2257,7 +2259,13 @@ fn generate_element_attrs_code(
             }
             lexer.BoolAttr(name) -> {
               let normalized = normalize_attr_name(name)
-              Ok("runtime.Attribute(\"" <> normalized <> "\", \"" <> normalized <> "\")")
+              Ok(
+                "runtime.Attribute(\""
+                <> normalized
+                <> "\", \""
+                <> normalized
+                <> "\")",
+              )
             }
             lexer.ClassAttr(value) ->
               Ok(
@@ -2277,8 +2285,7 @@ fn generate_element_attrs_code(
                     <> cond
                     <> " { True -> \"\" False -> \"; display: none\" })",
                   )
-                None ->
-                  Ok("runtime.Attribute(\"style\", " <> base <> ")")
+                None -> Ok("runtime.Attribute(\"style\", " <> base <> ")")
               }
             }
             lexer.LmShow(condition, _) ->
@@ -2835,7 +2842,6 @@ fn escape_gleam_string(input: String) -> String {
   |> string.replace("\t", "\\t")
 }
 
-
 /// Component names like "ui:button" or "nav-bar" use characters 
 /// invalid in Gleam identifiers. The alias (e.g., 
 /// components_ui_button) provides a safe identifier for the 
@@ -3163,7 +3169,10 @@ fn generate_tree_json_function(template: Template) -> String {
   <> "\n"
   <> "  case json.parse(props_json, decoder) {\n"
   <> "    Ok("
-  <> case template.props { [] -> "_" _ -> "props" }
+  <> case template.props {
+    [] -> "_"
+    _ -> "props"
+  }
   <> ") -> "
   <> render_tree_call
   <> "\n"
@@ -3178,8 +3187,7 @@ fn generate_tree_json_function(template: Template) -> String {
 fn generate_render_tree_call(props: List(#(String, String))) -> String {
   case props {
     [] -> "runtime.tree_to_json(render_tree())"
-    [single] ->
-      "runtime.tree_to_json(render_tree(" <> single.0 <> ": props))"
+    [single] -> "runtime.tree_to_json(render_tree(" <> single.0 <> ": props))"
     _ -> {
       let pattern =
         "#(" <> string.join(list.map(props, fn(p) { p.0 }), ", ") <> ")"
@@ -3207,8 +3215,7 @@ fn extract_tree_content_nodes(nodes: List(Node)) -> List(Node) {
         parser.TextNode(_),
         parser.ComponentNode(name, _, children),
         parser.TextNode(_),
-      ]
-    -> {
+      ] -> {
       case string.contains(name, "layouts") {
         True -> {
           // Extract default slot children (non-SlotDefNode)
@@ -3341,10 +3348,7 @@ fn generate_node_tree(
       let converted_expr = convert_loop_var_expr_raw(expr, loop_vars)
       TreeAcc(
         current_static: "",
-        dynamics: [
-          "loom.DynString(" <> converted_expr <> ")",
-          ..acc.dynamics
-        ],
+        dynamics: ["loom.DynString(" <> converted_expr <> ")", ..acc.dynamics],
         statics: [acc.current_static, ..acc.statics],
       )
     }
@@ -3361,10 +3365,7 @@ fn generate_node_tree(
         )
       TreeAcc(
         current_static: "",
-        dynamics: [
-          "loom.DynTree(" <> tree_code <> ")",
-          ..acc.dynamics
-        ],
+        dynamics: ["loom.DynTree(" <> tree_code <> ")", ..acc.dynamics],
         statics: [acc.current_static, ..acc.statics],
       )
     }
@@ -3417,8 +3418,7 @@ fn generate_node_tree(
         False -> component_code
         True -> {
           let component_module =
-            "compiled/loom/components/"
-            <> string.replace(name, ":", "/")
+            "compiled/loom/components/" <> string.replace(name, ":", "/")
           let props_json_expr =
             generate_component_props_json(name, attributes, component_data)
           "runtime.live_component_wrapper("
@@ -3433,10 +3433,7 @@ fn generate_node_tree(
 
       TreeAcc(
         current_static: "",
-        dynamics: [
-          "loom.DynString(" <> wrapped_code <> ")",
-          ..acc.dynamics
-        ],
+        dynamics: ["loom.DynString(" <> wrapped_code <> ")", ..acc.dynamics],
         statics: [acc.current_static, ..acc.statics],
       )
     }
@@ -3466,9 +3463,8 @@ fn generate_node_tree(
       )
     }
 
-    parser.SlotNode(_, _)
-    | parser.SlotDefNode(_, _)
-    | parser.AttributesNode(_) -> acc
+    parser.SlotNode(_, _) | parser.SlotDefNode(_, _) | parser.AttributesNode(_) ->
+      acc
   }
 }
 
@@ -3531,9 +3527,7 @@ fn generate_if_tree_branches(
           handler_lookup,
         )
       let else_code = case rest {
-        [] ->
-          pad
-          <> "  False -> loom.LiveTree(statics: [\"\"], dynamics: [])\n"
+        [] -> pad <> "  False -> loom.LiveTree(statics: [\"\"], dynamics: [])\n"
         [#(None, _, else_body)] -> {
           let else_body_code =
             generate_tree_body(
@@ -3748,8 +3742,7 @@ fn generate_element_tree(
       // fragment; dynamic attrs (expressions, :class, :style) create
       // dynamic slots.
       let acc = TreeAcc(..acc, current_static: acc.current_static <> "<" <> tag)
-      let acc =
-        generate_element_attrs_tree(acc, attributes, handler_lookup)
+      let acc = generate_element_attrs_tree(acc, attributes, handler_lookup)
 
       case is_void_element(tag) {
         True -> TreeAcc(..acc, current_static: acc.current_static <> " />")
@@ -3768,7 +3761,10 @@ fn generate_element_tree(
                 handler_lookup,
               )
             })
-          TreeAcc(..acc, current_static: acc.current_static <> "</" <> tag <> ">")
+          TreeAcc(
+            ..acc,
+            current_static: acc.current_static <> "</" <> tag <> ">",
+          )
         }
       }
     }
@@ -3822,8 +3818,7 @@ fn generate_element_attrs_tree(
       lexer.LmOn(event, modifiers, handler, line) -> {
         case dict.get(handler_lookup, #(event, handler, line)) {
           Ok(handler_id) -> {
-            let base =
-              " data-l-" <> event <> "=\"" <> handler_id <> "\""
+            let base = " data-l-" <> event <> "=\"" <> handler_id <> "\""
             let mod_str =
               modifiers
               |> list.map(fn(m) {
@@ -3896,10 +3891,7 @@ fn generate_element_attrs_tree(
             let acc =
               TreeAcc(
                 ..acc,
-                current_static: acc.current_static
-                  <> " "
-                  <> name
-                  <> "=\"",
+                current_static: acc.current_static <> " " <> name <> "=\"",
               )
             TreeAcc(
               current_static: "\"",
@@ -3914,10 +3906,7 @@ fn generate_element_attrs_tree(
       }
       lexer.ClassAttr(value) -> {
         let acc =
-          TreeAcc(
-            ..acc,
-            current_static: acc.current_static <> " class=\"",
-          )
+          TreeAcc(..acc, current_static: acc.current_static <> " class=\"")
         TreeAcc(
           current_static: "\"",
           dynamics: [
@@ -3931,10 +3920,7 @@ fn generate_element_attrs_tree(
       }
       lexer.StyleAttr(value) -> {
         let acc =
-          TreeAcc(
-            ..acc,
-            current_static: acc.current_static <> " style=\"",
-          )
+          TreeAcc(..acc, current_static: acc.current_static <> " style=\"")
         let base =
           "runtime.escape(runtime.build_styles("
           <> transform_style_list(value)
@@ -3960,10 +3946,7 @@ fn generate_element_attrs_tree(
           True -> acc
           False -> {
             let acc =
-              TreeAcc(
-                ..acc,
-                current_static: acc.current_static <> " style=\"",
-              )
+              TreeAcc(..acc, current_static: acc.current_static <> " style=\"")
             TreeAcc(
               current_static: "\"",
               dynamics: [
