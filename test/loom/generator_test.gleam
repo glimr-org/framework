@@ -5,7 +5,7 @@ import gleam/string
 import gleeunit/should
 import glimr/loom/generator
 import glimr/loom/lexer.{
-  ClassAttr, ExprAttr, LmModel, LmOn, StringAttr, StyleAttr,
+  BoolAttr, ClassAttr, ExprAttr, LmModel, LmOn, StringAttr, StyleAttr,
 }
 import glimr/loom/parser.{
   type Node, type Template, AttributesNode, ComponentNode, EachNode, ElementNode,
@@ -2461,6 +2461,189 @@ pub fn generate_non_live_template_no_wrapper_test() {
 
   result.code
   |> string.contains("/loom.js")
+  |> should.be_false
+}
+
+// ------------------------------------------------------------- Attribute Normalization Integration Tests
+// These go through the full pipeline (tokenize → parse → generate)
+// to verify that l-* attributes on non-dynamic elements get
+// normalized to data-l-* in the final output.
+
+pub fn normalize_l_no_nav_bool_attr_full_pipeline_test() {
+  // l-no-nav on a plain <a> tag — element is NOT dynamic so the lexer
+  // emits it as raw text. The attribute must still be normalized.
+  let html = "<a href=\"/redirect\" l-no-nav>Redirect</a>"
+  let assert Ok(tokens) = lexer.tokenize(html)
+  let assert Ok(tmpl) = parser.parse(tokens)
+  let result = generate(tmpl, "page", False)
+
+  result.code
+  |> string.contains("data-l-no-nav")
+  |> should.be_true
+
+  result.code
+  |> string.contains("\" l-no-nav\"")
+  |> should.be_false
+}
+
+pub fn normalize_l_loading_string_attr_full_pipeline_test() {
+  // l-loading="save" on a plain <span> — not dynamic, emitted as text
+  let html = "<span l-loading=\"save\">Saving</span>"
+  let assert Ok(tokens) = lexer.tokenize(html)
+  let assert Ok(tmpl) = parser.parse(tokens)
+  let result = generate(tmpl, "page", False)
+
+  result.code
+  |> string.contains("data-l-loading")
+  |> should.be_true
+}
+
+pub fn normalize_leaves_regular_attrs_alone_full_pipeline_test() {
+  // Regular attributes like class and href must NOT be prefixed
+  let html = "<a href=\"/about\" class=\"link\">About</a>"
+  let assert Ok(tokens) = lexer.tokenize(html)
+  let assert Ok(tmpl) = parser.parse(tokens)
+  let result = generate(tmpl, "page", False)
+
+  result.code
+  |> string.contains("data-href")
+  |> should.be_false
+
+  result.code
+  |> string.contains("data-class")
+  |> should.be_false
+}
+
+// ------------------------------------------------------------- Attribute Normalization Tests
+
+pub fn generate_l_prefix_string_attr_normalized_test() {
+  // l-loading="save-btn" on a standard element should become data-l-loading
+  let result =
+    generate(
+      template([
+        ElementNode("span", [StringAttr("l-loading", "save-btn")], [
+          TextNode("Saving..."),
+        ]),
+      ]),
+      "norm",
+      False,
+    )
+
+  result.code
+  |> string.contains("data-l-loading")
+  |> should.be_true
+
+  // Should NOT have bare l-loading (without data- prefix)
+  result.code
+  |> string.contains("\"l-loading\"")
+  |> should.be_false
+}
+
+pub fn generate_l_prefix_bool_attr_normalized_test() {
+  // <span l-no-nav> should become data-l-no-nav
+  let result =
+    generate(
+      template([
+        ElementNode("span", [BoolAttr("l-no-nav")], [TextNode("Link")]),
+      ]),
+      "norm",
+      False,
+    )
+
+  result.code
+  |> string.contains("data-l-no-nav")
+  |> should.be_true
+
+  // Should NOT have bare l-no-nav
+  result.code
+  |> string.contains("\"l-no-nav\"")
+  |> should.be_false
+}
+
+pub fn generate_regular_attr_not_normalized_test() {
+  // class="btn" should NOT be prefixed with data-
+  let result =
+    generate(
+      template([
+        ElementNode("span", [StringAttr("class", "btn")], [TextNode("Click")]),
+      ]),
+      "norm",
+      False,
+    )
+
+  result.code
+  |> string.contains("\"class\"")
+  |> should.be_true
+
+  result.code
+  |> string.contains("data-class")
+  |> should.be_false
+}
+
+pub fn generate_data_l_prefix_not_double_normalized_test() {
+  // data-l-loading should NOT become data-data-l-loading
+  let result =
+    generate(
+      template([
+        ElementNode("span", [StringAttr("data-l-loading", "save")], []),
+      ]),
+      "norm",
+      False,
+    )
+
+  result.code
+  |> string.contains("data-l-loading")
+  |> should.be_true
+
+  result.code
+  |> string.contains("data-data-l-loading")
+  |> should.be_false
+}
+
+pub fn generate_live_l_prefix_string_attr_normalized_test() {
+  // l-loading on a live template element (tree path) should also be normalized
+  let tmpl =
+    live_template([#("count", "Int")], [
+      ElementNode(
+        "button",
+        [
+          LmOn("click", [], "count = count + 1", 1),
+          StringAttr("l-loading", "counter-btn"),
+        ],
+        [TextNode("+")],
+      ),
+    ])
+
+  let result = generate(tmpl, "counter", False)
+
+  result.code
+  |> string.contains("data-l-loading")
+  |> should.be_true
+
+  result.code
+  |> string.contains("\"l-loading\"")
+  |> should.be_false
+}
+
+pub fn generate_live_l_prefix_bool_attr_normalized_test() {
+  // l-no-nav on a live template element (tree path) should also be normalized
+  let tmpl =
+    live_template([#("count", "Int")], [
+      ElementNode(
+        "a",
+        [BoolAttr("l-no-nav"), LmOn("click", [], "count = count + 1", 1)],
+        [TextNode("Link")],
+      ),
+    ])
+
+  let result = generate(tmpl, "counter", False)
+
+  result.code
+  |> string.contains("data-l-no-nav")
+  |> should.be_true
+
+  result.code
+  |> string.contains("\"l-no-nav\"")
   |> should.be_false
 }
 

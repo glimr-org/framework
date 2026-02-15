@@ -378,10 +378,16 @@ fn try_parse_element(
           )
         }
 
-        // No l-* attributes - emit "<" as text
+        // Not dynamic — emit "<" as text and re-process the
+        // rest char-by-char. Normalize any l-* attribute names
+        // to data-l-* in the tag portion before re-feeding.
         False -> {
+          let consumed_len = string.length(input) - string.length(rest)
+          let tag_part = string.slice(input, 0, consumed_len)
+          let normalized = string.replace(tag_part, " l-", " data-l-")
+
           do_tokenize(
-            input,
+            normalized <> rest,
             position + 1,
             line,
             append_text(tokens, "<"),
