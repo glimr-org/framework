@@ -2240,7 +2240,7 @@ fn generate_element_attrs_code(
             lexer.StringAttr(name, value) ->
               Ok(
                 "runtime.Attribute(\""
-                <> name
+                <> normalize_attr_name(name)
                 <> "\", \""
                 <> escape_gleam_string(value)
                 <> "\")",
@@ -2255,8 +2255,10 @@ fn generate_element_attrs_code(
                   Ok("runtime.Attribute(\"" <> name <> "\", " <> value <> ")")
               }
             }
-            lexer.BoolAttr(name) ->
-              Ok("runtime.Attribute(\"" <> name <> "\", \"" <> name <> "\")")
+            lexer.BoolAttr(name) -> {
+              let normalized = normalize_attr_name(name)
+              Ok("runtime.Attribute(\"" <> normalized <> "\", \"" <> normalized <> "\")")
+            }
             lexer.ClassAttr(value) ->
               Ok(
                 "runtime.Attribute(\"class\", runtime.build_classes("
@@ -2329,6 +2331,19 @@ fn generate_element_attrs_code(
           <> "])\n"
       }
     }
+  }
+}
+
+/// Normalizes l-* pass-through attributes (like l-loading,
+/// l-no-nav) to their data-l-* equivalents so the compiled
+/// HTML is valid. Directive attributes (l-if, l-on:*, etc.)
+/// are already parsed into their own AST variants and never
+/// reach this function.
+///
+fn normalize_attr_name(name: String) -> String {
+  case string.starts_with(name, "l-") {
+    True -> "data-" <> name
+    False -> name
   }
 }
 
@@ -3794,13 +3809,16 @@ fn generate_element_attrs_tree(
           ..acc,
           current_static: acc.current_static
             <> " "
-            <> name
+            <> normalize_attr_name(name)
             <> "=\""
             <> value
             <> "\"",
         )
       lexer.BoolAttr(name) ->
-        TreeAcc(..acc, current_static: acc.current_static <> " " <> name)
+        TreeAcc(
+          ..acc,
+          current_static: acc.current_static <> " " <> normalize_attr_name(name),
+        )
       lexer.LmOn(event, modifiers, handler, line) -> {
         case dict.get(handler_lookup, #(event, handler, line)) {
           Ok(handler_id) -> {
