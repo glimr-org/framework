@@ -1064,8 +1064,12 @@ fn generate_path_cases_with_lines(
 
       // Map all lines of this case to the route path
       let new_mapping =
-        list.range(current_line, current_line + case_lines - 1)
-        |> list.fold(acc_mapping, fn(m, line) { dict.insert(m, line, path) })
+        int.range(
+          from: current_line,
+          to: current_line + case_lines,
+          with: acc_mapping,
+          run: fn(m, line) { dict.insert(m, line, path) },
+        )
 
       generate_path_cases_with_lines(
         rest,

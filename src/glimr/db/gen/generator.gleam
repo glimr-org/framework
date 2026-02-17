@@ -431,18 +431,22 @@ fn generate_query_function(
     _ ->
       ", "
       <> string.join(
-        list.map(list.range(1, param_count), fn(n) {
-          case list.find(param_types, fn(pt) { pt.0 == n }) {
-            Ok(#(_, col_name, col_type)) -> {
-              let gleam_type = codegen.gleam_type(col_type)
-              col_name <> " " <> col_name <> ": " <> gleam_type
-            }
-            Error(_) -> {
-              let name = "p" <> int.to_string(n)
-              name <> " " <> name <> ": String"
-            }
-          }
-        }),
+        int.range(from: 1, to: param_count + 1, with: [], run: fn(acc, n) {
+          [
+            case list.find(param_types, fn(pt) { pt.0 == n }) {
+              Ok(#(_, col_name, col_type)) -> {
+                let gleam_type = codegen.gleam_type(col_type)
+                col_name <> " " <> col_name <> ": " <> gleam_type
+              }
+              Error(_) -> {
+                let name = "p" <> int.to_string(n)
+                name <> " " <> name <> ": String"
+              }
+            },
+            ..acc
+          ]
+        })
+          |> list.reverse,
         ", ",
       )
   }
@@ -453,19 +457,23 @@ fn generate_query_function(
     _ ->
       "["
       <> string.join(
-        list.map(list.range(1, param_count), fn(n) {
-          case list.find(param_types, fn(pt) { pt.0 == n }) {
-            Ok(#(_, col_name, col_type)) -> {
-              let wrapper = native_wrapper(col_type, driver_type)
-              wrapper <> "(" <> col_name <> ")"
-            }
-            Error(_) ->
-              native_string_wrapper(driver_type)
-              <> "(p"
-              <> int.to_string(n)
-              <> ")"
-          }
-        }),
+        int.range(from: 1, to: param_count + 1, with: [], run: fn(acc, n) {
+          [
+            case list.find(param_types, fn(pt) { pt.0 == n }) {
+              Ok(#(_, col_name, col_type)) -> {
+                let wrapper = native_wrapper(col_type, driver_type)
+                wrapper <> "(" <> col_name <> ")"
+              }
+              Error(_) ->
+                native_string_wrapper(driver_type)
+                <> "(p"
+                <> int.to_string(n)
+                <> ")"
+            },
+            ..acc
+          ]
+        })
+          |> list.reverse,
         ", ",
       )
       <> "]"
@@ -477,15 +485,19 @@ fn generate_query_function(
     _ ->
       ", "
       <> string.join(
-        list.map(list.range(1, param_count), fn(n) {
-          case list.find(param_types, fn(pt) { pt.0 == n }) {
-            Ok(#(_, col_name, _)) -> col_name <> ": " <> col_name
-            Error(_) -> {
-              let name = "p" <> int.to_string(n)
-              name <> ": " <> name
-            }
-          }
-        }),
+        int.range(from: 1, to: param_count + 1, with: [], run: fn(acc, n) {
+          [
+            case list.find(param_types, fn(pt) { pt.0 == n }) {
+              Ok(#(_, col_name, _)) -> col_name <> ": " <> col_name
+              Error(_) -> {
+                let name = "p" <> int.to_string(n)
+                name <> ": " <> name
+              }
+            },
+            ..acc
+          ]
+        })
+          |> list.reverse,
         ", ",
       )
   }
@@ -651,16 +663,20 @@ fn generate_postgres_wc_query(
     _ ->
       "\n"
       <> string.join(
-        list.map(list.range(1, param_count), fn(n) {
-          case list.find(param_types, fn(pt) { pt.0 == n }) {
-            Ok(#(_, col_name, col_type)) -> {
-              let wrapper = pog_wrapper(col_type)
-              "    |> pog.parameter(" <> wrapper <> "(" <> col_name <> "))"
-            }
-            Error(_) ->
-              "    |> pog.parameter(pog.text(p" <> int.to_string(n) <> "))"
-          }
-        }),
+        int.range(from: 1, to: param_count + 1, with: [], run: fn(acc, n) {
+          [
+            case list.find(param_types, fn(pt) { pt.0 == n }) {
+              Ok(#(_, col_name, col_type)) -> {
+                let wrapper = pog_wrapper(col_type)
+                "    |> pog.parameter(" <> wrapper <> "(" <> col_name <> "))"
+              }
+              Error(_) ->
+                "    |> pog.parameter(pog.text(p" <> int.to_string(n) <> "))"
+            },
+            ..acc
+          ]
+        })
+          |> list.reverse,
         "\n",
       )
   }
@@ -733,18 +749,22 @@ fn generate_execute_function(
     _ ->
       ", "
       <> string.join(
-        list.map(list.range(1, param_count), fn(n) {
-          case list.find(param_types, fn(pt) { pt.0 == n }) {
-            Ok(#(_, col_name, col_type)) -> {
-              let gleam_type = codegen.gleam_type(col_type)
-              col_name <> " " <> col_name <> ": " <> gleam_type
-            }
-            Error(_) -> {
-              let name = "p" <> int.to_string(n)
-              name <> " " <> name <> ": String"
-            }
-          }
-        }),
+        int.range(from: 1, to: param_count + 1, with: [], run: fn(acc, n) {
+          [
+            case list.find(param_types, fn(pt) { pt.0 == n }) {
+              Ok(#(_, col_name, col_type)) -> {
+                let gleam_type = codegen.gleam_type(col_type)
+                col_name <> " " <> col_name <> ": " <> gleam_type
+              }
+              Error(_) -> {
+                let name = "p" <> int.to_string(n)
+                name <> " " <> name <> ": String"
+              }
+            },
+            ..acc
+          ]
+        })
+          |> list.reverse,
         ", ",
       )
   }
@@ -755,15 +775,19 @@ fn generate_execute_function(
     _ ->
       ", "
       <> string.join(
-        list.map(list.range(1, param_count), fn(n) {
-          case list.find(param_types, fn(pt) { pt.0 == n }) {
-            Ok(#(_, col_name, _)) -> col_name <> ": " <> col_name
-            Error(_) -> {
-              let name = "p" <> int.to_string(n)
-              name <> ": " <> name
-            }
-          }
-        }),
+        int.range(from: 1, to: param_count + 1, with: [], run: fn(acc, n) {
+          [
+            case list.find(param_types, fn(pt) { pt.0 == n }) {
+              Ok(#(_, col_name, _)) -> col_name <> ": " <> col_name
+              Error(_) -> {
+                let name = "p" <> int.to_string(n)
+                name <> ": " <> name
+              }
+            },
+            ..acc
+          ]
+        })
+          |> list.reverse,
         ", ",
       )
   }
@@ -839,15 +863,19 @@ fn generate_sqlite_wc_execute(
     _ ->
       "["
       <> string.join(
-        list.map(list.range(1, param_count), fn(n) {
-          case list.find(param_types, fn(pt) { pt.0 == n }) {
-            Ok(#(_, col_name, col_type)) -> {
-              let wrapper = native_wrapper(col_type, "sqlite")
-              wrapper <> "(" <> col_name <> ")"
-            }
-            Error(_) -> "sqlight.text(p" <> int.to_string(n) <> ")"
-          }
-        }),
+        int.range(from: 1, to: param_count + 1, with: [], run: fn(acc, n) {
+          [
+            case list.find(param_types, fn(pt) { pt.0 == n }) {
+              Ok(#(_, col_name, col_type)) -> {
+                let wrapper = native_wrapper(col_type, "sqlite")
+                wrapper <> "(" <> col_name <> ")"
+              }
+              Error(_) -> "sqlight.text(p" <> int.to_string(n) <> ")"
+            },
+            ..acc
+          ]
+        })
+          |> list.reverse,
         ", ",
       )
       <> "]"
@@ -885,16 +913,20 @@ fn generate_postgres_wc_execute(
     _ ->
       "\n"
       <> string.join(
-        list.map(list.range(1, param_count), fn(n) {
-          case list.find(param_types, fn(pt) { pt.0 == n }) {
-            Ok(#(_, col_name, col_type)) -> {
-              let wrapper = pog_wrapper(col_type)
-              "    |> pog.parameter(" <> wrapper <> "(" <> col_name <> "))"
-            }
-            Error(_) ->
-              "    |> pog.parameter(pog.text(p" <> int.to_string(n) <> "))"
-          }
-        }),
+        int.range(from: 1, to: param_count + 1, with: [], run: fn(acc, n) {
+          [
+            case list.find(param_types, fn(pt) { pt.0 == n }) {
+              Ok(#(_, col_name, col_type)) -> {
+                let wrapper = pog_wrapper(col_type)
+                "    |> pog.parameter(" <> wrapper <> "(" <> col_name <> "))"
+              }
+              Error(_) ->
+                "    |> pog.parameter(pog.text(p" <> int.to_string(n) <> "))"
+            },
+            ..acc
+          ]
+        })
+          |> list.reverse,
         "\n",
       )
   }
@@ -1107,3 +1139,4 @@ fn collapse_whitespace(sql: String) -> String {
     False -> collapse_whitespace(collapsed)
   }
 }
+
