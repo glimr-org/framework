@@ -1139,4 +1139,3 @@ fn collapse_whitespace(sql: String) -> String {
     False -> collapse_whitespace(collapsed)
   }
 }
-
