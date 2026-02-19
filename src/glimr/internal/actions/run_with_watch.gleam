@@ -34,8 +34,6 @@ type Port
 /// on which files changed.
 ///
 pub fn run(cfg: Config) -> Nil {
-  config.load_env()
-
   let app_port = config.app_port()
   let dev_proxy_port = config.dev_proxy_port()
 

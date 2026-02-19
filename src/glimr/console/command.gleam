@@ -21,6 +21,7 @@ import glimr/config/database
 import glimr/console/console
 import glimr/db/driver.{type Connection, type DriverType}
 import glimr/glimr
+import glimr/internal/config
 
 // ------------------------------------------------------------- Public types
 
@@ -211,6 +212,7 @@ pub fn get_option(parsed: Args, name: String) -> String {
 /// to the appropriate handler based on command type.
 ///
 pub fn run(cmd: Command) -> Nil {
+  config.load_env()
   let args = get_args()
 
   // If the args passed have help flags (--h, -h), then we can just

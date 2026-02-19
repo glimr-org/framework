@@ -50,6 +50,18 @@ pub fn to_with_normalization_test() {
   |> should.be_true()
 }
 
+pub fn to_with_normalization_home_test() {
+  let res = redirect.to("/")
+
+  res.status
+  |> should.equal(303)
+
+  // Check location header exists and was normalized
+  res.headers
+  |> list.contains(#("location", "/"))
+  |> should.be_true()
+}
+
 pub fn permanent_test() {
   let res = redirect.permanent("/success")
 

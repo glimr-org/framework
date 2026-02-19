@@ -63,8 +63,13 @@ pub fn back(req: Request) -> Response {
 /// when setting the location for your redirects.
 ///
 fn normalize_path(path: String) -> String {
-  case string.ends_with(path, "/") {
-    True -> string.drop_end(path, 1)
-    False -> path
+  case path == "/" {
+    True -> path
+    False -> {
+      case string.ends_with(path, "/") {
+        True -> string.drop_end(path, 1)
+        False -> path
+      }
+    }
   }
 }
