@@ -1,7 +1,9 @@
 import gleam/list
 import gleam/string
+import glimr/config/database
 import glimr/console/command.{type Args, type Command, Argument}
 import glimr/console/console
+import glimr/db/driver
 import glimr/filesystem/filesystem
 import glimr/utils/string as glimr_string
 
@@ -26,9 +28,19 @@ fn run(args: Args) -> Nil {
   let model_name_input = command.get_arg(args, "name")
   let connection = command.get_option(args, "database")
 
+  let connection_name = case connection {
+    "_default" -> {
+      case list.first(database.load()) {
+        Ok(conn) -> driver.connection_name(conn)
+        Error(_) -> "_default"
+      }
+    }
+    _ -> connection
+  }
+
   let model_name = string.lowercase(model_name_input)
   let table_name = glimr_string.pluralize(model_name)
-  let model_dir = "src/data/" <> connection <> "/models/" <> model_name
+  let model_dir = "src/data/" <> connection_name <> "/models/" <> model_name
   let queries_dir = model_dir <> "/queries"
 
   let assert Ok(dir_exists) = filesystem.directory_exists(model_dir)
