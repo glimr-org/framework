@@ -252,10 +252,11 @@ pub fn regenerate(session: Session) -> Nil {
 /// store is cached in persistent_term so middleware can access 
 /// it without passing it through every function.
 ///
-pub fn start_cookie() -> Nil {
+pub fn start_cookie() -> Session {
   let session = cookie_store.create()
-
   store.cache_store(session)
+
+  empty()
 }
 
 /// Starts a session for the current request. Reads the session

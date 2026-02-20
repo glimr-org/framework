@@ -9,6 +9,7 @@ import glimr/cache/driver
 import glimr/cache/file/pool.{type Pool}
 import glimr/config/cache
 import glimr/session/file_store
+import glimr/session/session.{type Session}
 import glimr/session/store
 
 // ------------------------------------------------------------- Public Functions
@@ -28,8 +29,9 @@ pub fn start(name: String) -> Pool {
 /// of the file cache pool's path. The store is cached in
 /// persistent_term for fast access.
 ///
-pub fn start_session(pool: Pool) -> Nil {
+pub fn start_session(pool: Pool) -> Session {
   let session = file_store.create(pool)
-
   store.cache_store(session)
+
+  session.empty()
 }
