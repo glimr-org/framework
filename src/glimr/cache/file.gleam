@@ -8,6 +8,8 @@
 import glimr/cache/driver
 import glimr/cache/file/pool.{type Pool}
 import glimr/config/cache
+import glimr/session/file_store
+import glimr/session/store
 
 // ------------------------------------------------------------- Public Functions
 
@@ -19,4 +21,15 @@ pub fn start(name: String) -> Pool {
   let stores = cache.load()
   let store = driver.find_by_name(name, stores)
   pool.start_pool(store)
+}
+
+/// Initializes the session store using the filesystem as the
+/// backend. Session files are stored in a sessions subdirectory
+/// of the file cache pool's path. The store is cached in
+/// persistent_term for fast access.
+///
+pub fn start_session(pool: Pool) -> Nil {
+  let session = file_store.create(pool)
+
+  store.cache_store(session)
 }
