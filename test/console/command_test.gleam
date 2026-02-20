@@ -1,6 +1,8 @@
 import gleam/dict
 import gleeunit/should
+import glimr/config/database
 import glimr/console/command.{Args, Argument, Command, Flag}
+import glimr/db/driver.{SqliteConnection}
 
 // ------------------------------------------------------------- Command Creation
 
@@ -125,6 +127,75 @@ pub fn full_command_creation_test() {
   name |> should.equal("glimr:greet")
   description |> should.equal("A friendly greeting")
 }
+
+// ------------------------------------------------------------- resolve_default_db
+
+pub fn resolve_default_db_replaces_default_with_first_connection_test() {
+  // Seed the cache with a known connection
+  database.clear_cache()
+  cache_db_config([
+    SqliteConnection(name: "mydb", database: Ok("./data.db"), pool_size: Ok(5)),
+  ])
+
+  let parsed =
+    Args(
+      arguments: dict.from_list([#("name", "user")]),
+      flags: [],
+      options: dict.from_list([#("database", "_default")]),
+    )
+
+  let resolved = command.resolve_default_db(parsed)
+
+  command.get_option(resolved, "database")
+  |> should.equal("mydb")
+
+  database.clear_cache()
+}
+
+pub fn resolve_default_db_keeps_explicit_connection_name_test() {
+  database.clear_cache()
+  cache_db_config([
+    SqliteConnection(name: "mydb", database: Ok("./data.db"), pool_size: Ok(5)),
+  ])
+
+  let parsed =
+    Args(
+      arguments: dict.from_list([#("name", "user")]),
+      flags: [],
+      options: dict.from_list([#("database", "other_db")]),
+    )
+
+  let resolved = command.resolve_default_db(parsed)
+
+  command.get_option(resolved, "database")
+  |> should.equal("other_db")
+
+  database.clear_cache()
+}
+
+pub fn resolve_default_db_keeps_default_when_no_connections_test() {
+  database.clear_cache()
+  cache_db_config([])
+
+  let parsed =
+    Args(
+      arguments: dict.from_list([#("name", "user")]),
+      flags: [],
+      options: dict.from_list([#("database", "_default")]),
+    )
+
+  let resolved = command.resolve_default_db(parsed)
+
+  command.get_option(resolved, "database")
+  |> should.equal("_default")
+
+  database.clear_cache()
+}
+
+@external(erlang, "glimr_kernel_ffi", "cache_db_config")
+fn cache_db_config(connections: List(driver.Connection)) -> Nil
+
+// ------------------------------------------------------------- Full Command Flow
 
 pub fn full_command_with_args_creation_test() {
   let cmd =
