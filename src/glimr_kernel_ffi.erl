@@ -2,6 +2,8 @@
 -export([cache_db_config/1, get_cached_db_config/0, clear_db_config/0]).
 -export([cache_route_groups/1, get_cached_route_groups/0]).
 -export([cache_cache_config/1, get_cached_cache_config/0]).
+-export([cache_session_config/1, get_cached_session_config/0]).
+-export([cache_session_store/1, get_cached_session_store/0]).
 
 cache_db_config(Connections) ->
     persistent_term:put(glimr_db_config, Connections),
@@ -36,6 +38,28 @@ cache_cache_config(Stores) ->
 get_cached_cache_config() ->
     try persistent_term:get(glimr_cache_config) of
         Stores -> {ok, Stores}
+    catch
+        error:badarg -> {error, nil}
+    end.
+
+cache_session_config(Config) ->
+    persistent_term:put(glimr_session_config, Config),
+    nil.
+
+get_cached_session_config() ->
+    try persistent_term:get(glimr_session_config) of
+        Config -> {ok, Config}
+    catch
+        error:badarg -> {error, nil}
+    end.
+
+cache_session_store(Store) ->
+    persistent_term:put(glimr_session_store, Store),
+    nil.
+
+get_cached_session_store() ->
+    try persistent_term:get(glimr_session_store) of
+        Store -> {ok, Store}
     catch
         error:badarg -> {error, nil}
     end.

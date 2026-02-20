@@ -32,7 +32,7 @@ pub fn prefix_match_exact_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -60,7 +60,7 @@ pub fn prefix_match_api_route_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -88,7 +88,7 @@ pub fn prefix_match_nested_prefix_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -117,7 +117,7 @@ pub fn prefix_match_first_wins_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   // API handler should be called (201), not web (200)
@@ -142,7 +142,7 @@ pub fn prefix_match_catch_all_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -178,7 +178,7 @@ pub fn full_path_passed_to_handler_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -207,7 +207,7 @@ pub fn path_stripping_empty_prefix_no_change_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -236,7 +236,7 @@ pub fn full_path_nested_prefix_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -265,7 +265,7 @@ pub fn path_stripping_root_path_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -295,7 +295,7 @@ pub fn handler_pattern_matching_exact_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -329,7 +329,7 @@ pub fn handler_pattern_matching_with_id_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -362,7 +362,7 @@ pub fn handler_pattern_matching_method_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -379,7 +379,7 @@ pub fn handler_pattern_matching_method_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -407,7 +407,7 @@ pub fn handler_pattern_matching_catch_all_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -438,18 +438,18 @@ pub fn middleware_group_api_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, middleware_group, next) {
+      fn(req, ctx, middleware_group, next) {
         case middleware_group {
           kernel.Api -> {
-            let resp = next(req)
+            let resp = next(req, ctx)
             wisp.set_header(resp, "x-middleware", "api")
           }
           kernel.Web -> {
-            let resp = next(req)
+            let resp = next(req, ctx)
             wisp.set_header(resp, "x-middleware", "web")
           }
           kernel.Custom(_) -> {
-            let resp = next(req)
+            let resp = next(req, ctx)
             wisp.set_header(resp, "x-middleware", "custom")
           }
         }
@@ -482,18 +482,18 @@ pub fn middleware_group_web_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, middleware_group, next) {
+      fn(req, ctx, middleware_group, next) {
         case middleware_group {
           kernel.Api -> {
-            let resp = next(req)
+            let resp = next(req, ctx)
             wisp.set_header(resp, "x-middleware", "api")
           }
           kernel.Web -> {
-            let resp = next(req)
+            let resp = next(req, ctx)
             wisp.set_header(resp, "x-middleware", "web")
           }
           kernel.Custom(_) -> {
-            let resp = next(req)
+            let resp = next(req, ctx)
             wisp.set_header(resp, "x-middleware", "custom")
           }
         }
@@ -517,7 +517,7 @@ pub fn no_matching_group_returns_404_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -545,7 +545,7 @@ pub fn handler_404_passes_through_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -576,7 +576,7 @@ pub fn context_passed_to_handler_test() {
       req,
       helpers.TestContext("secret"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status
@@ -608,7 +608,7 @@ pub fn request_passed_to_handler_test() {
       req,
       helpers.TestContext("test"),
       groups,
-      fn(req, _ctx, _middleware_group, next) { next(req) },
+      fn(req, ctx, _middleware_group, next) { next(req, ctx) },
     )
 
   response.status

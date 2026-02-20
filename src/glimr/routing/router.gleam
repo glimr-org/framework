@@ -46,7 +46,7 @@ pub fn handle(
   req: Request,
   ctx,
   route_groups: List(RouteGroup(ctx)),
-  kernel_handle: fn(Request, ctx, MiddlewareGroup, fn(Request) -> Response) ->
+  kernel_handle: fn(Request, ctx, MiddlewareGroup, fn(Request, ctx) -> Response) ->
     Response,
 ) -> Response {
   // Parse request path into segments
@@ -78,13 +78,13 @@ pub fn handle(
   case matching_group {
     Ok(group) -> {
       // Apply group middleware then call route handler with full path
-      use req <- kernel_handle(req, ctx, group.middleware_group)
+      use req, ctx <- kernel_handle(req, ctx, group.middleware_group)
       group.routes(path_segments, method, req, ctx)
     }
 
     // No matching group (should never happen with catch-all)
     Error(_) -> {
-      use _req <- kernel_handle(req, ctx, kernel.Web)
+      use _req, _ctx <- kernel_handle(req, ctx, kernel.Web)
       response.Response(404, [], wisp.Text(""))
     }
   }
