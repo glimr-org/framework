@@ -153,4 +153,3 @@ fn gc_file(base_path: String, now: Int, file: String) -> Nil {
     _ -> Nil
   }
 }
-
