@@ -222,7 +222,7 @@ pub fn run(cmd: Command) -> Nil {
     Ok(parsed) -> {
       case cmd {
         // Handle a command with no database/cache access
-        Command(handler:, ..) -> handler(parsed)
+        Command(handler:, ..) -> handler(resolve_default_db(parsed))
 
         // Handle a command with database access
         CommandWithDb(run_with_pool:, driver_type:, ..) -> {
@@ -261,6 +261,31 @@ pub fn get_args() -> List(String) {
 @internal
 pub fn print_glimr_version() -> Nil {
   io.println("Glimr " <> console.success(glimr.get_version()))
+}
+
+/// Resolves "_default" in the database option to the actual
+/// first connection name. Used by plain Command handlers that
+/// need the connection name but don't need a pool.
+///
+@internal
+pub fn resolve_default_db(parsed: Args) -> Args {
+  use <- bool.guard(
+    dict.get(parsed.options, "database") != Ok("_default"),
+    parsed,
+  )
+
+  case list.first(database.load()) {
+    Ok(conn) ->
+      Args(
+        ..parsed,
+        options: dict.insert(
+          parsed.options,
+          "database",
+          driver.connection_name(conn),
+        ),
+      )
+    Error(_) -> parsed
+  }
 }
 
 // ------------------------------------------------------------- Private Functions
