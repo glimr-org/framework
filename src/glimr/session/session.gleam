@@ -41,7 +41,7 @@ pub opaque type Session {
   Empty
 }
 
-// ------------------------------------------------------------- Public Internal Types
+// ------------------------------------------------------------- Internal Public Types
 
 /// The middleware needs to inspect the actor's final state to 
 /// decide what to persist. Tracking dirty and invalidated flags 
@@ -271,10 +271,7 @@ pub fn start_cookie() -> Nil {
 /// router(req, ctx)
 /// ```
 ///
-pub fn load(
-  req: Request,
-  next: fn(Request, Session) -> Response,
-) -> Response {
+pub fn load(req: Request, next: fn(Request, Session) -> Response) -> Response {
   let config = session_config.load()
 
   // Read or generate session ID
@@ -330,7 +327,7 @@ pub fn load(
   resp
 }
 
-// ------------------------------------------------------------- Public Internal Functions
+// ------------------------------------------------------------- Internal Public Functions
 
 /// The middleware calls this at request start to hydrate an
 /// actor from the store's persisted data. If flash was loaded,
