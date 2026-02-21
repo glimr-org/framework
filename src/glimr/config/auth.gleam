@@ -16,13 +16,12 @@ import tom
 // ------------------------------------------------------------- Public Types
 
 /// A typed struct ensures all consumers agree on the config
-/// shape at compile time. login_redirect controls where
-/// unauthenticated users are sent, and session_key sets which
-/// session entry holds the user ID so it's defined in one
-/// place rather than hardcoded across modules.
+/// shape at compile time. session_key sets which session entry
+/// holds the user ID so it's defined in one place rather than
+/// hardcoded across modules.
 ///
 pub type AuthConfig {
-  AuthConfig(login_redirect: String, session_key: String)
+  AuthConfig(session_key: String)
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -76,14 +75,15 @@ fn parse(content: String) -> AuthConfig {
 
 /// Each field has a sensible default so partial configs work —
 /// users only need to override what differs from the defaults.
-/// "/login" and "_auth_user_id" are conventional enough that
-/// most apps won't need to change them.
+/// "_auth_user_id" is conventional enough that most apps won't
+/// need to change it.
 ///
 fn parse_auth(toml: tom.Toml) -> AuthConfig {
-  AuthConfig(
-    login_redirect: config.get_string(toml, "login_redirect", "/login"),
-    session_key: config.get_string(toml, "session_key", "_auth_user_id"),
-  )
+  AuthConfig(session_key: config.get_string(
+    toml,
+    "session_key",
+    "_auth_user_id",
+  ))
 }
 
 /// Centralizing defaults here ensures every fallback path
@@ -92,7 +92,7 @@ fn parse_auth(toml: tom.Toml) -> AuthConfig {
 /// of which error path was taken.
 ///
 fn default_config() -> AuthConfig {
-  AuthConfig(login_redirect: "/login", session_key: "_auth_user_id")
+  AuthConfig(session_key: "_auth_user_id")
 }
 
 // ------------------------------------------------------------- FFI Bindings

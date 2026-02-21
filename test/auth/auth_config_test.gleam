@@ -27,7 +27,6 @@ pub fn defaults_when_no_file_test() {
 
   let config = auth_config.load()
 
-  config.login_redirect |> should.equal("/login")
   config.session_key |> should.equal("_auth_user_id")
 
   cleanup()
@@ -38,30 +37,13 @@ pub fn defaults_when_no_file_test() {
 pub fn parses_custom_config_test() {
   setup(
     "[auth]
-  login_redirect = \"/sign-in\"
   session_key = \"_my_user_id\"
 ",
   )
 
   let config = auth_config.load()
 
-  config.login_redirect |> should.equal("/sign-in")
   config.session_key |> should.equal("_my_user_id")
-
-  cleanup()
-}
-
-pub fn partial_config_uses_defaults_test() {
-  setup(
-    "[auth]
-  login_redirect = \"/auth/login\"
-",
-  )
-
-  let config = auth_config.load()
-
-  config.login_redirect |> should.equal("/auth/login")
-  config.session_key |> should.equal("_auth_user_id")
 
   cleanup()
 }
@@ -71,7 +53,6 @@ pub fn invalid_toml_uses_defaults_test() {
 
   let config = auth_config.load()
 
-  config.login_redirect |> should.equal("/login")
   config.session_key |> should.equal("_auth_user_id")
 
   cleanup()
@@ -82,7 +63,6 @@ pub fn empty_file_uses_defaults_test() {
 
   let config = auth_config.load()
 
-  config.login_redirect |> should.equal("/login")
   config.session_key |> should.equal("_auth_user_id")
 
   cleanup()
