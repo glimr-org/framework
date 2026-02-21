@@ -1,9 +1,12 @@
 //// Cache Configuration
 ////
-//// Centralizes cache store setup so application code doesn't
-//// need to know about config file locations or parsing. Uses
-//// ${VAR} syntax for secrets like Redis URLs to keep credentials
-//// out of version control.
+//// Multiple cache backends (file, database, Redis) can coexist
+//// in the same app, each with different settings. Parsing the
+//// TOML file once and caching the result in persistent_term
+//// lets every process access the store list without re-reading
+//// the file. The ${VAR} syntax for Redis URLs and pool sizes
+//// keeps secrets out of version control while still allowing
+//// per-environment configuration.
 ////
 
 import gleam/dict
@@ -15,9 +18,11 @@ import tom
 
 // ------------------------------------------------------------- Public Functions
 
-/// Safe to call repeatedly from hot paths since results are
-/// cached after first load. Returns empty list on missing/invalid
-/// config to let apps start without cache configuration.
+/// Called by start functions and console commands that need
+/// the store list, so it must be fast on repeated calls. The
+/// persistent_term cache makes subsequent calls near-zero-cost.
+/// Returning an empty list on missing or invalid config lets
+/// apps start without a cache.toml file — caching is optional.
 ///
 pub fn load() -> List(CacheStore) {
   case get_cached() {
@@ -32,9 +37,9 @@ pub fn load() -> List(CacheStore) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Separated from load() to keep caching logic distinct from
-/// file I/O. Makes the caching behavior easier to test and
-/// reason about independently.
+/// Separating file I/O from caching lets load() decide whether
+/// to read the file or use the cache. Returning an empty list
+/// on read failure avoids crashing apps that don't use caching.
 ///
 fn load_from_file() -> List(CacheStore) {
   case simplifile.read("config/cache.toml") {
@@ -43,9 +48,10 @@ fn load_from_file() -> List(CacheStore) {
   }
 }
 
-/// Expects [stores.*] tables so users can define multiple named
-/// stores (e.g., main, sessions, redis) with different backends
-/// and switch between them at runtime.
+/// The [stores.*] nesting lets users define multiple named
+/// stores (e.g., main, sessions, redis) each with a different
+/// backend and settings. Iterating dict.to_list preserves all
+/// entries so no store definition is silently dropped.
 ///
 fn parse(content: String) -> List(CacheStore) {
   case tom.parse(content) {
@@ -66,9 +72,11 @@ fn parse(content: String) -> List(CacheStore) {
   }
 }
 
-/// Maps driver field to the appropriate CacheStore variant.
-/// Defaults to file for unknown drivers since it requires no
-/// external dependencies and works out of the box.
+/// Each driver string maps to a specific CacheStore variant
+/// with its own required fields. Defaulting to FileStore for
+/// unknown or missing driver values means a typo degrades to
+/// the simplest backend rather than crashing — file-based
+/// caching works out of the box with no external dependencies.
 ///
 fn parse_store(name: String, toml: tom.Toml) -> CacheStore {
   let driver = config.get_string(toml, "driver", "file")
@@ -93,16 +101,17 @@ fn parse_store(name: String, toml: tom.Toml) -> CacheStore {
 
 // ------------------------------------------------------------- FFI Bindings
 
-/// Stores parsed config in persistent_term for fast access
-/// across all processes. Avoids re-parsing TOML on every
-/// cache operation which would add unnecessary latency.
+/// Stores the parsed store list in persistent_term so every
+/// subsequent call to load() across all BEAM processes gets a
+/// near-zero-cost read instead of re-parsing the TOML file.
 ///
 @external(erlang, "glimr_kernel_ffi", "cache_cache_config")
 fn cache(stores: List(CacheStore)) -> Nil
 
-/// Retrieves cached config from persistent_term. Returns Error
-/// if not yet cached, signaling that load_from_file() should
-/// be called to populate the cache.
+/// Returns the cached store list if it exists, or Error(Nil)
+/// on the first call before cache() has been called. load()
+/// uses this to skip file I/O on every request after the
+/// initial load.
 ///
 @external(erlang, "glimr_kernel_ffi", "get_cached_cache_config")
 fn get_cached() -> Result(List(CacheStore), Nil)
