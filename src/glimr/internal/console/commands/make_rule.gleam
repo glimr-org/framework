@@ -47,7 +47,7 @@ fn run(args: Args) -> Nil {
     }
     False -> {
       let assert Ok(_) = {
-        filesystem.write_from_stub("http/" <> stub_name, file_path)
+        filesystem.write_from_stub("glimr", "http/" <> stub_name, file_path)
       }
 
       console.output()

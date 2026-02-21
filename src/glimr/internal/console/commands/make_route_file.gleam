@@ -45,7 +45,8 @@ fn run(args: Args) -> Nil {
       |> console.print()
     }
     False -> {
-      let assert Ok(_) = filesystem.write_from_stub("route.stub", file_path)
+      let assert Ok(_) =
+        filesystem.write_from_stub("glimr", "route.stub", file_path)
 
       console.output()
       |> console.line_success("Route created successfully!")

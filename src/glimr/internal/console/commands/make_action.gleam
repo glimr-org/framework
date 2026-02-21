@@ -35,7 +35,8 @@ fn run(args: Args) -> Nil {
       |> console.print()
     }
     False -> {
-      let assert Ok(_) = filesystem.write_from_stub("action.stub", file_path)
+      let assert Ok(_) =
+        filesystem.write_from_stub("glimr", "action.stub", file_path)
 
       console.output()
       |> console.line_success("Action created successfully!")
