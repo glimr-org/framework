@@ -1,9 +1,12 @@
 //// Config Helpers
 ////
-//// Shared utilities for TOML parsing so database, cache, and
-//// route config modules don't duplicate env var interpolation
-//// and type conversion logic. Keeps parsing behavior consistent
-//// across all config files.
+//// Every config module (database, cache, session, auth) needs
+//// to extract typed values from TOML and interpolate environment
+//// variables. Without shared helpers each module would reimplement
+//// the same dict lookup, type matching, and ${VAR} substitution,
+//// leading to inconsistent error messages and subtle differences
+//// in fallback behavior. Centralizing these here guarantees all
+//// config files are parsed the same way.
 ////
 
 import dot_env/env
@@ -14,9 +17,11 @@ import tom
 
 // ------------------------------------------------------------- Public Functions
 
-/// No env interpolation since values like driver names and paths
-/// are typically static and safe to commit. Provides a sensible
-/// default when keys are missing to reduce required config.
+/// Skips env interpolation because values like driver names and
+/// file paths are static and safe to commit. Returning a default
+/// on missing or wrong-typed keys lets config files stay minimal
+/// — users only override what differs from the defaults without
+/// needing to specify every field.
 ///
 pub fn get_string(toml: tom.Toml, key: String, default: String) -> String {
   case toml {
@@ -30,9 +35,11 @@ pub fn get_string(toml: tom.Toml, key: String, default: String) -> String {
   }
 }
 
-/// Returns Result to surface missing env vars early. Secrets
-/// should fail loudly at startup rather than silently falling
-/// back to defaults that might cause confusing runtime errors.
+/// Returns Result instead of a default because env-backed values
+/// are typically secrets or connection strings — silently falling
+/// back to a hardcoded default would cause confusing runtime
+/// errors (wrong database, no Redis) instead of a clear "env var
+/// not set" message at startup.
 ///
 pub fn get_env_string(toml: tom.Toml, key: String) -> Result(String, String) {
   case toml {
@@ -46,9 +53,11 @@ pub fn get_env_string(toml: tom.Toml, key: String) -> Result(String, String) {
   }
 }
 
-/// Accepts both TOML integers and strings for flexibility.
-/// Strings allow env var references like "${DB_PORT}" for values
-/// that vary between environments (dev, staging, prod).
+/// Accepts both TOML integers and strings because some integer
+/// values (like pool_size or port) need to come from env vars
+/// in production but are convenient as plain integers in dev
+/// config. Checking the string case first lets "${DB_PORT}"
+/// work while still accepting `port = 5432` without quotes.
 ///
 pub fn get_env_int(toml: tom.Toml, key: String) -> Result(Int, String) {
   case toml {
@@ -73,8 +82,11 @@ pub fn get_env_int(toml: tom.Toml, key: String) -> Result(Int, String) {
 }
 
 /// Only supports full-value substitution (${VAR}, not mixed
-/// strings) to keep parsing simple. Partial interpolation would
-/// require escaping rules not worth the complexity for configs.
+/// strings like "host:${PORT}") to keep parsing simple. Partial
+/// interpolation would need escaping rules and edge case handling
+/// that aren't worth the complexity for config values. Plain
+/// strings without ${} pass through unchanged so literal values
+/// work without special syntax.
 ///
 pub fn interpolate_env(value: String) -> Result(String, String) {
   case string.starts_with(value, "${") && string.ends_with(value, "}") {

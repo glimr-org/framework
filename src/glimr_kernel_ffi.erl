@@ -4,6 +4,7 @@
 -export([cache_cache_config/1, get_cached_cache_config/0]).
 -export([cache_session_config/1, get_cached_session_config/0]).
 -export([cache_session_store/1, get_cached_session_store/0]).
+-export([cache_auth_config/1, get_cached_auth_config/0]).
 
 cache_db_config(Connections) ->
     persistent_term:put(glimr_db_config, Connections),
@@ -60,6 +61,17 @@ cache_session_store(Store) ->
 get_cached_session_store() ->
     try persistent_term:get(glimr_session_store) of
         Store -> {ok, Store}
+    catch
+        error:badarg -> {error, nil}
+    end.
+
+cache_auth_config(Config) ->
+    persistent_term:put(glimr_auth_config, Config),
+    nil.
+
+get_cached_auth_config() ->
+    try persistent_term:get(glimr_auth_config) of
+        Config -> {ok, Config}
     catch
         error:badarg -> {error, nil}
     end.
