@@ -44,6 +44,7 @@ fn run(args: Args) -> Nil {
       let schema_path = model_dir <> "/" <> model_name <> "_schema.gleam"
       let assert Ok(_) =
         filesystem.write_from_stub_with_variables(
+          package: "glimr",
           stub_path: "data/schema.stub",
           dest_path: schema_path,
           variables: [#("table_name", table_name)],
@@ -54,6 +55,7 @@ fn run(args: Args) -> Nil {
         let query_path = queries_dir <> "/" <> query_name <> ".sql"
         let assert Ok(_) =
           filesystem.write_from_stub_with_variables(
+            package: "glimr",
             stub_path: "data/queries/" <> query_name <> ".stub",
             dest_path: query_path,
             variables: [#("table_name", table_name)],

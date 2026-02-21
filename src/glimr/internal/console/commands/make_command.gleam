@@ -65,6 +65,7 @@ fn run(args: Args) -> Nil {
         False -> {
           let assert Ok(_) = {
             filesystem.write_from_stub_with_variables(
+              package: "glimr",
               stub_path: "console/" <> stub_name,
               dest_path: file_path,
               variables: [#("command_name", hyphened_name)],

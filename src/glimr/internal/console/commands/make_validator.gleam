@@ -36,7 +36,7 @@ fn run(args: Args) -> Nil {
     }
     False -> {
       let assert Ok(_) = {
-        filesystem.write_from_stub("http/validator.stub", file_path)
+        filesystem.write_from_stub("glimr", "http/validator.stub", file_path)
       }
 
       console.output()
