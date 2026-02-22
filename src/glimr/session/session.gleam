@@ -319,6 +319,7 @@ pub fn load(req: Request, next: fn(Request, Session) -> Response) -> Response {
 
       set_session_cookie(resp, req, config.cookie, value, config)
     }
+
     Error(_) -> resp
   }
 

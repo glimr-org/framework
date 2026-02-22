@@ -9,7 +9,7 @@
 //// - `{model}_schema.gleam` - Schema definition with table/columns
 //// - `queries/` - Directory containing `.sql` query files
 ////
-//// Generated code is written to `{model}/gen/{model}_repository.gleam`
+//// Generated code is written to `{model}/gen/{model}.gleam`
 //// and automatically formatted with `gleam format`.
 
 import gleam/int
@@ -155,7 +155,7 @@ fn process_model(
 
           let _ = simplifile.create_directory_all(gen_path)
 
-          let output_path = gen_path <> "/" <> model_name <> "_repository.gleam"
+          let output_path = gen_path <> "/" <> model_name <> ".gleam"
           case simplifile.write(output_path, generated) {
             Ok(_) -> {
               let _ =
