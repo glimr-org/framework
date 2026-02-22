@@ -37,7 +37,7 @@ pub fn generate(
   let imports = generate_imports(table, driver_type)
   let model_type = generate_model_type(model_name, table)
   let model_decoder = generate_model_decoder(model_name, table)
-  let query_code = generate_queries(table, queries, driver_type)
+  let query_code = generate_queries(model_name, table, queries, driver_type)
 
   string.join([header, imports, model_type, model_decoder, query_code], "\n\n")
 }
@@ -66,7 +66,12 @@ fn generate_imports(table: Table, driver_type: String) -> String {
     list.any(columns, fn(col) { col.column_type == schema_parser.Boolean })
   let has_nullable = list.any(columns, fn(col) { col.nullable })
 
-  let base_imports = "import gleam/dynamic/decode\nimport gleam/list"
+  let list_import = case driver_type {
+    "sqlite" -> "\nimport gleam/list"
+    _ -> ""
+  }
+
+  let base_imports = "import gleam/dynamic/decode" <> list_import
 
   let option_import = case has_nullable {
     True -> "\nimport gleam/option.{type Option}"
@@ -165,6 +170,7 @@ fn generate_model_decoder(model_name: String, table: Table) -> String {
 /// lines between each function.
 ///
 fn generate_queries(
+  model_name: String,
   table: Table,
   queries: List(#(String, String, ParsedQuery)),
   driver_type: String,
@@ -172,7 +178,14 @@ fn generate_queries(
   let query_codes =
     list.map(queries, fn(query_tuple) {
       let #(query_name, sql, parsed) = query_tuple
-      generate_single_query(table, query_name, sql, parsed, driver_type)
+      generate_single_query(
+        model_name,
+        table,
+        query_name,
+        sql,
+        parsed,
+        driver_type,
+      )
     })
 
   string.join(query_codes, "\n\n")
@@ -184,6 +197,7 @@ fn generate_queries(
 /// query function with both callback and _or variants.
 ///
 fn generate_single_query(
+  model_name: String,
   table: Table,
   query_name: String,
   sql: String,
@@ -207,24 +221,55 @@ fn generate_single_query(
       )
     }
     False -> {
-      let row_type_name = pascal_case(query_name) <> "Row"
+      // Build model column signature for comparison
+      let model_columns =
+        list.map(schema_parser.columns(table), fn(col) {
+          #(col.name, col.column_type, col.nullable)
+        })
 
-      let row_type = generate_row_type(row_type_name, columns_with_types)
+      // Check if query columns match the model exactly
+      let matches_model = columns_with_types == model_columns
 
-      let row_decoder = generate_row_decoder(row_type_name, columns_with_types)
+      case matches_model {
+        True -> {
+          // Reuse the model type and public decoder()
+          let type_name = pascal_case(model_name)
+          let query_fn =
+            generate_query_function(
+              fn_name,
+              type_name,
+              sql,
+              parsed.params,
+              columns_with_types,
+              param_types,
+              driver_type,
+              True,
+            )
+          query_fn
+        }
+        False -> {
+          // Create a query-specific type named {Query}{Model}
+          let type_name = pascal_case(query_name) <> pascal_case(model_name)
 
-      let query_fn =
-        generate_query_function(
-          fn_name,
-          row_type_name,
-          sql,
-          parsed.params,
-          columns_with_types,
-          param_types,
-          driver_type,
-        )
+          let row_type = generate_row_type(type_name, columns_with_types)
 
-      string.join([row_type, row_decoder, query_fn], "\n\n")
+          let row_decoder = generate_row_decoder(type_name, columns_with_types)
+
+          let query_fn =
+            generate_query_function(
+              fn_name,
+              type_name,
+              sql,
+              parsed.params,
+              columns_with_types,
+              param_types,
+              driver_type,
+              False,
+            )
+
+          string.join([row_type, row_decoder, query_fn], "\n\n")
+        }
+      }
     }
   }
 }
@@ -416,6 +461,7 @@ fn generate_query_function(
   _columns: List(#(String, ColumnType, Bool)),
   param_types: List(#(Int, String, ColumnType)),
   driver_type: String,
+  uses_model_decoder: Bool,
 ) -> String {
   let param_count = list.length(params)
 
@@ -504,7 +550,10 @@ fn generate_query_function(
 
   // Strip comments and escape the SQL for Gleam string
   let escaped_sql = escape_string(strip_sql_comments(sql))
-  let decoder_fn = snake_case(row_type_name) <> "_decoder()"
+  let decoder_fn = case uses_model_decoder {
+    True -> "decoder()"
+    False -> snake_case(row_type_name) <> "_decoder()"
+  }
 
   // Generate _wc (with connection) variant using native driver
   let wc_fn = case driver_type {
