@@ -424,11 +424,16 @@ fn validate_required(field: String, value: String) -> Result(Nil, String) {
 /// is best done by sending a confirmation link anyway.
 ///
 fn validate_email(field: String, value: String) -> Result(Nil, String) {
-  let assert Ok(re) = regexp.from_string("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let assert Ok(re) = regexp.from_string("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
 
-  case regexp.check(re, string.trim(value)) {
-    True -> Ok(Nil)
-    False -> Error(field <> " must be a valid email address")
+      case regexp.check(re, string.trim(value)) {
+        True -> Ok(Nil)
+        False -> Error(field <> " must be a valid email address")
+      }
+    }
   }
 }
 
@@ -509,11 +514,16 @@ fn validate_max(field: String, value: String, max: Int) -> Result(Nil, String) {
 /// numbers while rejecting everything else.
 ///
 fn validate_numeric(field: String, value: String) -> Result(Nil, String) {
-  let assert Ok(re) = regexp.from_string("^-?\\d+$")
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let assert Ok(re) = regexp.from_string("^-?\\d+$")
 
-  case regexp.check(re, string.trim(value)) {
-    True -> Ok(Nil)
-    False -> Error(field <> " must be a valid number")
+      case regexp.check(re, string.trim(value)) {
+        True -> Ok(Nil)
+        False -> Error(field <> " must be a valid number")
+      }
+    }
   }
 }
 
@@ -523,11 +533,16 @@ fn validate_numeric(field: String, value: String) -> Result(Nil, String) {
 /// without a full URL parser.
 ///
 fn validate_url(field: String, value: String) -> Result(Nil, String) {
-  let assert Ok(re) = regexp.from_string("^https?://[^\\s/$.?#].[^\\s]*$")
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let assert Ok(re) = regexp.from_string("^https?://[^\\s/$.?#].[^\\s]*$")
 
-  case regexp.check(re, string.trim(value)) {
-    True -> Ok(Nil)
-    False -> Error(field <> " must be a valid URL")
+      case regexp.check(re, string.trim(value)) {
+        True -> Ok(Nil)
+        False -> Error(field <> " must be a valid URL")
+      }
+    }
   }
 }
 

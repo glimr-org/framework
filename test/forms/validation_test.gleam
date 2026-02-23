@@ -217,12 +217,12 @@ pub fn for_numeric_fail_decimal_test() {
   |> should.be_error()
 }
 
-pub fn for_numeric_fail_empty_test() {
+pub fn for_numeric_skip_empty_test() {
   let form_data =
     validator.form_data(wisp.FormData(values: [#("age", "")], files: []))
 
   validator.start([validator.for("age", [validator.Numeric])], form_data, ctx)
-  |> should.be_error()
+  |> should.be_ok()
 }
 
 pub fn for_min_pass_test() {
