@@ -1,8 +1,9 @@
 import app/http/context/ctx.{type Context}
 import gleam/string
+import glimr/forms/validator.{type FormData}
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#custom-validation-rules
 
-pub fn run(value: String, ctx: Context) -> Result(Nil, String) {
+pub fn run(value: String, data: FormData, ctx: Context) -> Result(Nil, String) {
   todo
 }

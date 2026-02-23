@@ -21,7 +21,9 @@ import glimr/response/redirect
 import glimr/response/response.{type ResponseFormat, HTML, JSON}
 import glimr/session/session.{type Session}
 import simplifile
-import wisp.{type FormData, type Request, type Response, type UploadedFile}
+import wisp.{
+  type FormData as WispFormData, type Request, type Response, type UploadedFile,
+}
 
 // ------------------------------------------------------------- Public Types
 
@@ -81,25 +83,32 @@ pub opaque type Rule(ctx) {
   FileFieldRule(field_name: String, rules: List(FileRule(ctx)))
 }
 
-/// Wrapping form access in getter functions rather than passing
-/// raw FormData ensures the data extractor can only read fields
-/// that were already validated. This prevents accidentally using
-/// unvalidated values in the typed output struct.
+/// Wraps form access in getter functions so validation rules
+/// and data extractors can read field values without coupling
+/// to wisp's internal FormData type. Built once from the raw
+/// form data and passed through the entire validation chain,
+/// then reused by the data extractor after validation passes.
 ///
-pub type Validated {
-  Validated(get: fn(String) -> String, get_file: fn(String) -> UploadedFile)
+pub type FormData {
+  FormData(
+    get: fn(String) -> String,
+    get_file: fn(String) -> UploadedFile,
+    get_file_result: fn(String) -> Result(UploadedFile, Nil),
+  )
 }
 
 // ------------------------------------------------------------- Private Types
 
 /// A type alias keeps the Custom variant readable — without it
 /// the full fn signature would clutter the StringRule enum.
-/// Accepting ctx lets custom rules do database lookups like
-/// uniqueness checks without hardcoding a connection type into
-/// the validator module.
+/// Accepting FormData lets custom rules access other fields
+/// for cross-field validation (e.g., comparing two dates),
+/// and ctx lets them do database lookups like uniqueness
+/// checks without hardcoding a connection type into the
+/// validator module.
 ///
 type CustomValidation(ctx) =
-  fn(String, ctx) -> Result(Nil, String)
+  fn(String, FormData, ctx) -> Result(Nil, String)
 
 /// Mirrors CustomValidation but for file uploads — the input
 /// is an UploadedFile instead of a String because file rules
@@ -107,7 +116,7 @@ type CustomValidation(ctx) =
 /// string value can't represent.
 ///
 type CustomFileValidation(ctx) =
-  fn(UploadedFile, ctx) -> Result(Nil, String)
+  fn(UploadedFile, FormData, ctx) -> Result(Nil, String)
 
 // ------------------------------------------------------------- Public Functions
 
@@ -137,20 +146,20 @@ type CustomFileValidation(ctx) =
 ///   ]
 /// }
 ///
-/// fn data(v: Validated) -> Data {
+/// fn data(data: FormData) -> Data {
 ///   Data(
-///     name: v.get("name"),
-///     email: v.get("email"),
+///     name: data.get("name"),
+///     email: data.get("email"),
 ///   )
 /// }
 ///
 /// pub fn validate(req: Request, ctx: Context, next: fn(Data) -> Response) {
 ///   use validated <- validator.run(
-///     req, 
-///     ctx, 
-///     ctx.response_format, 
-///     ctx.session, 
-///     rules, 
+///     req,
+///     ctx,
+///     ctx.response_format,
+///     ctx.session,
+///     rules,
 ///     data
 ///   )
 ///
@@ -164,19 +173,16 @@ pub fn run(
   response_format: ResponseFormat,
   session: Session,
   rules: fn() -> List(Rule(ctx)),
-  data: fn(Validated) -> typed_form,
+  data_fn: fn(FormData) -> typed_form,
   on_valid: fn(typed_form) -> Response,
 ) -> Response {
-  use form_data <- wisp.require_form(req)
+  use wisp_form_data <- wisp.require_form(req)
 
-  case start(rules(), form_data, ctx) {
+  let data = form_data(wisp_form_data)
+
+  case start(rules(), data, ctx) {
     Ok(_) -> {
-      let validated =
-        Validated(
-          get: fn(field) { form_data |> form.get(field) },
-          get_file: fn(field) { form_data |> form.get_file(field) },
-        )
-      on_valid(data(validated))
+      on_valid(data_fn(data))
     }
     Error(errors) -> {
       case response_format {
@@ -217,19 +223,34 @@ pub fn run(
 ///
 pub fn start(
   pending: List(Rule(ctx)),
-  form: FormData,
+  data: FormData,
   ctx: ctx,
 ) -> Result(Nil, List(ValidationError)) {
   let errors =
     pending
     |> list.filter_map(fn(p) {
-      case execute(p, form, ctx) {
+      case execute(p, data, ctx) {
         Ok(_) -> Error(Nil)
         Error(err) -> Ok(err)
       }
     })
 
   response(errors)
+}
+
+/// Bridges wisp's raw form data into the FormData abstraction
+/// so callers using start() directly don't need to build the
+/// getter closures themselves. Marked @internal because app
+/// code should go through run() — this exists for tests and
+/// custom validation flows within the framework.
+///
+@internal
+pub fn form_data(wisp_form_data: WispFormData) -> FormData {
+  FormData(
+    get: fn(field) { wisp_form_data |> form.get(field) },
+    get_file: fn(field) { wisp_form_data |> form.get_file(field) },
+    get_file_result: fn(field) { wisp_form_data |> form.get_file_result(field) },
+  )
 }
 
 /// Binding a field name to its rules in a single call keeps
@@ -282,20 +303,20 @@ pub fn response(
 /// start() doesn't need to know which variant it's dealing
 /// with. Extracting the value from form data here rather than
 /// in each rule keeps individual rules pure — they only see
-/// the value and ctx, not the full form.
+/// the value and data, not the full form.
 ///
 fn execute(
   pending: Rule(ctx),
-  form_data: FormData,
+  data: FormData,
   ctx: ctx,
 ) -> Result(Nil, ValidationError) {
   case pending {
     FieldRule(field_name:, rules:) -> {
-      let value = form_data |> form.get(field_name)
+      let value = data.get(field_name)
       let messages =
         rules
         |> list.filter_map(fn(rule) {
-          case apply_rule(value, ctx, rule) {
+          case apply_rule(value, data, ctx, rule) {
             Ok(_) -> Error(Nil)
             Error(message) -> Ok(format_error_message(field_name, message))
           }
@@ -307,11 +328,11 @@ fn execute(
       }
     }
     FileFieldRule(field_name:, rules:) -> {
-      let file = form_data |> form.get_file_result(field_name)
+      let file = data.get_file_result(field_name)
       let messages =
         rules
         |> list.filter_map(fn(rule) {
-          case apply_file_rule(file, ctx, rule) {
+          case apply_file_rule(file, data, ctx, rule) {
             Ok(_) -> Error(Nil)
             Error(message) -> Ok(format_error_message(field_name, message))
           }
@@ -332,6 +353,7 @@ fn execute(
 ///
 fn apply_rule(
   value: String,
+  data: FormData,
   ctx: ctx,
   rule: StringRule(ctx),
 ) -> Result(Nil, String) {
@@ -347,7 +369,8 @@ fn apply_rule(
     Digits(count) -> validate_digits(value, count)
     MinDigits(min) -> validate_min_digits(value, min)
     MaxDigits(max) -> validate_max_digits(value, max)
-    Custom(custom_validation) -> validate_custom(custom_validation, value, ctx)
+    Custom(custom_validation) ->
+      validate_custom(custom_validation, value, data, ctx)
   }
 }
 
@@ -504,17 +527,18 @@ fn validate_max_digits(value: String, max: Int) -> Result(Nil, String) {
   }
 }
 
-/// Delegates to the user-provided function without wrapping
-/// the result — the custom validator already returns the same
-/// Result(Nil, String) shape. This thin wrapper exists so
+/// Delegates to the user-provided function, passing the
+/// current field value, form data for cross-field access,
+/// and the app context. This thin wrapper exists so
 /// apply_rule can dispatch uniformly via pattern matching.
 ///
 fn validate_custom(
   custom_validation: CustomValidation(ctx),
   value: String,
+  data: FormData,
   ctx: ctx,
 ) -> Result(Nil, String) {
-  custom_validation(value, ctx)
+  custom_validation(value, data, ctx)
 }
 
 /// Mirrors apply_rule but for file uploads — pattern matching
@@ -524,6 +548,7 @@ fn validate_custom(
 ///
 fn apply_file_rule(
   file: Result(UploadedFile, Nil),
+  data: FormData,
   ctx: ctx,
   rule: FileRule(ctx),
 ) -> Result(Nil, String) {
@@ -533,7 +558,7 @@ fn apply_file_rule(
     FileMaxSize(max) -> validate_file_max_size(file, max)
     FileExtension(extensions) -> validate_file_extension(file, extensions)
     FileCustom(custom_validation) ->
-      validate_file_custom(custom_validation, file, ctx)
+      validate_file_custom(custom_validation, file, data, ctx)
   }
 }
 
@@ -654,11 +679,12 @@ fn validate_file_extension(
 fn validate_file_custom(
   custom_validation: CustomFileValidation(ctx),
   file: Result(UploadedFile, Nil),
+  data: FormData,
   ctx: ctx,
 ) -> Result(Nil, String) {
   case file {
     Error(_) -> Ok(Nil)
-    Ok(uploaded_file) -> custom_validation(uploaded_file, ctx)
+    Ok(uploaded_file) -> custom_validation(uploaded_file, data, ctx)
   }
 }
 

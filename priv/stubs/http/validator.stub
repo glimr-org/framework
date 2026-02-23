@@ -1,5 +1,5 @@
 import app/http/context/ctx.{type Context}
-import glimr/forms/validator.{type Rule, type Validated}
+import glimr/forms/validator.{type FormData, type Rule}
 import wisp.{type Request, type Response}
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#form-validation
@@ -24,7 +24,7 @@ fn rules() -> List(Rule(Context)) {
 /// where you can transform validated input data before it
 /// reaches your controller.
 ///
-fn data(data: Validated) -> Data {
+fn data(data: FormData) -> Data {
   // Data(name: data.get("name"))
   Data(todo)
 }
