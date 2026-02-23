@@ -14,10 +14,7 @@ const ctx = Nil
 pub fn for_required_pass_test() {
   let form_data = wisp.FormData(values: [#("name", "John")], files: [])
 
-  validator.start(
-    [form_data |> validator.for("name", [validator.Required])],
-    ctx,
-  )
+  validator.start([validator.for("name", [validator.Required])], form_data, ctx)
   |> should.be_ok()
 }
 
@@ -26,7 +23,8 @@ pub fn for_required_fail_test() {
 
   case
     validator.start(
-      [form_data |> validator.for("name", [validator.Required])],
+      [validator.for("name", [validator.Required])],
+      form_data,
       ctx,
     )
   {
@@ -45,7 +43,7 @@ pub fn for_email_pass_test() {
   let form_data =
     wisp.FormData(values: [#("email", "test@example.com")], files: [])
 
-  validator.start([form_data |> validator.for("email", [validator.Email])], ctx)
+  validator.start([validator.for("email", [validator.Email])], form_data, ctx)
   |> should.be_ok()
 }
 
@@ -53,10 +51,7 @@ pub fn for_email_fail_test() {
   let form_data = wisp.FormData(values: [#("email", "invalid")], files: [])
 
   case
-    validator.start(
-      [form_data |> validator.for("email", [validator.Email])],
-      ctx,
-    )
+    validator.start([validator.for("email", [validator.Email])], form_data, ctx)
   {
     Error([validator.ValidationError(messages: msgs, ..)]) -> {
       msgs
@@ -70,7 +65,8 @@ pub fn for_min_length_pass_test() {
   let form_data = wisp.FormData(values: [#("name", "John")], files: [])
 
   validator.start(
-    [form_data |> validator.for("name", [validator.MinLength(3)])],
+    [validator.for("name", [validator.MinLength(3)])],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -81,7 +77,8 @@ pub fn for_min_length_fail_test() {
 
   case
     validator.start(
-      [form_data |> validator.for("name", [validator.MinLength(3)])],
+      [validator.for("name", [validator.MinLength(3)])],
+      form_data,
       ctx,
     )
   {
@@ -97,7 +94,8 @@ pub fn for_max_length_pass_test() {
   let form_data = wisp.FormData(values: [#("name", "John")], files: [])
 
   validator.start(
-    [form_data |> validator.for("name", [validator.MaxLength(10)])],
+    [validator.for("name", [validator.MaxLength(10)])],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -108,7 +106,8 @@ pub fn for_max_length_fail_test() {
 
   case
     validator.start(
-      [form_data |> validator.for("name", [validator.MaxLength(5)])],
+      [validator.for("name", [validator.MaxLength(5)])],
+      form_data,
       ctx,
     )
   {
@@ -125,7 +124,7 @@ pub fn for_max_length_fail_test() {
 pub fn for_numeric_pass_test() {
   let form_data = wisp.FormData(values: [#("age", "25")], files: [])
 
-  validator.start([form_data |> validator.for("age", [validator.Numeric])], ctx)
+  validator.start([validator.for("age", [validator.Numeric])], form_data, ctx)
   |> should.be_ok()
 }
 
@@ -133,10 +132,7 @@ pub fn for_numeric_fail_test() {
   let form_data = wisp.FormData(values: [#("age", "abc")], files: [])
 
   case
-    validator.start(
-      [form_data |> validator.for("age", [validator.Numeric])],
-      ctx,
-    )
+    validator.start([validator.for("age", [validator.Numeric])], form_data, ctx)
   {
     Error([validator.ValidationError(messages: msgs, ..)]) -> {
       msgs
@@ -149,7 +145,7 @@ pub fn for_numeric_fail_test() {
 pub fn for_min_pass_test() {
   let form_data = wisp.FormData(values: [#("age", "25")], files: [])
 
-  validator.start([form_data |> validator.for("age", [validator.Min(18)])], ctx)
+  validator.start([validator.for("age", [validator.Min(18)])], form_data, ctx)
   |> should.be_ok()
 }
 
@@ -157,10 +153,7 @@ pub fn for_min_fail_test() {
   let form_data = wisp.FormData(values: [#("age", "16")], files: [])
 
   case
-    validator.start(
-      [form_data |> validator.for("age", [validator.Min(18)])],
-      ctx,
-    )
+    validator.start([validator.for("age", [validator.Min(18)])], form_data, ctx)
   {
     Error([validator.ValidationError(messages: msgs, ..)]) -> {
       msgs
@@ -173,10 +166,7 @@ pub fn for_min_fail_test() {
 pub fn for_max_pass_test() {
   let form_data = wisp.FormData(values: [#("age", "30")], files: [])
 
-  validator.start(
-    [form_data |> validator.for("age", [validator.Max(100)])],
-    ctx,
-  )
+  validator.start([validator.for("age", [validator.Max(100)])], form_data, ctx)
   |> should.be_ok()
 }
 
@@ -185,7 +175,8 @@ pub fn for_max_fail_test() {
 
   case
     validator.start(
-      [form_data |> validator.for("age", [validator.Max(100)])],
+      [validator.for("age", [validator.Max(100)])],
+      form_data,
       ctx,
     )
   {
@@ -203,7 +194,7 @@ pub fn for_url_pass_test() {
   let form_data =
     wisp.FormData(values: [#("website", "https://example.com")], files: [])
 
-  validator.start([form_data |> validator.for("website", [validator.Url])], ctx)
+  validator.start([validator.for("website", [validator.Url])], form_data, ctx)
   |> should.be_ok()
 }
 
@@ -211,10 +202,7 @@ pub fn for_url_fail_test() {
   let form_data = wisp.FormData(values: [#("website", "not-a-url")], files: [])
 
   case
-    validator.start(
-      [form_data |> validator.for("website", [validator.Url])],
-      ctx,
-    )
+    validator.start([validator.for("website", [validator.Url])], form_data, ctx)
   {
     Error([validator.ValidationError(messages: msgs, ..)]) -> {
       msgs
@@ -228,7 +216,8 @@ pub fn for_digits_pass_test() {
   let form_data = wisp.FormData(values: [#("code", "12")], files: [])
 
   validator.start(
-    [form_data |> validator.for("code", [validator.Digits(2)])],
+    [validator.for("code", [validator.Digits(2)])],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -239,7 +228,8 @@ pub fn for_digits_fail_test() {
 
   case
     validator.start(
-      [form_data |> validator.for("code", [validator.Digits(2)])],
+      [validator.for("code", [validator.Digits(2)])],
+      form_data,
       ctx,
     )
   {
@@ -255,7 +245,8 @@ pub fn for_min_digits_pass_test() {
   let form_data = wisp.FormData(values: [#("code", "123")], files: [])
 
   validator.start(
-    [form_data |> validator.for("code", [validator.MinDigits(2)])],
+    [validator.for("code", [validator.MinDigits(2)])],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -266,7 +257,8 @@ pub fn for_min_digits_fail_test() {
 
   case
     validator.start(
-      [form_data |> validator.for("code", [validator.MinDigits(2)])],
+      [validator.for("code", [validator.MinDigits(2)])],
+      form_data,
       ctx,
     )
   {
@@ -282,7 +274,8 @@ pub fn for_max_digits_pass_test() {
   let form_data = wisp.FormData(values: [#("code", "12")], files: [])
 
   validator.start(
-    [form_data |> validator.for("code", [validator.MaxDigits(3)])],
+    [validator.for("code", [validator.MaxDigits(3)])],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -293,7 +286,8 @@ pub fn for_max_digits_fail_test() {
 
   case
     validator.start(
-      [form_data |> validator.for("code", [validator.MaxDigits(3)])],
+      [validator.for("code", [validator.MaxDigits(3)])],
+      form_data,
       ctx,
     )
   {
@@ -313,13 +307,13 @@ pub fn for_multiple_rules_all_pass_test() {
 
   validator.start(
     [
-      form_data
-      |> validator.for("email", [
+      validator.for("email", [
         validator.Required,
         validator.Email,
         validator.MinLength(5),
       ]),
     ],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -331,13 +325,13 @@ pub fn for_multiple_rules_some_fail_test() {
   case
     validator.start(
       [
-        form_data
-        |> validator.for("name", [
+        validator.for("name", [
           validator.Required,
           validator.MinLength(3),
           validator.MaxLength(10),
         ]),
       ],
+      form_data,
       ctx,
     )
   {
@@ -361,10 +355,10 @@ pub fn start_all_pass_test() {
 
   validator.start(
     [
-      form_data |> validator.for("name", [validator.Required]),
-      form_data
-        |> validator.for("email", [validator.Required, validator.Email]),
+      validator.for("name", [validator.Required]),
+      validator.for("email", [validator.Required, validator.Email]),
     ],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -377,9 +371,10 @@ pub fn start_some_fail_test() {
   case
     validator.start(
       [
-        form_data |> validator.for("name", [validator.Required]),
-        form_data |> validator.for("email", [validator.Email]),
+        validator.for("name", [validator.Required]),
+        validator.for("email", [validator.Email]),
       ],
+      form_data,
       ctx,
     )
   {
@@ -400,7 +395,8 @@ pub fn for_file_required_pass_test() {
   let form_data = wisp.FormData(values: [], files: [#("avatar", uploaded_file)])
 
   validator.start(
-    [form_data |> validator.for_file("avatar", [validator.FileRequired])],
+    [validator.for_file("avatar", [validator.FileRequired])],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -412,7 +408,8 @@ pub fn for_file_required_fail_empty_filename_test() {
 
   case
     validator.start(
-      [form_data |> validator.for_file("avatar", [validator.FileRequired])],
+      [validator.for_file("avatar", [validator.FileRequired])],
+      form_data,
       ctx,
     )
   {
@@ -429,7 +426,8 @@ pub fn for_file_required_fail_missing_test() {
 
   case
     validator.start(
-      [form_data |> validator.for_file("avatar", [validator.FileRequired])],
+      [validator.for_file("avatar", [validator.FileRequired])],
+      form_data,
       ctx,
     )
   {
@@ -448,9 +446,9 @@ pub fn for_file_extension_pass_test() {
 
   validator.start(
     [
-      form_data
-      |> validator.for_file("avatar", [validator.FileExtension(["jpg", "png"])]),
+      validator.for_file("avatar", [validator.FileExtension(["jpg", "png"])]),
     ],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -464,11 +462,11 @@ pub fn for_file_extension_fail_test() {
   case
     validator.start(
       [
-        form_data
-        |> validator.for_file("avatar", [
+        validator.for_file("avatar", [
           validator.FileExtension(["jpg", "png"]),
         ]),
       ],
+      form_data,
       ctx,
     )
   {
@@ -489,9 +487,9 @@ pub fn for_file_extension_case_insensitive_test() {
 
   validator.start(
     [
-      form_data
-      |> validator.for_file("avatar", [validator.FileExtension(["jpg", "png"])]),
+      validator.for_file("avatar", [validator.FileExtension(["jpg", "png"])]),
     ],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -509,7 +507,8 @@ pub fn for_file_min_size_pass_test() {
 
   let result =
     validator.start(
-      [form_data |> validator.for_file("file", [validator.FileMinSize(2)])],
+      [validator.for_file("file", [validator.FileMinSize(2)])],
+      form_data,
       ctx,
     )
 
@@ -529,7 +528,8 @@ pub fn for_file_min_size_fail_test() {
 
   let result =
     validator.start(
-      [form_data |> validator.for_file("file", [validator.FileMinSize(10)])],
+      [validator.for_file("file", [validator.FileMinSize(10)])],
+      form_data,
       ctx,
     )
 
@@ -554,7 +554,8 @@ pub fn for_file_max_size_pass_test() {
 
   let result =
     validator.start(
-      [form_data |> validator.for_file("file", [validator.FileMaxSize(10)])],
+      [validator.for_file("file", [validator.FileMaxSize(10)])],
+      form_data,
       ctx,
     )
 
@@ -574,7 +575,8 @@ pub fn for_file_max_size_fail_test() {
 
   let result =
     validator.start(
-      [form_data |> validator.for_file("file", [validator.FileMaxSize(2)])],
+      [validator.for_file("file", [validator.FileMaxSize(2)])],
+      form_data,
       ctx,
     )
 
@@ -602,7 +604,8 @@ pub fn for_custom_pass_test() {
   }
 
   validator.start(
-    [form_data |> validator.for("username", [validator.Custom(custom_rule)])],
+    [validator.for("username", [validator.Custom(custom_rule)])],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -620,7 +623,8 @@ pub fn for_custom_fail_test() {
 
   case
     validator.start(
-      [form_data |> validator.for("username", [validator.Custom(custom_rule)])],
+      [validator.for("username", [validator.Custom(custom_rule)])],
+      form_data,
       ctx,
     )
   {
@@ -652,13 +656,13 @@ pub fn for_custom_with_other_rules_test() {
 
   validator.start(
     [
-      form_data
-      |> validator.for("password", [
+      validator.for("password", [
         validator.Required,
         validator.MinLength(6),
         validator.Custom(has_number),
       ]),
     ],
+    form_data,
     ctx,
   )
   |> should.be_ok()
@@ -685,9 +689,9 @@ pub fn for_file_custom_pass_test() {
   let result =
     validator.start(
       [
-        form_data
-        |> validator.for_file("file", [validator.FileCustom(custom_file_rule)]),
+        validator.for_file("file", [validator.FileCustom(custom_file_rule)]),
       ],
+      form_data,
       ctx,
     )
 
@@ -718,9 +722,9 @@ pub fn for_file_custom_fail_test() {
   let result =
     validator.start(
       [
-        form_data
-        |> validator.for_file("file", [validator.FileCustom(custom_file_rule)]),
+        validator.for_file("file", [validator.FileCustom(custom_file_rule)]),
       ],
+      form_data,
       ctx,
     )
 
@@ -756,13 +760,13 @@ pub fn for_file_custom_with_other_rules_test() {
   let result =
     validator.start(
       [
-        form_data
-        |> validator.for_file("file", [
+        validator.for_file("file", [
           validator.FileRequired,
           validator.FileExtension(["txt", "md"]),
           validator.FileCustom(custom_file_rule),
         ]),
       ],
+      form_data,
       ctx,
     )
 

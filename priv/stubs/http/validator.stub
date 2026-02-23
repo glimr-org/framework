@@ -1,27 +1,31 @@
 import app/http/context/ctx.{type Context}
-import glimr/forms/form
-import glimr/forms/validator
-import wisp.{type FormData, type Request, type Response}
+import glimr/forms/validator.{type Rule, type Validated}
+import wisp.{type Request, type Response}
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#form-validation
 
 /// Define the shape of the data returned after validation
 ///
 pub type Data {
+  // Data(name: String)
   Data(todo)
 }
 
 /// Define your form's validation rules
 ///
-pub fn rules(form: FormData) {
+fn rules() -> List(Rule(Context)) {
   [
+    // validator.for("name", [validator.Required]),
     todo
   ]
 }
 
-/// Set the form data returned after validation
+/// Set the form data returned after validation. This is
+/// also your opportunity to manipulate the data however
+/// you need now that you know it's valid.
 ///
-pub fn data(form: FormData) -> Data {
+fn data(data: Validated) -> Data {
+  // Data(name: data.get("name"))
   Data(todo)
 }
 
