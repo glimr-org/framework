@@ -1,8 +1,12 @@
 //// HTTP Response Helpers
 ////
-//// Provides convenience functions for building HTTP responses
-//// including HTML, JSON, and error pages. Supports both inline
-//// content and file-based templates.
+//// Wisp's response API is low-level — building a JSON response
+//// requires serializing, setting headers, and wrapping in a
+//// response manually. Controllers that repeat this for every
+//// endpoint accumulate boilerplate that obscures the actual
+//// response logic. These helpers reduce each response type to
+//// a one-liner so controllers stay focused on what to return
+//// rather than how to encode it.
 
 import gleam/int
 import gleam/json.{type Json}
@@ -12,14 +16,32 @@ import wisp.{type Response}
 
 // ------------------------------------------------------------- Public Constants
 
-/// Returns the base path for application view files
+/// Centralizing the views path here means html_file and error
+/// both resolve templates from the same root without callers
+/// needing to know the directory structure. Changing this
+/// constant moves all view resolution at once.
+///
 pub const views_path = "src/resources/views/"
+
+// ------------------------------------------------------------- Public Types
+
+/// Middleware like error handling and validation need to know
+/// whether to produce HTML or JSON without inspecting headers
+/// at every call site. Storing the format as a typed enum on
+/// the request context lets downstream code branch cleanly
+/// rather than parsing Accept headers repeatedly.
+///
+pub type ResponseFormat {
+  HTML
+  JSON
+}
 
 // ------------------------------------------------------------- Public Functions
 
-/// Sets the view content directly from a string without reading
-/// from a file. Useful for rendering complete HTML documents
-/// or when the HTML is already loaded in memory.
+/// Wraps wisp.html_response so controllers don't import wisp
+/// directly for response building. Keeping all response
+/// constructors in one module means swapping the underlying
+/// HTTP library only requires changes here.
 ///
 /// *Example:*
 ///
@@ -32,9 +54,11 @@ pub fn html(content: String, status: Int) -> Response {
   wisp.html_response(content, status)
 }
 
-/// Creates a view from a static HTML file. The file path is
-/// relative to src/resources/views/ and leading slashes are
-/// automatically stripped. Panics if the file doesn't exist.
+/// Loading HTML from a file keeps response content out of Gleam
+/// source code, which is cleaner for large pages and lets
+/// designers edit templates without touching application logic.
+/// The assert panic on missing files surfaces the error
+/// immediately rather than serving an empty response.
 ///
 /// *Example:*
 /// 
@@ -49,9 +73,10 @@ pub fn html_file(file_path: String, status: Int) -> Response {
   wisp.html_response(content, status)
 }
 
-/// Creates a JSON response from a Json value. Serializes the
-/// JSON to a string and sets appropriate content-type headers
-/// for JSON responses.
+/// Serializing and setting the content-type in one call prevents
+/// the common mistake of returning JSON with an HTML content
+/// type — which causes browsers and API clients to misparse
+/// the response body.
 ///
 /// *Example:*
 ///
@@ -72,9 +97,10 @@ pub fn json(json: Json, status: Int) -> Response {
   |> wisp.json_response(status)
 }
 
-/// Adds a header to an existing response. Can be chained to
-/// add multiple headers to your response. The key and value
-/// are set as HTTP headers.
+/// Wraps wisp.set_header so controllers can chain headers
+/// using the pipe operator without importing wisp. Keeping
+/// response mutation in this module maintains the same
+/// abstraction boundary as the constructors above.
 ///
 /// *Example:*
 ///
@@ -88,15 +114,12 @@ pub fn header(response: Response, key: String, value: String) -> Response {
   |> wisp.set_header(key, value)
 }
 
-/// Generates an error response with the given HTTP status code.
-/// Attempts to load a custom error page from the application's
-/// src/resources/views/errors/{status}.html. If no custom page
-/// exists, falls back to the framework's default error page 
-/// from the framework's priv directory with the error.html 
-/// layout.
-///
-/// This allows applications to override default error pages 
-/// while maintaining consistent fallback behavior.
+/// Apps should be able to brand their error pages without
+/// modifying framework code. Checking the app's views/errors/
+/// directory first lets developers drop in a custom 404.html
+/// or 500.html that takes priority, while the framework's
+/// built-in pages serve as a sensible default until custom
+/// ones are created.
 ///
 /// *Example:*
 ///
@@ -124,10 +147,10 @@ pub fn error(status: Int) -> Response {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Creates a view from an HTML file in the framework's priv
-/// directory. Used internally by the framework for error pages
-/// and other built-in views. The file path is relative to
-/// priv/views/ and leading slashes are stripped.
+/// Framework-provided error pages live in priv/views/ so they
+/// ship with the compiled package and are available regardless
+/// of the app's directory structure. This is the fallback when
+/// no custom error page exists in the app's views directory.
 ///
 fn framework_html_file(file_path: String, status: Int) -> Response {
   let path = strip_leading_slashes(file_path)
@@ -137,9 +160,10 @@ fn framework_html_file(file_path: String, status: Int) -> Response {
   wisp.html_response(content, status)
 }
 
-/// Removes the first leading slash from a string if present.
-/// This helper function is used to normalize file paths 
-/// for consistent reading.
+/// Callers may pass paths like "/errors/404.html" or
+/// "errors/404.html" depending on context. Stripping the
+/// leading slash normalizes both forms so the views_path
+/// concatenation always produces a valid filesystem path.
 ///
 fn strip_leading_slashes(value: String) -> String {
   case string.starts_with(value, "/") {

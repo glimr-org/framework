@@ -1,23 +1,45 @@
 //// Error Handler
 ////
-//// Provides default error response handlers for HTML and JSON
-//// formats. Intercepts error status codes and replaces empty
-//// responses with user-friendly error messages.
+//// Handlers that return bare status codes like wisp.not_found()
+//// produce empty bodies — browsers show a blank page and API
+//// clients get no indication of what went wrong. This module
+//// intercepts those empty error responses and fills them with
+//// appropriate content based on the response format, so every
+//// error path produces a useful response without handlers
+//// needing to render error templates or build JSON manually.
 
 import gleam/bool
 import gleam/json
-import glimr/response/response
+import glimr/response/response.{type ResponseFormat}
 import wisp.{type Response}
 
 // ------------------------------------------------------------- Public Functions
 
-/// Middleware that adds HTML error messages to error responses.
-/// Wraps the request handler and checks the response status.
-/// Success responses (2xx) pass through unchanged. Error status
-/// codes receive default HTML error pages. Can be overridden by
-/// implementing custom error handlers in your application.
+/// Dispatches to the HTML or JSON error handler based on the
+/// response format so the kernel pipeline doesn't need separate
+/// middleware for each format. Routes that serve both web and
+/// API traffic can use a single middleware entry and let the
+/// format flag pick the right error style automatically.
 ///
-pub fn default_html_responses(handle_request: fn() -> Response) -> Response {
+pub fn default_responses(
+  response_format: ResponseFormat,
+  handle_request: fn() -> Response,
+) -> Response {
+  case response_format {
+    response.HTML -> default_html_responses(handle_request)
+    response.JSON -> default_json_responses(handle_request)
+  }
+}
+
+// ------------------------------------------------------------- Private Functions
+
+/// Success responses pass through untouched so handlers that
+/// already render their own content are never interfered with.
+/// Only specific error codes get replaced — unknown status codes
+/// are left as-is so custom error handling in handlers isn't
+/// overridden by the default pages.
+///
+fn default_html_responses(handle_request: fn() -> Response) -> Response {
   let res = handle_request()
 
   use <- bool.guard(
@@ -32,13 +54,13 @@ pub fn default_html_responses(handle_request: fn() -> Response) -> Response {
   }
 }
 
-/// Middleware that adds JSON error messages to error responses.
-/// Wraps the request handler and checks the response status.
-/// Success responses (2xx) pass through unchanged. Error status
-/// codes receive JSON error objects with an "error" field. Used
-/// for API routes to ensure consistent JSON error formatting.
+/// API clients expect a consistent JSON shape for every error
+/// so they can parse the response without status-code-specific
+/// logic. Each status gets its own human-readable message to
+/// aid debugging, while the uniform {"error": "..."} structure
+/// lets client code handle all errors with one code path.
 ///
-pub fn default_json_responses(handle_request: fn() -> Response) -> Response {
+fn default_json_responses(handle_request: fn() -> Response) -> Response {
   let res = handle_request()
 
   use <- bool.guard(

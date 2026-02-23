@@ -20,19 +20,29 @@ fn rules() -> List(Rule(Context)) {
   ]
 }
 
-/// Set the form data returned after validation. This is
-/// also your opportunity to manipulate the data however
-/// you need now that you know it's valid.
+/// Set the form data returned after validation. This is also 
+/// where you can transform validated input data before it
+/// reaches your controller.
 ///
 fn data(data: Validated) -> Data {
   // Data(name: data.get("name"))
   Data(todo)
 }
 
-/// Run your validation rules
+/// Run your validation rules. This is your entry point, you 
+/// dont't usually have to adjust anything in this function, but 
+/// you can if you want to add any custom logic before/after 
+/// validation.
 ///
 pub fn validate(req: Request, ctx: Context, next: fn(Data) -> Response) {
-  use validated <- validator.run(req, ctx, rules, data)
+  use validated <- validator.run(
+    req,
+    ctx,
+    ctx.response_format,
+    ctx.session,
+    rules,
+    data,
+  )
 
   next(validated)
 }
