@@ -55,6 +55,7 @@ pub type StringRule(ctx) {
   Digits(Int)
   MinDigits(Int)
   MaxDigits(Int)
+  Confirmed(String)
   Custom(CustomValidation(ctx))
 }
 
@@ -108,7 +109,7 @@ pub type FormData {
 /// validator module.
 ///
 type CustomValidation(ctx) =
-  fn(String, FormData, ctx) -> Result(Nil, String)
+  fn(String, String, FormData, ctx) -> Result(Nil, String)
 
 /// Mirrors CustomValidation but for file uploads — the input
 /// is an UploadedFile instead of a String because file rules
@@ -116,7 +117,7 @@ type CustomValidation(ctx) =
 /// string value can't represent.
 ///
 type CustomFileValidation(ctx) =
-  fn(UploadedFile, FormData, ctx) -> Result(Nil, String)
+  fn(String, UploadedFile, FormData, ctx) -> Result(Nil, String)
 
 // ------------------------------------------------------------- Public Functions
 
@@ -316,9 +317,9 @@ fn execute(
       let messages =
         rules
         |> list.filter_map(fn(rule) {
-          case apply_rule(value, data, ctx, rule) {
+          case apply_rule(field_name, value, data, ctx, rule) {
             Ok(_) -> Error(Nil)
-            Error(message) -> Ok(format_error_message(field_name, message))
+            Error(message) -> Ok(message)
           }
         })
 
@@ -332,9 +333,9 @@ fn execute(
       let messages =
         rules
         |> list.filter_map(fn(rule) {
-          case apply_file_rule(file, data, ctx, rule) {
+          case apply_file_rule(field_name, file, data, ctx, rule) {
             Ok(_) -> Error(Nil)
-            Error(message) -> Ok(format_error_message(field_name, message))
+            Error(message) -> Ok(message)
           }
         })
 
@@ -352,25 +353,28 @@ fn execute(
 /// adding a variant and its corresponding validate_ function.
 ///
 fn apply_rule(
+  field: String,
   value: String,
   data: FormData,
   ctx: ctx,
   rule: StringRule(ctx),
 ) -> Result(Nil, String) {
   case rule {
-    Required -> validate_required(value)
-    Email -> validate_email(value)
-    MinLength(min) -> validate_min_length(value, min)
-    MaxLength(max) -> validate_max_length(value, max)
-    Min(min) -> validate_min(value, min)
-    Max(max) -> validate_max(value, max)
-    Numeric -> validate_numeric(value)
-    Url -> validate_url(value)
-    Digits(count) -> validate_digits(value, count)
-    MinDigits(min) -> validate_min_digits(value, min)
-    MaxDigits(max) -> validate_max_digits(value, max)
+    Required -> validate_required(field, value)
+    Email -> validate_email(field, value)
+    MinLength(min) -> validate_min_length(field, value, min)
+    MaxLength(max) -> validate_max_length(field, value, max)
+    Min(min) -> validate_min(field, value, min)
+    Max(max) -> validate_max(field, value, max)
+    Numeric -> validate_numeric(field, value)
+    Url -> validate_url(field, value)
+    Digits(count) -> validate_digits(field, value, count)
+    MinDigits(min) -> validate_min_digits(field, value, min)
+    MaxDigits(max) -> validate_max_digits(field, value, max)
+    Confirmed(confirmation_field) ->
+      validate_confirmed(field, value, data, confirmation_field)
     Custom(custom_validation) ->
-      validate_custom(custom_validation, value, data, ctx)
+      validate_custom(custom_validation, field, value, data, ctx)
   }
 }
 
@@ -379,9 +383,9 @@ fn apply_rule(
 /// is effectively empty and should fail the required check
 /// just like a blank field would.
 ///
-fn validate_required(value: String) -> Result(Nil, String) {
+fn validate_required(field: String, value: String) -> Result(Nil, String) {
   case string.trim(value) {
-    "" -> Error("is required")
+    "" -> Error(field <> " is required")
     _ -> Ok(Nil)
   }
 }
@@ -391,12 +395,12 @@ fn validate_required(value: String) -> Result(Nil, String) {
 /// and at least one dot in the domain. Full email validation
 /// is best done by sending a confirmation link anyway.
 ///
-fn validate_email(value: String) -> Result(Nil, String) {
+fn validate_email(field: String, value: String) -> Result(Nil, String) {
   let assert Ok(re) = regexp.from_string("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
 
   case regexp.check(re, string.trim(value)) {
     True -> Ok(Nil)
-    False -> Error("must be a valid email address")
+    False -> Error(field <> " must be a valid email address")
   }
 }
 
@@ -405,11 +409,20 @@ fn validate_email(value: String) -> Result(Nil, String) {
 /// error message includes the threshold so users know exactly
 /// how many characters are needed.
 ///
-fn validate_min_length(value: String, min: Int) -> Result(Nil, String) {
+fn validate_min_length(
+  field: String,
+  value: String,
+  min: Int,
+) -> Result(Nil, String) {
   case string.length(value) >= min {
     True -> Ok(Nil)
     False ->
-      Error("must be at least " <> int.to_string(min) <> " characters long")
+      Error(
+        field
+        <> " must be at least "
+        <> int.to_string(min)
+        <> " characters long",
+      )
   }
 }
 
@@ -418,11 +431,20 @@ fn validate_min_length(value: String, min: Int) -> Result(Nil, String) {
 /// error. Validating early gives users a clear message about
 /// the limit.
 ///
-fn validate_max_length(value: String, max: Int) -> Result(Nil, String) {
+fn validate_max_length(
+  field: String,
+  value: String,
+  max: Int,
+) -> Result(Nil, String) {
   case string.length(value) <= max {
     True -> Ok(Nil)
     False ->
-      Error("must be no more than " <> int.to_string(max) <> " characters long")
+      Error(
+        field
+        <> " must be no more than "
+        <> int.to_string(max)
+        <> " characters long",
+      )
   }
 }
 
@@ -432,11 +454,11 @@ fn validate_max_length(value: String, max: Int) -> Result(Nil, String) {
 /// clear "must be a number" error instead of a confusing
 /// range message.
 ///
-fn validate_min(value: String, min: Int) -> Result(Nil, String) {
+fn validate_min(field: String, value: String, min: Int) -> Result(Nil, String) {
   case int.parse(value) {
     Ok(n) if n >= min -> Ok(Nil)
-    Ok(_) -> Error("must be at least " <> int.to_string(min))
-    Error(_) -> Error("must be a valid number")
+    Ok(_) -> Error(field <> " must be at least " <> int.to_string(min))
+    Error(_) -> Error(field <> " must be a valid number")
   }
 }
 
@@ -445,11 +467,11 @@ fn validate_min(value: String, min: Int) -> Result(Nil, String) {
 /// order quantities. Same parse-first strategy as validate_min
 /// so the error message matches the actual problem.
 ///
-fn validate_max(value: String, max: Int) -> Result(Nil, String) {
+fn validate_max(field: String, value: String, max: Int) -> Result(Nil, String) {
   case int.parse(value) {
     Ok(n) if n <= max -> Ok(Nil)
-    Ok(_) -> Error("must be no more than " <> int.to_string(max))
-    Error(_) -> Error("must be a valid number")
+    Ok(_) -> Error(field <> " must be no more than " <> int.to_string(max))
+    Error(_) -> Error(field <> " must be a valid number")
   }
 }
 
@@ -458,12 +480,12 @@ fn validate_max(value: String, max: Int) -> Result(Nil, String) {
 /// handling. Uses a regex to accept integers and negative
 /// numbers while rejecting everything else.
 ///
-fn validate_numeric(value: String) -> Result(Nil, String) {
+fn validate_numeric(field: String, value: String) -> Result(Nil, String) {
   let assert Ok(re) = regexp.from_string("^-?\\d+$")
 
   case regexp.check(re, string.trim(value)) {
     True -> Ok(Nil)
-    False -> Error("must be a valid number")
+    False -> Error(field <> " must be a valid number")
   }
 }
 
@@ -472,12 +494,12 @@ fn validate_numeric(value: String) -> Result(Nil, String) {
 /// dot. Catches missing schemes and bare domain entries
 /// without a full URL parser.
 ///
-fn validate_url(value: String) -> Result(Nil, String) {
+fn validate_url(field: String, value: String) -> Result(Nil, String) {
   let assert Ok(re) = regexp.from_string("^https?://[^\\s/$.?#].[^\\s]*$")
 
   case regexp.check(re, string.trim(value)) {
     True -> Ok(Nil)
-    False -> Error("must be a valid URL")
+    False -> Error(field <> " must be a valid URL")
   }
 }
 
@@ -486,14 +508,19 @@ fn validate_url(value: String) -> Result(Nil, String) {
 /// digits, correctly preserving leading zeros that int.parse
 /// would strip.
 ///
-fn validate_digits(value: String, count: Int) -> Result(Nil, String) {
+fn validate_digits(
+  field: String,
+  value: String,
+  count: Int,
+) -> Result(Nil, String) {
   let assert Ok(re) = {
     regexp.from_string("^\\d{" <> int.to_string(count) <> "}$")
   }
 
   case regexp.check(re, string.trim(value)) {
     True -> Ok(Nil)
-    False -> Error("must have exactly " <> int.to_string(count) <> " digits")
+    False ->
+      Error(field <> " must have exactly " <> int.to_string(count) <> " digits")
   }
 }
 
@@ -502,12 +529,17 @@ fn validate_digits(value: String, count: Int) -> Result(Nil, String) {
 /// Uses a regex to require at least N digits, correctly
 /// preserving leading zeros.
 ///
-fn validate_min_digits(value: String, min: Int) -> Result(Nil, String) {
+fn validate_min_digits(
+  field: String,
+  value: String,
+  min: Int,
+) -> Result(Nil, String) {
   let assert Ok(re) = regexp.from_string("^\\d{" <> int.to_string(min) <> ",}$")
 
   case regexp.check(re, string.trim(value)) {
     True -> Ok(Nil)
-    False -> Error("must have at least " <> int.to_string(min) <> " digits")
+    False ->
+      Error(field <> " must have at least " <> int.to_string(min) <> " digits")
   }
 }
 
@@ -516,14 +548,41 @@ fn validate_min_digits(value: String, min: Int) -> Result(Nil, String) {
 /// a regex to allow 1 to N digits, correctly preserving
 /// leading zeros.
 ///
-fn validate_max_digits(value: String, max: Int) -> Result(Nil, String) {
+fn validate_max_digits(
+  field: String,
+  value: String,
+  max: Int,
+) -> Result(Nil, String) {
   let assert Ok(re) = {
     regexp.from_string("^\\d{1," <> int.to_string(max) <> "}$")
   }
 
   case regexp.check(re, string.trim(value)) {
     True -> Ok(Nil)
-    False -> Error("must have no more than " <> int.to_string(max) <> " digits")
+    False ->
+      Error(
+        field <> " must have no more than " <> int.to_string(max) <> " digits",
+      )
+  }
+}
+
+/// Compares the field value against another field's value to
+/// ensure they match — commonly used for password confirmation
+/// fields. Skips empty values so Required handles presence.
+///
+fn validate_confirmed(
+  field: String,
+  value: String,
+  data: FormData,
+  confirmation_field: String,
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ ->
+      case data.get(confirmation_field) == value {
+        True -> Ok(Nil)
+        False -> Error(field <> " does not match " <> confirmation_field)
+      }
   }
 }
 
@@ -534,11 +593,12 @@ fn validate_max_digits(value: String, max: Int) -> Result(Nil, String) {
 ///
 fn validate_custom(
   custom_validation: CustomValidation(ctx),
+  field: String,
   value: String,
   data: FormData,
   ctx: ctx,
 ) -> Result(Nil, String) {
-  custom_validation(value, data, ctx)
+  custom_validation(field, value, data, ctx)
 }
 
 /// Mirrors apply_rule but for file uploads — pattern matching
@@ -547,18 +607,20 @@ fn validate_custom(
 /// a tangled match expression that mixes unrelated rule types.
 ///
 fn apply_file_rule(
+  field: String,
   file: Result(UploadedFile, Nil),
   data: FormData,
   ctx: ctx,
   rule: FileRule(ctx),
 ) -> Result(Nil, String) {
   case rule {
-    FileRequired -> validate_file_required(file)
-    FileMinSize(min) -> validate_file_min_size(file, min)
-    FileMaxSize(max) -> validate_file_max_size(file, max)
-    FileExtension(extensions) -> validate_file_extension(file, extensions)
+    FileRequired -> validate_file_required(field, file)
+    FileMinSize(min) -> validate_file_min_size(field, file, min)
+    FileMaxSize(max) -> validate_file_max_size(field, file, max)
+    FileExtension(extensions) ->
+      validate_file_extension(field, file, extensions)
     FileCustom(custom_validation) ->
-      validate_file_custom(custom_validation, file, data, ctx)
+      validate_file_custom(custom_validation, field, file, data, ctx)
   }
 }
 
@@ -568,16 +630,17 @@ fn apply_file_rule(
 /// so "required" means a real file was actually selected.
 ///
 fn validate_file_required(
+  field: String,
   file: Result(UploadedFile, Nil),
 ) -> Result(Nil, String) {
   case file {
     Ok(uploaded_file) -> {
       case string.trim(uploaded_file.file_name) {
-        "" -> Error("is required")
+        "" -> Error(field <> " is required")
         _ -> Ok(Nil)
       }
     }
-    Error(_) -> Error("is required")
+    Error(_) -> Error(field <> " is required")
   }
 }
 
@@ -587,6 +650,7 @@ fn validate_file_required(
 /// this rule compose with FileRequired independently.
 ///
 fn validate_file_min_size(
+  field: String,
   file: Result(UploadedFile, Nil),
   min_kb: Int,
 ) -> Result(Nil, String) {
@@ -600,11 +664,14 @@ fn validate_file_min_size(
             True -> Ok(Nil)
             False ->
               Error(
-                "must be at least " <> int.to_string(min_kb) <> " KB in size",
+                field
+                <> " must be at least "
+                <> int.to_string(min_kb)
+                <> " KB in size",
               )
           }
         }
-        Error(_) -> Error("could not read file information")
+        Error(_) -> Error(field <> " could not read file information")
       }
     }
   }
@@ -616,6 +683,7 @@ fn validate_file_min_size(
 /// rule compose with FileRequired independently.
 ///
 fn validate_file_max_size(
+  field: String,
   file: Result(UploadedFile, Nil),
   max_kb: Int,
 ) -> Result(Nil, String) {
@@ -629,13 +697,14 @@ fn validate_file_max_size(
             True -> Ok(Nil)
             False ->
               Error(
-                "must be no more than "
+                field
+                <> " must be no more than "
                 <> int.to_string(max_kb)
                 <> " KB in size",
               )
           }
         }
-        Error(_) -> Error("could not read file information")
+        Error(_) -> Error(field <> " could not read file information")
       }
     }
   }
@@ -647,6 +716,7 @@ fn validate_file_max_size(
 /// extension ensures ".JPG" matches "jpg" in the allow list.
 ///
 fn validate_file_extension(
+  field: String,
   file: Result(UploadedFile, Nil),
   allowed_extensions: List(String),
 ) -> Result(Nil, String) {
@@ -664,7 +734,9 @@ fn validate_file_extension(
         True -> Ok(Nil)
         False -> {
           let allowed = string.join(allowed_extensions, ", ")
-          Error("must have one of the following extensions: " <> allowed)
+          Error(
+            field <> " must have one of the following extensions: " <> allowed,
+          )
         }
       }
     }
@@ -678,30 +750,13 @@ fn validate_file_extension(
 ///
 fn validate_file_custom(
   custom_validation: CustomFileValidation(ctx),
+  field: String,
   file: Result(UploadedFile, Nil),
   data: FormData,
   ctx: ctx,
 ) -> Result(Nil, String) {
   case file {
     Error(_) -> Ok(Nil)
-    Ok(uploaded_file) -> custom_validation(uploaded_file, data, ctx)
+    Ok(uploaded_file) -> custom_validation(field, uploaded_file, data, ctx)
   }
-}
-
-/// HTML form field names use snake_case or kebab-case but error
-/// messages should read naturally — "User name is required" not
-/// "user_name is required". Normalizing here keeps individual
-/// rule functions from needing to know about field name format.
-///
-fn format_error_message(field_name: String, message: String) -> String {
-  let normalized_name =
-    field_name
-    |> string.split("_")
-    |> list.intersperse(" ")
-    |> string.concat
-    |> string.split("-")
-    |> list.intersperse(" ")
-    |> string.concat
-
-  string.capitalise(normalized_name) <> " " <> message
 }

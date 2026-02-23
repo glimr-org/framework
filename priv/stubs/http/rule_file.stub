@@ -5,6 +5,6 @@ import wisp.{type UploadedFile}
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#custom-file-validation-rules
 
-pub fn run(file: UploadedFile, data: FormData, ctx: Context) -> Result(Nil, String) {
+pub fn run(field: String, file: UploadedFile, data: FormData, ctx: Context) -> Result(Nil, String) {
   todo
 }
