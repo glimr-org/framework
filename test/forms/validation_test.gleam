@@ -61,6 +61,42 @@ pub fn for_email_fail_test() {
   }
 }
 
+pub fn for_email_fail_at_dot_test() {
+  let form_data = wisp.FormData(values: [#("email", "@.")], files: [])
+
+  validator.start([validator.for("email", [validator.Email])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_email_fail_dot_at_test() {
+  let form_data = wisp.FormData(values: [#("email", ".@")], files: [])
+
+  validator.start([validator.for("email", [validator.Email])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_email_fail_no_domain_test() {
+  let form_data = wisp.FormData(values: [#("email", "user@")], files: [])
+
+  validator.start([validator.for("email", [validator.Email])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_email_fail_no_local_part_test() {
+  let form_data = wisp.FormData(values: [#("email", "@example.com")], files: [])
+
+  validator.start([validator.for("email", [validator.Email])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_email_fail_spaces_test() {
+  let form_data =
+    wisp.FormData(values: [#("email", "user @example.com")], files: [])
+
+  validator.start([validator.for("email", [validator.Email])], form_data, ctx)
+  |> should.be_error()
+}
+
 pub fn for_min_length_pass_test() {
   let form_data = wisp.FormData(values: [#("name", "John")], files: [])
 
@@ -142,6 +178,27 @@ pub fn for_numeric_fail_test() {
   }
 }
 
+pub fn for_numeric_pass_negative_test() {
+  let form_data = wisp.FormData(values: [#("age", "-5")], files: [])
+
+  validator.start([validator.for("age", [validator.Numeric])], form_data, ctx)
+  |> should.be_ok()
+}
+
+pub fn for_numeric_fail_decimal_test() {
+  let form_data = wisp.FormData(values: [#("age", "12.5")], files: [])
+
+  validator.start([validator.for("age", [validator.Numeric])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_numeric_fail_empty_test() {
+  let form_data = wisp.FormData(values: [#("age", "")], files: [])
+
+  validator.start([validator.for("age", [validator.Numeric])], form_data, ctx)
+  |> should.be_error()
+}
+
 pub fn for_min_pass_test() {
   let form_data = wisp.FormData(values: [#("age", "25")], files: [])
 
@@ -210,6 +267,37 @@ pub fn for_url_fail_test() {
     }
     _ -> should.fail()
   }
+}
+
+pub fn for_url_pass_http_test() {
+  let form_data =
+    wisp.FormData(values: [#("website", "http://example.com")], files: [])
+
+  validator.start([validator.for("website", [validator.Url])], form_data, ctx)
+  |> should.be_ok()
+}
+
+pub fn for_url_fail_scheme_only_test() {
+  let form_data = wisp.FormData(values: [#("website", "http://")], files: [])
+
+  validator.start([validator.for("website", [validator.Url])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_url_fail_no_scheme_test() {
+  let form_data =
+    wisp.FormData(values: [#("website", "example.com")], files: [])
+
+  validator.start([validator.for("website", [validator.Url])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_url_fail_spaces_test() {
+  let form_data =
+    wisp.FormData(values: [#("website", "https://exam ple.com")], files: [])
+
+  validator.start([validator.for("website", [validator.Url])], form_data, ctx)
+  |> should.be_error()
 }
 
 pub fn for_digits_pass_test() {
@@ -297,6 +385,83 @@ pub fn for_max_digits_fail_test() {
     }
     _ -> should.fail()
   }
+}
+
+pub fn for_digits_pass_leading_zeros_test() {
+  let form_data = wisp.FormData(values: [#("code", "0042")], files: [])
+
+  validator.start(
+    [validator.for("code", [validator.Digits(4)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_digits_fail_negative_test() {
+  let form_data = wisp.FormData(values: [#("code", "-12")], files: [])
+
+  validator.start(
+    [validator.for("code", [validator.Digits(2)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_error()
+}
+
+pub fn for_digits_fail_non_numeric_test() {
+  let form_data = wisp.FormData(values: [#("code", "ab")], files: [])
+
+  validator.start(
+    [validator.for("code", [validator.Digits(2)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_error()
+}
+
+pub fn for_min_digits_pass_leading_zeros_test() {
+  let form_data = wisp.FormData(values: [#("code", "007")], files: [])
+
+  validator.start(
+    [validator.for("code", [validator.MinDigits(2)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_min_digits_fail_negative_test() {
+  let form_data = wisp.FormData(values: [#("code", "-123")], files: [])
+
+  validator.start(
+    [validator.for("code", [validator.MinDigits(2)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_error()
+}
+
+pub fn for_max_digits_pass_leading_zeros_test() {
+  let form_data = wisp.FormData(values: [#("code", "007")], files: [])
+
+  validator.start(
+    [validator.for("code", [validator.MaxDigits(3)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_max_digits_fail_negative_test() {
+  let form_data = wisp.FormData(values: [#("code", "-12")], files: [])
+
+  validator.start(
+    [validator.for("code", [validator.MaxDigits(3)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_error()
 }
 
 // ------------------------------------------------------------- Multiple Rules Tests
