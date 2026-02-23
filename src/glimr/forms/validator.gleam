@@ -11,10 +11,14 @@
 //// database or config.
 
 import gleam/int
+import gleam/json
 import gleam/list
 import gleam/result
 import gleam/string
 import glimr/forms/form
+import glimr/response/redirect
+import glimr/response/response.{type ResponseFormat, HTML, JSON}
+import glimr/session/session.{type Session}
 import simplifile
 import wisp.{type FormData, type Request, type Response, type UploadedFile}
 
@@ -109,9 +113,12 @@ type CustomFileValidation(ctx) =
 /// Controllers shouldn't mix validation logic with request
 /// handling — that makes both harder to test and read. The use
 /// callback pattern lets controllers declare validation inline
-/// and only handle the happy path, while the 422 error response
-/// is generated automatically so every form failure looks
-/// consistent across the app.
+/// and only handle the happy path, while error responses are
+/// generated automatically based on the response format:
+///
+/// - HTML: flashes the first error per field into the session
+///   as "errors.<field>" and redirects back to the form.
+/// - JSON: returns a 422 response with structured errors.
 ///
 /// *Example:*
 ///
@@ -137,7 +144,15 @@ type CustomFileValidation(ctx) =
 /// }
 ///
 /// pub fn validate(req: Request, ctx: Context, next: fn(Data) -> Response) {
-///   use validated <- validator.run(req, ctx, rules, data)
+///   use validated <- validator.run(
+///     req, 
+///     ctx, 
+///     ctx.response_format, 
+///     ctx.session, 
+///     rules, 
+///     data
+///   )
+///
 ///   next(validated)
 /// }
 /// ```
@@ -145,6 +160,8 @@ type CustomFileValidation(ctx) =
 pub fn run(
   req: Request,
   ctx: ctx,
+  response_format: ResponseFormat,
+  session: Session,
   rules: fn() -> List(Rule(ctx)),
   data: fn(Validated) -> typed_form,
   on_valid: fn(typed_form) -> Response,
@@ -161,19 +178,32 @@ pub fn run(
       on_valid(data(validated))
     }
     Error(errors) -> {
-      let error_html =
-        "<h1>Validation Errors:</h1><ul>"
-        <> string.join(
-          list.map(errors, fn(err) {
-            string.join(
-              list.map(err.messages, fn(msg) { "<li>" <> msg <> "</li>" }),
-              "",
-            )
-          }),
-          "",
-        )
-        <> "</ul>"
-      wisp.html_response(error_html, 422)
+      case response_format {
+        HTML -> {
+          list.each(errors, fn(err) {
+            case err.messages {
+              [first, ..] ->
+                session.flash(session, "errors." <> err.name, first)
+              [] -> Nil
+            }
+          })
+          redirect.back(req)
+        }
+        JSON -> {
+          json.object([
+            #(
+              "errors",
+              json.array(errors, fn(err) {
+                json.object([
+                  #("field", json.string(err.name)),
+                  #("messages", json.array(err.messages, json.string)),
+                ])
+              }),
+            ),
+          ])
+          |> response.json(422)
+        }
+      }
     }
   }
 }

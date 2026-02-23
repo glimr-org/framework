@@ -3,8 +3,6 @@ import gleam/http/request
 import gleeunit/should
 import glimr/http/middleware
 import glimr/http/middleware/handle_head
-import glimr/http/middleware/html_errors
-import glimr/http/middleware/json_errors
 import glimr/http/middleware/log_request
 import glimr/http/middleware/method_override
 import glimr/http/middleware/rescue_crashes
@@ -85,32 +83,6 @@ pub fn handle_head_conforms_to_middleware_type_test() {
 
   let response =
     middleware.apply([handle_head.run], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
-    })
-
-  response.status
-  |> should.equal(200)
-}
-
-pub fn html_errors_conforms_to_middleware_type_test() {
-  let req = make_request()
-  let ctx = TestContext("test")
-
-  let response =
-    middleware.apply([html_errors.run], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
-    })
-
-  response.status
-  |> should.equal(200)
-}
-
-pub fn json_errors_conforms_to_middleware_type_test() {
-  let req = make_request()
-  let ctx = TestContext("test")
-
-  let response =
-    middleware.apply([json_errors.run], req, ctx, fn(_req, _ctx) {
       wisp.response(200)
     })
 
@@ -210,50 +182,6 @@ pub fn handle_head_converts_head_to_get_test() {
   |> should.equal(200)
 }
 
-pub fn html_errors_replaces_error_body_test() {
-  let req = make_request()
-  let ctx = TestContext("test")
-
-  let response =
-    middleware.apply([html_errors.run], req, ctx, fn(_req, _ctx) {
-      wisp.response(404)
-    })
-
-  response.status
-  |> should.equal(404)
-
-  // Should have an HTML error body instead of empty
-  case response.body {
-    wisp.Text(body) -> {
-      body
-      |> should.not_equal("")
-    }
-    _ -> should.fail()
-  }
-}
-
-pub fn json_errors_replaces_error_body_test() {
-  let req = make_request()
-  let ctx = TestContext("test")
-
-  let response =
-    middleware.apply([json_errors.run], req, ctx, fn(_req, _ctx) {
-      wisp.response(404)
-    })
-
-  response.status
-  |> should.equal(404)
-
-  // Should have a JSON error body instead of empty
-  case response.body {
-    wisp.Text(body) -> {
-      body
-      |> should.not_equal("")
-    }
-    _ -> should.fail()
-  }
-}
-
 // ------------------------------------------------------------- Pipeline Tests
 
 pub fn multiple_wrappers_compose_in_pipeline_test() {
@@ -289,7 +217,6 @@ pub fn full_web_pipeline_test() {
         serve_static.run,
         method_override.run,
         log_request.run,
-        html_errors.run,
         rescue_crashes.run,
         handle_head.run,
       ],
@@ -313,7 +240,6 @@ pub fn full_api_pipeline_test() {
       [
         method_override.run,
         log_request.run,
-        json_errors.run,
         rescue_crashes.run,
         handle_head.run,
       ],
