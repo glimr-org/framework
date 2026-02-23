@@ -618,6 +618,732 @@ pub fn for_confirmed_skip_empty_value_test() {
   |> should.be_ok()
 }
 
+// ------------------------------------------------------------- Regex Rule Tests
+
+pub fn for_regex_pass_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("code", "ABC-123")], files: []),
+    )
+
+  validator.start(
+    [validator.for("code", [validator.Regex("^[A-Z]+-\\d+$")])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_regex_fail_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("code", "abc")], files: []))
+
+  case
+    validator.start(
+      [validator.for("code", [validator.Regex("^[A-Z]+-\\d+$")])],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["code format is invalid"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_regex_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("code", "")], files: []))
+
+  validator.start(
+    [validator.for("code", [validator.Regex("^[A-Z]+$")])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- RequiredIf Rule Tests
+
+pub fn for_required_if_triggered_pass_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(
+        values: [#("type", "business"), #("company_name", "Acme")],
+        files: [],
+      ),
+    )
+
+  validator.start(
+    [validator.for("company_name", [validator.RequiredIf("type", "business")])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_required_if_triggered_fail_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(
+        values: [#("type", "business"), #("company_name", "")],
+        files: [],
+      ),
+    )
+
+  case
+    validator.start(
+      [
+        validator.for("company_name", [
+          validator.RequiredIf("type", "business"),
+        ]),
+      ],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal([
+        "company_name is required when type is business",
+      ])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_required_if_not_triggered_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(
+        values: [#("type", "personal"), #("company_name", "")],
+        files: [],
+      ),
+    )
+
+  validator.start(
+    [validator.for("company_name", [validator.RequiredIf("type", "business")])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- RequiredUnless Rule Tests
+
+pub fn for_required_unless_pass_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("role", "admin"), #("reason", "")], files: []),
+    )
+
+  validator.start(
+    [validator.for("reason", [validator.RequiredUnless("role", "admin")])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_required_unless_fail_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("role", "user"), #("reason", "")], files: []),
+    )
+
+  case
+    validator.start(
+      [validator.for("reason", [validator.RequiredUnless("role", "admin")])],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["reason is required unless role is admin"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_required_unless_has_value_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(
+        values: [#("role", "user"), #("reason", "needs access")],
+        files: [],
+      ),
+    )
+
+  validator.start(
+    [validator.for("reason", [validator.RequiredUnless("role", "admin")])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- In Rule Tests
+
+pub fn for_in_pass_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("color", "red")], files: []))
+
+  validator.start(
+    [validator.for("color", [validator.In(["red", "green", "blue"])])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_in_fail_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("color", "purple")], files: []),
+    )
+
+  case
+    validator.start(
+      [validator.for("color", [validator.In(["red", "green", "blue"])])],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["color must be one of: red, green, blue"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_in_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("color", "")], files: []))
+
+  validator.start(
+    [validator.for("color", [validator.In(["red", "green", "blue"])])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- NotIn Rule Tests
+
+pub fn for_not_in_pass_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("username", "alice")], files: []),
+    )
+
+  validator.start(
+    [validator.for("username", [validator.NotIn(["admin", "root"])])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_not_in_fail_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("username", "admin")], files: []),
+    )
+
+  case
+    validator.start(
+      [validator.for("username", [validator.NotIn(["admin", "root"])])],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["username must not be one of: admin, root"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_not_in_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("username", "")], files: []))
+
+  validator.start(
+    [validator.for("username", [validator.NotIn(["admin", "root"])])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- Alpha Rule Tests
+
+pub fn for_alpha_pass_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("name", "John")], files: []))
+
+  validator.start([validator.for("name", [validator.Alpha])], form_data, ctx)
+  |> should.be_ok()
+}
+
+pub fn for_alpha_fail_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("name", "John123")], files: []),
+    )
+
+  case
+    validator.start([validator.for("name", [validator.Alpha])], form_data, ctx)
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["name must contain only letters"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_alpha_fail_spaces_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("name", "John Doe")], files: []),
+    )
+
+  validator.start([validator.for("name", [validator.Alpha])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_alpha_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("name", "")], files: []))
+
+  validator.start([validator.for("name", [validator.Alpha])], form_data, ctx)
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- AlphaNumeric Rule Tests
+
+pub fn for_alpha_numeric_pass_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("username", "john123")], files: []),
+    )
+
+  validator.start(
+    [validator.for("username", [validator.AlphaNumeric])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_alpha_numeric_fail_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("username", "john-123")], files: []),
+    )
+
+  case
+    validator.start(
+      [validator.for("username", [validator.AlphaNumeric])],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["username must contain only letters and numbers"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_alpha_numeric_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("username", "")], files: []))
+
+  validator.start(
+    [validator.for("username", [validator.AlphaNumeric])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- StartsWith Rule Tests
+
+pub fn for_starts_with_pass_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("code", "PRE-123")], files: []),
+    )
+
+  validator.start(
+    [validator.for("code", [validator.StartsWith("PRE-")])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_starts_with_fail_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("code", "POST-123")], files: []),
+    )
+
+  case
+    validator.start(
+      [validator.for("code", [validator.StartsWith("PRE-")])],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["code must start with PRE-"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_starts_with_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("code", "")], files: []))
+
+  validator.start(
+    [validator.for("code", [validator.StartsWith("PRE-")])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- EndsWith Rule Tests
+
+pub fn for_ends_with_pass_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("email", "user@example.com")], files: []),
+    )
+
+  validator.start(
+    [validator.for("email", [validator.EndsWith(".com")])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_ends_with_fail_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("email", "user@example.org")], files: []),
+    )
+
+  case
+    validator.start(
+      [validator.for("email", [validator.EndsWith(".com")])],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["email must end with .com"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_ends_with_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("email", "")], files: []))
+
+  validator.start(
+    [validator.for("email", [validator.EndsWith(".com")])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- Between Rule Tests
+
+pub fn for_between_pass_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("age", "25")], files: []))
+
+  validator.start(
+    [validator.for("age", [validator.Between(18, 65)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_between_pass_at_min_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("age", "18")], files: []))
+
+  validator.start(
+    [validator.for("age", [validator.Between(18, 65)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_between_pass_at_max_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("age", "65")], files: []))
+
+  validator.start(
+    [validator.for("age", [validator.Between(18, 65)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+pub fn for_between_fail_below_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("age", "10")], files: []))
+
+  case
+    validator.start(
+      [validator.for("age", [validator.Between(18, 65)])],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["age must be between 18 and 65"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_between_fail_above_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("age", "70")], files: []))
+
+  validator.start(
+    [validator.for("age", [validator.Between(18, 65)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_error()
+}
+
+pub fn for_between_fail_not_numeric_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("age", "abc")], files: []))
+
+  case
+    validator.start(
+      [validator.for("age", [validator.Between(18, 65)])],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["age must be a valid number"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_between_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("age", "")], files: []))
+
+  validator.start(
+    [validator.for("age", [validator.Between(18, 65)])],
+    form_data,
+    ctx,
+  )
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- Date Rule Tests
+
+pub fn for_date_pass_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("birthday", "2000-01-15")], files: []),
+    )
+
+  validator.start([validator.for("birthday", [validator.Date])], form_data, ctx)
+  |> should.be_ok()
+}
+
+pub fn for_date_fail_format_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("birthday", "01/15/2000")], files: []),
+    )
+
+  case
+    validator.start(
+      [validator.for("birthday", [validator.Date])],
+      form_data,
+      ctx,
+    )
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["birthday must be a valid date (YYYY-MM-DD)"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_date_fail_invalid_month_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("birthday", "2000-13-01")], files: []),
+    )
+
+  validator.start([validator.for("birthday", [validator.Date])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_date_fail_invalid_day_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("birthday", "2000-01-32")], files: []),
+    )
+
+  validator.start([validator.for("birthday", [validator.Date])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_date_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("birthday", "")], files: []))
+
+  validator.start([validator.for("birthday", [validator.Date])], form_data, ctx)
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- Uuid Rule Tests
+
+pub fn for_uuid_pass_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(
+        values: [#("id", "550e8400-e29b-41d4-a716-446655440000")],
+        files: [],
+      ),
+    )
+
+  validator.start([validator.for("id", [validator.Uuid])], form_data, ctx)
+  |> should.be_ok()
+}
+
+pub fn for_uuid_fail_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("id", "not-a-uuid")], files: []),
+    )
+
+  case
+    validator.start([validator.for("id", [validator.Uuid])], form_data, ctx)
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["id must be a valid UUID"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_uuid_fail_wrong_length_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("id", "550e8400-e29b-41d4-a716")], files: []),
+    )
+
+  validator.start([validator.for("id", [validator.Uuid])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_uuid_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("id", "")], files: []))
+
+  validator.start([validator.for("id", [validator.Uuid])], form_data, ctx)
+  |> should.be_ok()
+}
+
+// ------------------------------------------------------------- Ip Rule Tests
+
+pub fn for_ip_pass_ipv4_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("server", "192.168.1.1")], files: []),
+    )
+
+  validator.start([validator.for("server", [validator.Ip])], form_data, ctx)
+  |> should.be_ok()
+}
+
+pub fn for_ip_pass_ipv6_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(
+        values: [#("server", "2001:0db8:85a3:0000:0000:8a2e:0370:7334")],
+        files: [],
+      ),
+    )
+
+  validator.start([validator.for("server", [validator.Ip])], form_data, ctx)
+  |> should.be_ok()
+}
+
+pub fn for_ip_fail_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("server", "999.999.999.999")], files: []),
+    )
+
+  case
+    validator.start([validator.for("server", [validator.Ip])], form_data, ctx)
+  {
+    Error([validator.ValidationError(messages: msgs, ..)]) -> {
+      msgs
+      |> should.equal(["server must be a valid IP address"])
+    }
+    _ -> should.fail()
+  }
+}
+
+pub fn for_ip_fail_text_test() {
+  let form_data =
+    validator.form_data(
+      wisp.FormData(values: [#("server", "not-an-ip")], files: []),
+    )
+
+  validator.start([validator.for("server", [validator.Ip])], form_data, ctx)
+  |> should.be_error()
+}
+
+pub fn for_ip_skip_empty_test() {
+  let form_data =
+    validator.form_data(wisp.FormData(values: [#("server", "")], files: []))
+
+  validator.start([validator.for("server", [validator.Ip])], form_data, ctx)
+  |> should.be_ok()
+}
+
 // ------------------------------------------------------------- Multiple Rules Tests
 
 pub fn for_multiple_rules_all_pass_test() {

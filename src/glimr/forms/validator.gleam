@@ -56,6 +56,19 @@ pub type StringRule(ctx) {
   MinDigits(Int)
   MaxDigits(Int)
   Confirmed(String)
+  Regex(String)
+  RequiredIf(String, String)
+  RequiredUnless(String, String)
+  In(List(String))
+  NotIn(List(String))
+  Alpha
+  AlphaNumeric
+  StartsWith(String)
+  EndsWith(String)
+  Between(Int, Int)
+  Date
+  Uuid
+  Ip
   Custom(CustomValidation(ctx))
 }
 
@@ -373,6 +386,21 @@ fn apply_rule(
     MaxDigits(max) -> validate_max_digits(field, value, max)
     Confirmed(confirmation_field) ->
       validate_confirmed(field, value, data, confirmation_field)
+    Regex(pattern) -> validate_regex(field, value, pattern)
+    RequiredIf(other_field, other_value) ->
+      validate_required_if(field, value, data, other_field, other_value)
+    RequiredUnless(other_field, other_value) ->
+      validate_required_unless(field, value, data, other_field, other_value)
+    In(allowed) -> validate_in(field, value, allowed)
+    NotIn(disallowed) -> validate_not_in(field, value, disallowed)
+    Alpha -> validate_alpha(field, value)
+    AlphaNumeric -> validate_alpha_numeric(field, value)
+    StartsWith(prefix) -> validate_starts_with(field, value, prefix)
+    EndsWith(suffix) -> validate_ends_with(field, value, suffix)
+    Between(min, max) -> validate_between(field, value, min, max)
+    Date -> validate_date(field, value)
+    Uuid -> validate_uuid(field, value)
+    Ip -> validate_ip(field, value)
     Custom(custom_validation) ->
       validate_custom(custom_validation, field, value, data, ctx)
   }
@@ -566,9 +594,10 @@ fn validate_max_digits(
   }
 }
 
-/// Compares the field value against another field's value to
-/// ensure they match — commonly used for password confirmation
-/// fields. Skips empty values so Required handles presence.
+/// Password and email confirmation fields need to match their
+/// counterpart before submission is accepted. Accessing the
+/// other field through FormData keeps this cross-field check
+/// declarative rather than requiring custom validation logic.
 ///
 fn validate_confirmed(
   field: String,
@@ -583,6 +612,313 @@ fn validate_confirmed(
         True -> Ok(Nil)
         False -> Error(field <> " does not match " <> confirmation_field)
       }
+  }
+}
+
+/// Covers format constraints that don't warrant a dedicated
+/// rule variant — like postal codes or product SKUs with
+/// project-specific patterns. Skips empty values so Required
+/// handles presence independently.
+///
+fn validate_regex(
+  field: String,
+  value: String,
+  pattern: String,
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let assert Ok(re) = regexp.from_string(pattern)
+      case regexp.check(re, value) {
+        True -> Ok(Nil)
+        False -> Error(field <> " format is invalid")
+      }
+    }
+  }
+}
+
+/// Forms with conditional sections need fields that are only
+/// required in certain states — like "company_name" when the
+/// account type is "business". Without this, the logic would
+/// need a Custom rule or pre-processing in the controller.
+///
+fn validate_required_if(
+  field: String,
+  value: String,
+  data: FormData,
+  other_field: String,
+  other_value: String,
+) -> Result(Nil, String) {
+  case data.get(other_field) == other_value {
+    True ->
+      case string.trim(value) {
+        "" ->
+          Error(
+            field
+            <> " is required when "
+            <> other_field
+            <> " is "
+            <> other_value,
+          )
+        _ -> Ok(Nil)
+      }
+    False -> Ok(Nil)
+  }
+}
+
+/// The inverse of RequiredIf — the field is required by
+/// default but becomes optional when a specific condition is
+/// met. Useful for forms where selecting one option makes
+/// another field irrelevant.
+///
+fn validate_required_unless(
+  field: String,
+  value: String,
+  data: FormData,
+  other_field: String,
+  other_value: String,
+) -> Result(Nil, String) {
+  case data.get(other_field) == other_value {
+    True -> Ok(Nil)
+    False ->
+      case string.trim(value) {
+        "" ->
+          Error(
+            field
+            <> " is required unless "
+            <> other_field
+            <> " is "
+            <> other_value,
+          )
+        _ -> Ok(Nil)
+      }
+  }
+}
+
+/// Select fields and radio buttons should only accept values
+/// from their option list — accepting arbitrary input would
+/// bypass the intended choices and could cause downstream
+/// errors when the value doesn't match any enum variant.
+///
+fn validate_in(
+  field: String,
+  value: String,
+  allowed: List(String),
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ ->
+      case list.contains(allowed, value) {
+        True -> Ok(Nil)
+        False -> {
+          let options = string.join(allowed, ", ")
+          Error(field <> " must be one of: " <> options)
+        }
+      }
+  }
+}
+
+/// Some fields accept free-form input but need to block a
+/// small set of reserved or offensive values — like usernames
+/// that conflict with URL routes. Easier than enumerating
+/// every valid option with In.
+///
+fn validate_not_in(
+  field: String,
+  value: String,
+  disallowed: List(String),
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ ->
+      case list.contains(disallowed, value) {
+        True ->
+          Error(
+            field <> " must not be one of: " <> string.join(disallowed, ", "),
+          )
+        False -> Ok(Nil)
+      }
+  }
+}
+
+/// Fields like country codes or currency identifiers must be
+/// purely alphabetic — digits or special characters would be
+/// invalid. A dedicated rule is clearer than asking users to
+/// supply a regex pattern for this common constraint.
+///
+fn validate_alpha(field: String, value: String) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let assert Ok(re) = regexp.from_string("^[a-zA-Z]+$")
+      case regexp.check(re, value) {
+        True -> Ok(Nil)
+        False -> Error(field <> " must contain only letters")
+      }
+    }
+  }
+}
+
+/// Usernames and slugs often need to be alphanumeric to avoid
+/// issues with URL routing, database queries, or display
+/// formatting. A dedicated rule avoids repeating the same
+/// regex pattern across multiple validators.
+///
+fn validate_alpha_numeric(field: String, value: String) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let assert Ok(re) = regexp.from_string("^[a-zA-Z0-9]+$")
+      case regexp.check(re, value) {
+        True -> Ok(Nil)
+        False -> Error(field <> " must contain only letters and numbers")
+      }
+    }
+  }
+}
+
+/// Fields like phone numbers with country codes or URLs with
+/// required schemes need a specific prefix to be valid.
+/// Skips empty values so Required handles presence
+/// independently.
+///
+fn validate_starts_with(
+  field: String,
+  value: String,
+  prefix: String,
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ ->
+      case string.starts_with(value, prefix) {
+        True -> Ok(Nil)
+        False -> Error(field <> " must start with " <> prefix)
+      }
+  }
+}
+
+/// Fields like email domains or file paths that must end with
+/// a specific suffix — for example requiring "@company.com"
+/// for corporate email fields. Skips empty values so Required
+/// handles presence independently.
+///
+fn validate_ends_with(
+  field: String,
+  value: String,
+  suffix: String,
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ ->
+      case string.ends_with(value, suffix) {
+        True -> Ok(Nil)
+        False -> Error(field <> " must end with " <> suffix)
+      }
+  }
+}
+
+/// Combines Min and Max into a single rule for fields where
+/// both bounds are always specified together — like rating
+/// scores or age ranges. Avoids cluttering the rule list with
+/// two separate entries for one logical constraint.
+///
+fn validate_between(
+  field: String,
+  value: String,
+  min: Int,
+  max: Int,
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ ->
+      case int.parse(value) {
+        Ok(n) if n >= min && n <= max -> Ok(Nil)
+        Ok(_) ->
+          Error(
+            field
+            <> " must be between "
+            <> int.to_string(min)
+            <> " and "
+            <> int.to_string(max),
+          )
+        Error(_) -> Error(field <> " must be a valid number")
+      }
+  }
+}
+
+/// Date inputs arrive as strings that need structural and
+/// semantic validation — the regex catches malformed formats
+/// while the range check catches impossible dates like month
+/// 13. Both checks are needed because the regex alone would
+/// accept "2024-99-99".
+///
+fn validate_date(field: String, value: String) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let assert Ok(re) = regexp.from_string("^\\d{4}-\\d{2}-\\d{2}$")
+      case regexp.check(re, value) {
+        False -> Error(field <> " must be a valid date (YYYY-MM-DD)")
+        True -> {
+          let parts = string.split(value, "-")
+          case parts {
+            [_, m, d] -> {
+              let month = result.unwrap(int.parse(m), 0)
+              let day = result.unwrap(int.parse(d), 0)
+              case month >= 1 && month <= 12 && day >= 1 && day <= 31 {
+                True -> Ok(Nil)
+                False -> Error(field <> " must be a valid date (YYYY-MM-DD)")
+              }
+            }
+            _ -> Error(field <> " must be a valid date (YYYY-MM-DD)")
+          }
+        }
+      }
+    }
+  }
+}
+
+/// API endpoints that accept resource IDs should reject
+/// malformed UUIDs at the validation layer rather than letting
+/// them reach the database where the error message would be
+/// less helpful. Supports versions 1-5 per RFC 4122.
+///
+fn validate_uuid(field: String, value: String) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let assert Ok(re) =
+        regexp.from_string(
+          "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+        )
+      case regexp.check(re, value) {
+        True -> Ok(Nil)
+        False -> Error(field <> " must be a valid UUID")
+      }
+    }
+  }
+}
+
+/// Network configuration forms need to reject malformed IP
+/// addresses before they reach system calls that would fail
+/// with cryptic errors. Supporting both v4 and v6 avoids
+/// needing separate rules for each protocol version.
+///
+fn validate_ip(field: String, value: String) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let assert Ok(ipv4_re) =
+        regexp.from_string(
+          "^(25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(25[0-5]|2[0-4]\\d|[01]?\\d\\d?)$",
+        )
+      let assert Ok(ipv6_re) =
+        regexp.from_string("^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$")
+      case regexp.check(ipv4_re, value) || regexp.check(ipv6_re, value) {
+        True -> Ok(Nil)
+        False -> Error(field <> " must be a valid IP address")
+      }
+    }
   }
 }
 
