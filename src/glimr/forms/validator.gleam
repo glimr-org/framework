@@ -13,6 +13,7 @@
 import gleam/int
 import gleam/json
 import gleam/list
+import gleam/regexp
 import gleam/result
 import gleam/string
 import glimr/forms/form
@@ -362,18 +363,15 @@ fn validate_required(value: String) -> Result(Nil, String) {
   }
 }
 
-/// A lightweight check for @ and . catches the most common
-/// typos without rejecting valid edge-case addresses that a
-/// strict RFC parser might accept. Full email validation is
-/// best done by sending a confirmation link anyway.
+/// Validates email format using a regex that checks for a
+/// non-empty local part, an @ symbol, a non-empty domain,
+/// and at least one dot in the domain. Full email validation
+/// is best done by sending a confirmation link anyway.
 ///
 fn validate_email(value: String) -> Result(Nil, String) {
-  let trimmed = string.trim(value)
-  case
-    trimmed != ""
-    && string.contains(trimmed, "@")
-    && string.contains(trimmed, ".")
-  {
+  let assert Ok(re) = regexp.from_string("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+
+  case regexp.check(re, string.trim(value)) {
     True -> Ok(Nil)
     False -> Error("must be a valid email address")
   }
@@ -434,97 +432,75 @@ fn validate_max(value: String, max: Int) -> Result(Nil, String) {
 
 /// Catches non-numeric input early so downstream code can
 /// safely parse the value without a second round of error
-/// handling. Useful for fields like zip codes that must be
-/// digits but don't need range validation.
+/// handling. Uses a regex to accept integers and negative
+/// numbers while rejecting everything else.
 ///
 fn validate_numeric(value: String) -> Result(Nil, String) {
-  case int.parse(value) {
-    Ok(_) -> Ok(Nil)
-    Error(_) -> Error("must be a valid number")
+  let assert Ok(re) = regexp.from_string("^-?\\d+$")
+
+  case regexp.check(re, string.trim(value)) {
+    True -> Ok(Nil)
+    False -> Error("must be a valid number")
   }
 }
 
-/// Requiring a scheme prefix catches common mistakes like
-/// entering "example.com" without the protocol. A full URL
-/// parser would be overkill since the value will be used in
-/// links where the scheme is mandatory anyway.
+/// Validates URL format using a regex that requires an http
+/// or https scheme followed by a domain with at least one
+/// dot. Catches missing schemes and bare domain entries
+/// without a full URL parser.
 ///
 fn validate_url(value: String) -> Result(Nil, String) {
-  let trimmed = string.trim(value)
-  case
-    string.starts_with(trimmed, "http://")
-    || string.starts_with(trimmed, "https://")
-  {
+  let assert Ok(re) = regexp.from_string("^https?://[^\\s/$.?#].[^\\s]*$")
+
+  case regexp.check(re, string.trim(value)) {
     True -> Ok(Nil)
     False -> Error("must be a valid URL")
   }
 }
 
 /// Fixed-length numeric codes like PINs or verification codes
-/// need exact digit counts. Using absolute_value before
-/// counting ensures negative signs don't inflate the count
-/// and give a false pass.
+/// need exact digit counts. Uses a regex to match exactly N
+/// digits, correctly preserving leading zeros that int.parse
+/// would strip.
 ///
 fn validate_digits(value: String, count: Int) -> Result(Nil, String) {
-  case int.parse(value) {
-    Ok(n) -> {
-      let digit_count =
-        int.absolute_value(n)
-        |> int.to_string
-        |> string.length
+  let assert Ok(re) = {
+    regexp.from_string("^\\d{" <> int.to_string(count) <> "}$")
+  }
 
-      case digit_count == count {
-        True -> Ok(Nil)
-        False ->
-          Error("must have exactly " <> int.to_string(count) <> " digits")
-      }
-    }
-    Error(_) -> Error("must be a valid number")
+  case regexp.check(re, string.trim(value)) {
+    True -> Ok(Nil)
+    False -> Error("must have exactly " <> int.to_string(count) <> " digits")
   }
 }
 
 /// Variable-length numeric identifiers like phone numbers or
 /// account codes need a minimum digit count to be meaningful.
-/// Same absolute_value strategy as validate_digits to ignore
-/// negative signs in the count.
+/// Uses a regex to require at least N digits, correctly
+/// preserving leading zeros.
 ///
 fn validate_min_digits(value: String, min: Int) -> Result(Nil, String) {
-  case int.parse(value) {
-    Ok(n) -> {
-      let digit_count =
-        int.absolute_value(n)
-        |> int.to_string
-        |> string.length
+  let assert Ok(re) = regexp.from_string("^\\d{" <> int.to_string(min) <> ",}$")
 
-      case digit_count >= min {
-        True -> Ok(Nil)
-        False -> Error("must have at least " <> int.to_string(min) <> " digits")
-      }
-    }
-    Error(_) -> Error("must be a valid number")
+  case regexp.check(re, string.trim(value)) {
+    True -> Ok(Nil)
+    False -> Error("must have at least " <> int.to_string(min) <> " digits")
   }
 }
 
 /// Caps digit count for fields like zip codes or short numeric
-/// identifiers where too many digits indicate bad input. Same
-/// absolute_value strategy as the other digit validators to
-/// handle negative signs consistently.
+/// identifiers where too many digits indicate bad input. Uses
+/// a regex to allow 1 to N digits, correctly preserving
+/// leading zeros.
 ///
 fn validate_max_digits(value: String, max: Int) -> Result(Nil, String) {
-  case int.parse(value) {
-    Ok(n) -> {
-      let digit_count =
-        int.absolute_value(n)
-        |> int.to_string
-        |> string.length
+  let assert Ok(re) = {
+    regexp.from_string("^\\d{1," <> int.to_string(max) <> "}$")
+  }
 
-      case digit_count <= max {
-        True -> Ok(Nil)
-        False ->
-          Error("must have no more than " <> int.to_string(max) <> " digits")
-      }
-    }
-    Error(_) -> Error("must be a valid number")
+  case regexp.check(re, string.trim(value)) {
+    True -> Ok(Nil)
+    False -> Error("must have no more than " <> int.to_string(max) <> " digits")
   }
 }
 
