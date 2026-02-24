@@ -28,7 +28,6 @@ import simplifile
 /// models without touching the rest.
 ///
 pub fn run(name: String, model_filter: Option(List(String))) {
-  io.println("")
   io.println(console.warning("Glimr Query Generator"))
   io.println("  Connection: " <> name)
 

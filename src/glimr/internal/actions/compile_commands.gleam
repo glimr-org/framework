@@ -2,7 +2,7 @@
 ////
 //// Generates a JSON registry of available commands so the CLI
 //// can show help without loading every command module. Scans
-//// both third-party packages and app commands to build a 
+//// both third-party packages and app commands to build a
 //// unified command list at compile time.
 ////
 
@@ -26,7 +26,7 @@ const registry_path = "priv/storage/framework/console/commands.json"
 // ------------------------------------------------------------- Public Types
 
 /// Holds command metadata for the registry. Module path enables
-/// dynamic loading when the command is actually invoked, 
+/// dynamic loading when the command is actually invoked,
 /// avoiding upfront loading of all command modules.
 ///
 pub type CommandInfo {
@@ -35,8 +35,8 @@ pub type CommandInfo {
 
 // ------------------------------------------------------------- Public Functions
 
-/// Entry point invoked by the build command. Scans all 
-/// configured packages and app commands, writes results to JSON 
+/// Entry point invoked by the build command. Scans all
+/// configured packages and app commands, writes results to JSON
 /// for fast CLI startup without loading every command module.
 ///
 pub fn run(verbose: Bool) -> Result(Nil, String) {
@@ -145,8 +145,9 @@ fn find_collisions(
 }
 
 /// Combines package and app commands into one list. Packages
-/// are scanned first, then app commands are appended. Collisions
-/// are detected and reported as errors during compilation.
+/// are scanned first, then app commands are appended.
+/// Collisions are detected and reported as errors during
+/// compilation.
 ///
 fn scan_commands(packages: List(String)) -> List(CommandInfo) {
   let package_commands =
@@ -159,8 +160,8 @@ fn scan_commands(packages: List(String)) -> List(CommandInfo) {
 }
 
 /// Checks manifest.toml to find package location. Local path
-/// dependencies use their actual path, hex dependencies live
-/// in build/packages/. This avoids hardcoding package locations.
+/// dependencies use their actual path, hex dependencies live in
+/// build/packages/. This avoids hardcoding package locations.
 ///
 fn scan_package_commands(package: String) -> List(CommandInfo) {
   let dir = case get_package_path(package) {
@@ -188,8 +189,8 @@ fn get_package_path(package: String) -> option.Option(String) {
 }
 
 /// Extracts path for local packages from manifest.toml. Returns
-/// None for hex packages so caller knows to look in the 
-/// standard build/packages directory instead of a custom local 
+/// None for hex packages so caller knows to look in the
+/// standard build/packages directory instead of a custom local
 /// path.
 ///
 fn parse_package_path(content: String, package: String) -> option.Option(String) {
@@ -239,8 +240,8 @@ fn scan_app_commands() -> List(CommandInfo) {
   scan_directory("src/app/console/commands", "app")
 }
 
-/// Lists .gleam files in directory and parses each. Returns 
-/// empty list if directory doesn't exist, which is fine for 
+/// Lists .gleam files in directory and parses each. Returns
+/// empty list if directory doesn't exist, which is fine for
 /// packages that don't define commands.
 ///
 fn scan_directory(dir: String, prefix: String) -> List(CommandInfo) {
@@ -254,8 +255,8 @@ fn scan_directory(dir: String, prefix: String) -> List(CommandInfo) {
   }
 }
 
-/// Extracts command metadata from source file. Derives name 
-/// from filename and parses description from const or builder 
+/// Extracts command metadata from source file. Derives name
+/// from filename and parses description from const or builder
 /// pattern to avoid requiring a specific export.
 ///
 fn parse_command_file(path: String, prefix: String) -> Result(CommandInfo, Nil) {
@@ -270,9 +271,9 @@ fn parse_command_file(path: String, prefix: String) -> Result(CommandInfo, Nil) 
   }
 }
 
-/// Uses filename as command name without prefix.
-/// Convention over configuration - no need to specify command
-/// name in the source file.
+/// Uses filename as command name without prefix. Convention
+/// over configuration - no need to specify command name in the
+/// source file.
 ///
 fn path_to_command_name(path: String) -> String {
   path
@@ -335,8 +336,8 @@ fn parse_const_description(content: String) -> option.Option(String) {
   }
 }
 
-/// Matches `command.description("...")` builder pattern. 
-/// Fallback for commands that set description via the builder 
+/// Matches `command.description("...")` builder pattern.
+/// Fallback for commands that set description via the builder
 /// API instead of a const.
 ///
 fn parse_builder_description(content: String) -> option.Option(String) {
@@ -389,17 +390,17 @@ fn parse_registry(content: String) -> Result(Dict(String, CommandInfo), Nil) {
   }
 }
 
-/// Decodes the top-level registry object. Keys are command names,
-/// values are command info objects containing description and
-/// module path for dynamic loading.
+/// Decodes the top-level registry object. Keys are command
+/// names, values are command info objects containing
+/// description and module path for dynamic loading.
 ///
 fn registry_decoder() -> decode.Decoder(Dict(String, CommandInfo)) {
   decode.dict(decode.string, command_info_decoder())
 }
 
 /// Decodes a single command entry from the registry JSON. Name
-/// field is set to empty string here since the actual name comes
-/// from the dict key rather than the serialized value.
+/// field is set to empty string here since the actual name
+/// comes from the dict key rather than the serialized value.
 ///
 fn command_info_decoder() -> decode.Decoder(CommandInfo) {
   use description <- decode.field("description", decode.string)

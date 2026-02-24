@@ -1,9 +1,11 @@
 //// Watch Runner
 ////
-//// Runs the application with file watching for development.
-//// Monitors source files for changes and triggers appropriate
-//// hooks or restarts the application automatically.
-////
+//// Hot-reloading during development requires detecting file
+//// changes and deciding what to do — some changes (routes,
+//// loom templates, commands) can be recompiled incrementally
+//// without restarting the app, while others need a full
+//// restart. Polling mtimes every second is simple, portable,
+//// and avoids platform-specific filesystem notification APIs.
 
 import gleam/dict.{type Dict}
 import gleam/erlang/process
@@ -21,17 +23,17 @@ import simplifile
 
 // ------------------------------------------------------------- Private Types
 
-/// Opaque type representing an Erlang port. Used to communicate
-/// with the spawned gleam run process for starting, stopping,
-/// and reading output.
+/// Wraps the Erlang port handle so Gleam's type system prevents
+/// accidentally passing other values to the FFI functions that
+/// expect a port.
 ///
 type Port
 
 // ------------------------------------------------------------- Public Functions
 
-/// Starts the application with file watching. Monitors the src
-/// directory for changes and triggers hooks or restarts based
-/// on which files changed.
+/// Starts the dev proxy before the app so that incoming
+/// requests are buffered during restarts instead of failing
+/// with connection refused.
 ///
 pub fn run(cfg: Config) -> Nil {
   let app_port = config.app_port()
@@ -47,10 +49,11 @@ pub fn run(cfg: Config) -> Nil {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Main file watching loop. Polls for file changes every
-/// second and triggers appropriate hooks or restarts based
-/// on which files were modified. The had_compile_error flag
-/// tracks if the previous iteration had a compilation failure.
+/// Priority order matters: route/loom/command changes are
+/// handled with targeted recompilation (cheaper than a full
+/// restart), while other changes trigger a restart. The
+/// had_compile_error flag prevents compiled output from
+/// triggering a spurious restart on the next tick.
 ///
 fn watch_loop(
   last_mtimes: Dict(String, Int),
@@ -247,30 +250,30 @@ fn watch_loop(
 
 // ------------------------------------------------------------- FFI Bindings
 
-/// Starts a new gleam run process via Erlang port. Returns a
-/// port handle that can be used for stopping the process and
-/// reading its output.
+/// Spawning via Erlang port gives us a handle to stop the
+/// process later — unlike os:cmd which blocks and offers no
+/// way to terminate the child.
 ///
 @external(erlang, "glimr_port_ffi", "start_gleam_run")
 fn start_gleam_run() -> Port
 
-/// Stops a running gleam process by closing its port. Used
-/// when restarting the application after file changes are
-/// detected.
+/// Closing the port sends SIGHUP to the child process, which is
+/// how we cleanly shut down the old app instance before
+/// starting a new one.
 ///
 @external(erlang, "glimr_port_ffi", "stop_port")
 fn stop_port(port: Port) -> Nil
 
-/// Spawns a process to read and print port output. Ensures
-/// output from the gleam run process is displayed in the
-/// console.
+/// Reading port output in a separate process prevents the watch
+/// loop from blocking on I/O — the app's stdout appears
+/// immediately in the terminal.
 ///
 @external(erlang, "glimr_port_ffi", "start_output_reader")
 fn start_output_reader(port: Port) -> Nil
 
-/// Collects modification times for all watched files in a
-/// directory. Watches .gleam and .loom.html files. Returns
-/// a Dict mapping file paths to their mtime in seconds.
+/// Filtering to .gleam and .loom.html avoids reacting to editor
+/// swap files, .beam outputs, or other transient files that
+/// shouldn't trigger recompilation.
 ///
 fn get_watched_file_mtimes(dir: String) -> Dict(String, Int) {
   case simplifile.get_files(dir) {
@@ -291,9 +294,9 @@ fn get_watched_file_mtimes(dir: String) -> Dict(String, Int) {
   }
 }
 
-/// Gets the modification time for a single file. Returns the
-/// mtime in seconds or Error if the file info cannot be
-/// retrieved.
+/// Wraps simplifile.file_info to expose only the mtime field,
+/// keeping the watch loop code focused on time comparison
+/// rather than file metadata details.
 ///
 fn get_mtime(path: String) -> Result(Int, Nil) {
   case simplifile.file_info(path) {
@@ -302,9 +305,9 @@ fn get_mtime(path: String) -> Result(Int, Nil) {
   }
 }
 
-/// Compares two mtime dictionaries to find changed files.
-/// Returns a list of file paths that have different mtimes,
-/// are new in the current snapshot, or were deleted.
+/// Detecting deletions alongside modifications means the watch
+/// loop can clean up generated files for removed templates in
+/// the same tick that notices the deletion.
 ///
 fn find_changed_files(
   old: Dict(String, Int),

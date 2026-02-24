@@ -1,16 +1,19 @@
 //// Build Runner
 ////
-//// Executes the Gleam build command and formats output.
-//// Provides consistent build feedback with success and
-//// error messages.
-////
+//// Wrapping `gleam build` behind this action gives the CLI a
+//// single place to attach pre/post build hooks and consistent
+//// formatted output — without it, every caller would
+//// duplicate the shellout call and error handling.
 
 import glimr/console/console
 import shellout
 
-/// Runs the Gleam build command and displays formatted output.
-/// Returns Ok on successful build or Error with the failure
-/// message if the build fails.
+// ------------------------------------------------------------- Public Functions
+
+/// Shells out to `gleam build` and translates the exit status
+/// into a Result so callers can chain build into larger
+/// workflows with result.try without inspecting shell output
+/// themselves.
 ///
 pub fn run() -> Result(Nil, String) {
   console.output()

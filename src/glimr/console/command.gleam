@@ -1,12 +1,11 @@
 //// Glimr Console Command
 ////
-//// Provides a fluent API for defining console commands.
-//// Commands capture their context at construction time via
-//// closures, allowing framework and user commands to coexist.
-////
-//// For database commands, use driver-specific command modules:
-//// - glimr_sqlite/command.handler() for SQLite
-//// - glimr_postgres/command.handler() for PostgreSQL
+//// Console commands need argument parsing, help output, and
+//// (for database commands) pool lifecycle management. Without
+//// a shared abstraction, every command would duplicate that
+//// boilerplate. This module provides a fluent builder API
+//// so commands declare their args and handler, and the
+//// framework handles parsing, validation, and cleanup.
 
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -14,49 +13,32 @@ import gleam/erlang/charlist
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/result
 import gleam/string
 import glimr/cache/driver.{type CacheStore} as _cache_driver
 import glimr/config/cache
 import glimr/config/database
 import glimr/console/console
-import glimr/db/driver.{type Connection, type DriverType}
+import glimr/db/driver
+import glimr/db/pool_connection.{type Config, type Pool}
 import glimr/glimr
 import glimr/internal/config
 
 // ------------------------------------------------------------- Public types
 
-/// Represents a console command. Regular commands have a simple
-/// handler function. Database commands use CommandWithDb which
-/// includes a closure that manages pool lifecycle. Cache commands
-/// use CommandWithCache for access to cache store configuration.
+/// A single type for all commands keeps the registry and
+/// dispatch simple. Database commands look identical from the
+/// outside — their pool lifecycle is captured inside the
+/// handler closure by db_handler/cache_db_handler.
 ///
 pub type Command {
-  Command(
-    name: String,
-    description: String,
-    args: List(CommandArg),
-    handler: fn(Args) -> Nil,
-  )
-  CommandWithDb(
-    name: String,
-    description: String,
-    args: List(CommandArg),
-    driver_type: DriverType,
-    run_with_pool: fn(Args, Connection) -> Nil,
-  )
-  CommandWithCache(
-    name: String,
-    description: String,
-    args: List(CommandArg),
-    driver_type: DriverType,
-    run_with_cache: fn(Args, Connection, List(CacheStore)) -> Nil,
-  )
+  Command(description: String, args: List(CommandArg), handler: fn(Args) -> Nil)
 }
 
-/// Defines an argument, flag, or option that a command accepts.
-/// Use `Argument` for required positional arguments,
-/// `Flag` for boolean flags like --verbose or -v, and
-/// `Option` for options with values and defaults like --format=json.
+/// A union of all argument kinds keeps the args list
+/// homogeneous so commands can mix positional args, flags, and
+/// options in a single list. The parser uses the variant tag
+/// to decide how to match each CLI token.
 ///
 pub type CommandArg {
   Argument(name: String, description: String)
@@ -64,10 +46,11 @@ pub type CommandArg {
   Option(name: String, description: String, default: String)
 }
 
-/// Parsed arguments passed to command handlers. Contains
-/// positional arguments as a Dict, flags as a List, and
-/// options with values as a Dict.
-/// Use get_arg(), has_flag(), and get_option() to access values.
+/// Separating parsed results by kind (positional, flags,
+/// options) lets accessor functions like get_arg and has_flag
+/// look up values in the right collection without ambiguity
+/// between a flag named "verbose" and an argument named
+/// "verbose".
 ///
 pub type Args {
   Args(
@@ -79,126 +62,119 @@ pub type Args {
 
 // ------------------------------------------------------------- Public Functions
 
-/// Creates a new command. Use the fluent API to set the
-/// name, description, args, and handler.
+/// Starting with empty defaults lets callers build commands
+/// incrementally via pipes, setting only the fields they need.
+/// The temp_handler crashes with a clear message if someone
+/// forgets to set a real handler.
 ///
 /// *Example*
 ///
 /// ```gleam
 /// command.new()
-/// |> command.name("greet")
 /// |> command.description("Greet the user")
 /// |> command.handler(fn(args) { ... })
 /// ```
 ///
 pub fn new() -> Command {
-  Command(name: "", description: "", args: [], handler: temp_handler)
+  Command(description: "", args: [], handler: temp_handler)
 }
 
-/// Sets the name of the command. This is the string users
-/// will type to invoke the command. It's best to prefix
-/// command names like "make:controller" or "glimr:greet"
-/// but it's not required.
-///
-pub fn name(cmd: Command, name: String) -> Command {
-  case cmd {
-    Command(..) -> Command(..cmd, name: name)
-    CommandWithDb(..) -> CommandWithDb(..cmd, name: name)
-    CommandWithCache(..) -> CommandWithCache(..cmd, name: name)
-  }
-}
-
-/// Sets the description shown in the help output. Description
-/// should be a one-liner, nice and simple. This text appears
-/// next to the command name when users run the help command.
+/// The description is the only documentation users see when
+/// listing commands. Keeping it settable via the fluent API
+/// means it stays close to the command definition rather than
+/// in a separate registry.
 ///
 pub fn description(cmd: Command, description: String) -> Command {
-  case cmd {
-    Command(..) -> Command(..cmd, description: description)
-    CommandWithDb(..) -> CommandWithDb(..cmd, description: description)
-    CommandWithCache(..) -> CommandWithCache(..cmd, description: description)
-  }
+  Command(..cmd, description: description)
 }
 
-/// Sets the handler function for the command. The handler
-/// receives Args only. For database commands, use
-/// driver-specific handlers (glimr_sqlite/command.handler or
-/// glimr_postgres/command.handler) instead.
+/// Plain handlers receive only parsed Args — they don't need
+/// database access. Database commands should use db_handler
+/// or cache_db_handler which inject the pool automatically.
 ///
 pub fn handler(cmd: Command, handler: fn(Args) -> Nil) -> Command {
-  case cmd {
-    Command(..) -> Command(..cmd, handler: handler)
-    CommandWithDb(name:, description:, args:, ..) ->
-      Command(
-        name: name,
-        description: description,
-        args: args,
-        handler: handler,
-      )
-    CommandWithCache(name:, description:, args:, ..) ->
-      Command(
-        name: name,
-        description: description,
-        args: args,
-        handler: handler,
-      )
-  }
+  Command(..cmd, handler: handler)
 }
 
-/// Sets the arguments, flags, and options for a command. Use
-/// Argument for required positional args, Flag for boolean flags,
-/// and Option for options that take values.
+/// Declaring args up front lets the framework validate required
+/// arguments and generate help output automatically, so command
+/// authors don't write their own parsing or usage strings.
 ///
 /// *Example*
 ///
 /// ```gleam
 /// command.new()
-/// |> command.name("make:controller")
 /// |> command.args([
 ///   Argument("name", "The name of the controller"),
 ///   Flag("resource", "r", "Generate a resource controller"),
-///   Option("template", "Template to use for generation", "default"),
+///   Option("template", "Template to use", "default"),
 /// ])
 /// |> command.handler(fn(args) { ... })
 /// ```
 ///
 pub fn args(cmd: Command, arguments: List(CommandArg)) -> Command {
-  case cmd {
-    Command(..) -> Command(..cmd, args: arguments)
-    CommandWithDb(..) -> CommandWithDb(..cmd, args: arguments)
-    CommandWithCache(..) -> CommandWithCache(..cmd, args: arguments)
-  }
+  Command(..cmd, args: arguments)
 }
 
-/// Returns the standard --database option for commands that
-/// need database access. Add this to your command args when
-/// using driver-specific handlers. Uses "_default" as the
-/// default value to use the first configured connection.
+/// Every database command needs the same --database option.
+/// Centralizing it here avoids typos and keeps the default
+/// value ("_default" → first configured connection) consistent
+/// across all commands.
 ///
 pub fn db_option() -> CommandArg {
   Option("database", "Database connection to use", "_default")
 }
 
-/// Gets a positional argument value from Args by name.
-/// Arguments are required and validated before the handler runs,
-/// so this will crash if the argument is missing.
+/// Database commands must start a pool, run their logic, and
+/// stop the pool — repeating that at every call site is error-
+/// prone. This wrapper captures the lifecycle in the handler
+/// closure so the command author just receives a live Pool.
+///
+pub fn db_handler(cmd: Command, user_handler: fn(Args, Pool) -> Nil) -> Command {
+  let new_args = list.append(cmd.args, [db_option()])
+  Command(..cmd, args: new_args, handler: fn(args) {
+    with_db_pool(args, user_handler)
+  })
+}
+
+/// Cache commands need both a database pool and the list of
+/// configured cache stores (for table names). Loading stores
+/// and managing the pool here keeps that boilerplate out of
+/// every cache command's handler.
+///
+pub fn cache_db_handler(
+  cmd: Command,
+  user_handler: fn(Args, Pool, List(CacheStore)) -> Nil,
+) -> Command {
+  let new_args = list.append(cmd.args, [db_option()])
+  Command(..cmd, args: new_args, handler: fn(args) {
+    let cache_stores = cache.load()
+    with_db_pool(args, fn(a, p) { user_handler(a, p, cache_stores) })
+  })
+}
+
+/// Required arguments are validated before the handler runs,
+/// so a missing value here is a programming error, not user
+/// input. The assert crash makes that obvious rather than
+/// silently returning a default.
 ///
 pub fn get_arg(parsed: Args, name: String) -> String {
   let assert Ok(value) = dict.get(parsed.arguments, name)
   value
 }
 
-/// Checks if a flag was provided by the user.
-/// Returns True if --name or -short was passed on the CLI.
-/// The name parameter should match the Flag's name field.
+/// Flags are boolean — present or absent. A simple Bool return
+/// is cleaner than forcing callers to match on a Result when
+/// they just need to branch on whether --verbose was passed.
 ///
 pub fn has_flag(parsed: Args, name: String) -> Bool {
   list.contains(parsed.flags, name)
 }
 
-/// Gets an option value from Args by name. Returns empty
-/// string if not found, allowing safe chaining without checking
-/// for errors in command handlers.
+/// Options always have defaults (set in the arg definition),
+/// so missing values shouldn't happen after parsing. Returning
+/// empty string on lookup failure is a safe fallback that
+/// avoids forcing callers to handle a Result.
 ///
 pub fn get_option(parsed: Args, name: String) -> String {
   case dict.get(parsed.options, name) {
@@ -207,48 +183,41 @@ pub fn get_option(parsed: Args, name: String) -> String {
   }
 }
 
-/// Central dispatch for command execution. Handles the common
-/// concerns (help flags, argument validation) before delegating
-/// to the appropriate handler based on command type.
+/// Centralizing dispatch ensures every command gets env loading,
+/// help flag detection, argument validation, and connection
+/// resolution in the same order. Without this, each command
+/// would repeat those checks or skip them inconsistently.
 ///
 pub fn run(cmd: Command) -> Nil {
   config.load_env()
-  let args = get_args()
+  let #(cmd_name, args) = extract_command_name(get_args())
 
   // If the args passed have help flags (--h, -h), then we can just
   // print the help information for the command, and return
-  use <- bool.lazy_guard(has_help_flag(args), fn() { print_command_help(cmd) })
+  use <- bool.lazy_guard(has_help_flag(args), fn() {
+    print_command_help(cmd_name, cmd)
+  })
 
   // Validate required args are present
-  case parse_and_validate(cmd.name, cmd.args, args) {
-    Ok(parsed) -> {
-      case cmd {
-        // Handle a command with no database/cache access
-        Command(handler:, ..) -> handler(resolve_default_db(parsed))
-
-        // Handle a command with database access
-        CommandWithDb(run_with_pool:, driver_type:, ..) -> {
-          run_with_connection(parsed, driver_type, run_with_pool)
-        }
-
-        // Handle a command with cache access
-        CommandWithCache(run_with_cache:, driver_type:, ..) -> {
-          let cache_stores = cache.load()
-          use p, conn <- run_with_connection(parsed, driver_type)
-
-          run_with_cache(p, conn, cache_stores)
+  case parse_and_validate(cmd_name, cmd.args, args) {
+    Ok(parsed) ->
+      case resolve_connection(parsed) {
+        Ok(resolved) -> cmd.handler(resolved)
+        Error(msg) -> {
+          console.output()
+          |> console.line_error(msg)
+          |> console.print()
         }
       }
-    }
     Error(_) -> Nil
   }
 }
 
 // ------------------------------------------------------------- Internal Public Functions
 
-/// Bridges Erlang's charlist-based CLI args to Gleam strings.
-/// Without this, every caller would need to handle the charlist
-/// conversion themselves.
+/// Erlang's init:get_plain_arguments returns charlists, but
+/// Gleam code works with String. Converting once here keeps
+/// charlist handling out of every command and parser function.
 ///
 @internal
 pub fn get_args() -> List(String) {
@@ -256,99 +225,118 @@ pub fn get_args() -> List(String) {
   |> list.map(charlist.to_string)
 }
 
-/// Prints the current Glimr framework version to the console.
-/// Called when the user runs with -V or --version flags, and
-/// also displayed at the top of the help output.
+/// Users need a quick way to check which Glimr version they're
+/// running for bug reports and compatibility checks. Displayed
+/// on -V/--version and at the top of help output.
 ///
 @internal
 pub fn print_glimr_version() -> Nil {
   io.println("Glimr " <> console.success(glimr.get_version()))
 }
 
-/// Resolves "_default" in the database option to the actual
-/// first connection name. Used by plain Command handlers that
-/// need the connection name but don't need a pool.
+/// Most users have a single database connection and shouldn't
+/// need to specify it every time. Resolving "_default" to the
+/// first configured connection makes the common case zero-
+/// config while still allowing explicit selection.
 ///
 @internal
-pub fn resolve_default_db(parsed: Args) -> Args {
-  use <- bool.guard(
-    dict.get(parsed.options, "database") != Ok("_default"),
-    parsed,
-  )
+pub fn resolve_connection(parsed: Args) -> Result(Args, String) {
+  case dict.get(parsed.options, "database") {
+    Error(_) -> Ok(parsed)
+    Ok(db_name) -> {
+      let connections = database.load()
 
-  case list.first(database.load()) {
-    Ok(conn) ->
-      Args(
-        ..parsed,
-        options: dict.insert(
-          parsed.options,
-          "database",
-          driver.connection_name(conn),
-        ),
+      // Resolve "_default" to the first connection
+      use name <- result.try(case db_name {
+        "_default" ->
+          list.first(connections)
+          |> result.map(driver.connection_name)
+          |> result.replace_error("No database connections configured")
+        name -> Ok(name)
+      })
+
+      // Validate connection exists
+      use _ <- result.try(
+        list.find(connections, fn(c) { driver.connection_name(c) == name })
+        |> result.replace_error("Connection not found: " <> name),
       )
-    Error(_) -> parsed
+
+      Ok(Args(..parsed, options: dict.insert(parsed.options, "database", name)))
+    }
   }
 }
 
 // ------------------------------------------------------------- Private Functions
 
-/// Shared logic for CommandWithDb and CommandWithCache. Avoids
-/// duplicating the connection lookup and option updating code
-/// across both command types.
+/// Console commands are short-lived, so a pool_size of 1 is
+/// sufficient and avoids wasting connections. Dynamic dispatch
+/// to the adapter module lets this function work for both
+/// PostgreSQL and SQLite without importing either.
 ///
-fn run_with_connection(
-  parsed: Args,
-  driver_type: DriverType,
-  handler: fn(Args, Connection) -> Nil,
-) -> Nil {
+fn with_db_pool(args: Args, user_handler: fn(Args, Pool) -> Nil) -> Nil {
+  let db_name = get_option(args, "database")
   let connections = database.load()
-  let db_name = get_option(parsed, "database")
 
-  case find_connection(connections, db_name, driver_type) {
-    Ok(conn) -> {
-      let actual_name = driver.connection_name(conn)
-      let updated_options = dict.insert(parsed.options, "database", actual_name)
-      handler(Args(..parsed, options: updated_options), conn)
-    }
-    Error(_) -> {
+  // Connection is guaranteed to exist (validated by resolve_connection)
+  let assert Ok(conn) =
+    list.find(connections, fn(c) { driver.connection_name(c) == db_name })
+
+  // Use pool_size of 1 for console commands
+  let conn = driver.with_pool_size(conn, 1)
+  let config = driver.to_config(conn)
+
+  // Map driver type to adapter module name
+  let module = case driver.connection_type(conn) {
+    driver.Postgres -> "glimr_postgres@postgres"
+    driver.Sqlite -> "glimr_sqlite@sqlite"
+  }
+
+  // Suppress pgo supervisor shutdown reports during VM exit
+  suppress_pool_shutdown_reports()
+
+  case dynamic_start_pool(module, config) {
+    Ok(pool) -> user_handler(args, pool)
+    Error(msg) -> {
       console.output()
-      |> console.line_error("Connection not found: " <> db_name)
+      |> console.line_error("Failed to start database pool:")
+      |> console.line(msg)
       |> console.print()
     }
   }
 }
 
-/// Locates a connection matching both name and driver type.
-/// Filtering by driver type prevents accidentally using a
-/// SQLite connection with a Postgres command or vice versa.
+/// The CLI script injects _c_name= so the Gleam entrypoint
+/// knows which command was invoked without re-parsing the
+/// command registry. Stripping it here keeps the rest of the
+/// arg parser clean of this convention.
 ///
-fn find_connection(
-  connections: List(Connection),
-  name: String,
-  driver_type: DriverType,
-) -> Result(Connection, Nil) {
-  let typed =
-    list.filter(connections, fn(c) { driver.connection_type(c) == driver_type })
-
-  case name {
-    "_default" -> list.first(typed)
-    _ -> list.find(typed, fn(c) { driver.connection_name(c) == name })
+fn extract_command_name(args: List(String)) -> #(String, List(String)) {
+  case args {
+    [first, ..rest] ->
+      case string.starts_with(first, "_c_name=") {
+        True -> #(string.drop_start(first, 8), rest)
+        False -> #("", args)
+      }
+    [] -> #("", [])
   }
 }
 
-/// Detects help requests early so we can show command help
-/// instead of running the command. Checked before argument
-/// validation to avoid "missing argument" errors on help.
+/// Checking for help flags before validation means users can
+/// run `command --help` without providing required arguments.
+/// Without this early check, help requests would fail with
+/// "missing argument" errors.
 ///
 fn has_help_flag(raw_args: List(String)) -> Bool {
   list.any(raw_args, fn(arg) { arg == "-h" || arg == "--help" })
 }
 
-/// Renders detailed help for a single command. Unlike the
-/// main help screen, this shows all arguments, flags, and
-/// options with their descriptions and defaults.
+/// Per-command help shows all arguments, flags, and options
+/// with aligned descriptions — more detail than the main help
+/// screen which only shows command names. Column alignment
+/// is calculated dynamically so labels of different lengths
+/// produce clean output.
 ///
-fn print_command_help(cmd: Command) -> Nil {
+fn print_command_help(cmd_name: String, cmd: Command) -> Nil {
   // Description
   io.println(console.warning("Description:"))
   io.println("  " <> cmd.description)
@@ -356,7 +344,7 @@ fn print_command_help(cmd: Command) -> Nil {
 
   // Usage
   io.println(console.warning("Usage:"))
-  let usage_line = build_usage_line(cmd.name, cmd.args)
+  let usage_line = build_usage_line(cmd_name, cmd.args)
   io.println("  " <> usage_line)
   io.println("")
 
@@ -461,9 +449,10 @@ fn print_command_help(cmd: Command) -> Nil {
   )
 }
 
-/// Constructs the "Usage:" line for help output. Shows [options]
-/// only when flags/options exist, keeping the output clean for
-/// simple commands that only take positional arguments.
+/// Showing [options] only when flags or options exist keeps the
+/// usage line clean for simple commands. Mixing placeholders
+/// like <name> with [options] follows the convention users
+/// expect from CLI tools.
 ///
 fn build_usage_line(name: String, args: List(CommandArg)) -> String {
   let has_flags_or_options =
@@ -493,9 +482,10 @@ fn build_usage_line(name: String, args: List(CommandArg)) -> String {
   }
 }
 
-/// Transforms raw CLI strings into structured Args.
-/// Validates required arguments early so handlers don't need
-/// to check for missing values themselves.
+/// Validating required arguments before calling the handler
+/// means command authors never see missing values — they can
+/// use get_arg with assert knowing validation already passed.
+/// Missing args print usage help so the user knows what to fix.
 ///
 fn parse_and_validate(
   cmd_name: String,
@@ -590,9 +580,10 @@ fn parse_and_validate(
   }
 }
 
-/// Low-level argument parser that separates positional args from
-/// flags and options. Handles both long (--flag) and short (-f)
-/// forms, ignoring unknown flags to allow forward compatibility.
+/// Separating parsing from validation keeps this function
+/// focused on tokenization. Ignoring unknown flags means
+/// commands don't break when new global flags are added to
+/// the CLI wrapper.
 ///
 fn parse_raw_args(
   raw_args: List(String),
@@ -602,37 +593,35 @@ fn parse_raw_args(
   let #(positional, flags, options) =
     list.fold(raw_args, #([], [], dict.new()), fn(acc, arg) {
       let #(pos, flgs, opts) = acc
-      case string.starts_with(arg, "--") {
-        True -> {
-          let rest = string.drop_start(arg, 2)
-          // Check if it's an option with value (--option=value)
-          case string.split_once(rest, "=") {
-            Ok(#(opt_name, opt_value)) -> {
-              case list.contains(option_defs, opt_name) {
-                True -> #(pos, flgs, dict.insert(opts, opt_name, opt_value))
-                False -> #(pos, flgs, opts)
-              }
-            }
-            Error(_) -> {
-              // It's a flag (--flag)
-              case list.find(flag_defs, fn(def) { def.0 == rest }) {
-                Ok(#(name, _)) -> #(pos, [name, ..flgs], opts)
-                Error(_) -> #(pos, flgs, opts)
-              }
-            }
-          }
+
+      // Positional argument (no prefix)
+      use <- bool.guard(!string.starts_with(arg, "-"), #(
+        [arg, ..pos],
+        flgs,
+        opts,
+      ))
+
+      // Short flag (-f)
+      use <- bool.lazy_guard(!string.starts_with(arg, "--"), fn() {
+        let short = string.drop_start(arg, 1)
+        case list.find(flag_defs, fn(def) { def.1 == short }) {
+          Ok(#(name, _)) -> #(pos, [name, ..flgs], opts)
+          Error(_) -> #(pos, flgs, opts)
         }
-        False ->
-          case string.starts_with(arg, "-") {
-            True -> {
-              let rest = string.drop_start(arg, 1)
-              // It's a short flag (-f)
-              case list.find(flag_defs, fn(def) { def.1 == rest }) {
-                Ok(#(name, _)) -> #(pos, [name, ..flgs], opts)
-                Error(_) -> #(pos, flgs, opts)
-              }
-            }
-            False -> #([arg, ..pos], flgs, opts)
+      })
+
+      // Long form (--flag or --option=value)
+      let rest = string.drop_start(arg, 2)
+      case string.split_once(rest, "=") {
+        Ok(#(name, value)) ->
+          case list.contains(option_defs, name) {
+            True -> #(pos, flgs, dict.insert(opts, name, value))
+            False -> #(pos, flgs, opts)
+          }
+        Error(_) ->
+          case list.find(flag_defs, fn(def) { def.0 == rest }) {
+            Ok(#(name, _)) -> #(pos, [name, ..flgs], opts)
+            Error(_) -> #(pos, flgs, opts)
           }
       }
     })
@@ -640,9 +629,9 @@ fn parse_raw_args(
   #(list.reverse(positional), flags, options)
 }
 
-/// Prints usage information for a command showing required
-/// arguments and available flags/options. Called when validation
-/// fails to help users understand the expected syntax.
+/// When validation fails, showing the expected syntax alongside
+/// the error helps users fix their invocation immediately
+/// instead of running a separate --help command.
 ///
 fn print_usage(cmd_name: String, arg_defs: List(CommandArg)) -> Nil {
   let arg_names =
@@ -690,9 +679,9 @@ fn print_usage(cmd_name: String, arg_defs: List(CommandArg)) -> Nil {
   io.println(console.warning("Usage: ") <> usage)
 }
 
-/// Default handler for commands without a handler set.
-/// Prints an error message indicating the command is not
-/// properly configured. Used as placeholder during setup.
+/// A placeholder that crashes loudly prevents commands from
+/// silently doing nothing if the developer forgets to call
+/// handler() or db_handler() during setup.
 ///
 fn temp_handler(_args: Args) -> Nil {
   io.println(console.error(
@@ -702,9 +691,25 @@ fn temp_handler(_args: Args) -> Nil {
 
 // ------------------------------------------------------------- FFI Bindings
 
-/// External call to Erlang's init:get_plain_arguments/0 which
-/// returns command-line arguments as a list of charlists. Used
-/// internally by get_args() to retrieve CLI arguments.
+/// Erlang's init module is the only way to access CLI arguments
+/// on the BEAM. The charlist return type is converted to String
+/// by get_args above.
 ///
 @external(erlang, "init", "get_plain_arguments")
 fn erlang_get_args() -> List(charlist.Charlist)
+
+/// The framework can't import driver adapters directly without
+/// creating a circular dependency. Dynamic dispatch via Erlang
+/// module name lets with_db_pool start the right adapter pool
+/// at runtime based on the configured driver type.
+///
+@external(erlang, "glimr_command_ffi", "dynamic_start_pool")
+fn dynamic_start_pool(module: String, config: Config) -> Result(Pool, String)
+
+/// Console commands exit immediately after running, but the
+/// pgo supervisor logs noisy shutdown reports as the VM tears
+/// down. Suppressing them keeps command output clean without
+/// affecting actual error reporting.
+///
+@external(erlang, "glimr_command_ffi", "suppress_pool_shutdown_reports")
+fn suppress_pool_shutdown_reports() -> Nil

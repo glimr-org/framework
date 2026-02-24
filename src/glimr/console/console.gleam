@@ -1,17 +1,21 @@
-//// Console helper functions
+//// Console Output Helpers
 ////
-//// This module contains helper functions meant for
-//// streamlining common console output needs like coloring
-//// console output, for example.
+//// Raw ANSI escape codes scattered across command handlers
+//// are hard to read and easy to get wrong (missing resets
+//// leave the whole terminal colored). These helpers wrap
+//// the codes so callers just pick a semantic level like
+//// success or error, and the Output builder lets multi-line
+//// output be composed via pipes then flushed at once.
 
 import gleam/io
 import gleam/list
 
 // ------------------------------------------------------------- Public Types
 
-/// Represents buffered console output that can be built up
-/// using a fluent API and then printed all at once. Contains
-/// the accumulated lines and a padding flag for formatting.
+/// Buffering lines before printing lets callers build complex
+/// output via pipes without interleaving with other console
+/// writes. Flushing all at once keeps related lines grouped
+/// in the terminal.
 ///
 pub type Output {
   Output(lines: List(String))
@@ -25,6 +29,9 @@ const color_success = "\u{001b}[32m"
 /// Warning color (yellow) for terminal output
 const color_warning = "\u{001b}[33m"
 
+/// Info color (blue) for terminal output
+const color_info = "\u{001b}[34m"
+
 /// Error color (red) for terminal output
 const color_error = "\u{001b}[31m"
 
@@ -33,15 +40,14 @@ const color_reset = "\u{001b}[0m"
 
 // ------------------------------------------------------------- Public Functions
 
-/// Helper function to color console output. Meant to be used
-/// with the io.print or io.println functions. This helper
-/// colors output using the terminal's green color.
+/// Green text signals success in terminal conventions. Wrapping
+/// the ANSI codes here ensures the reset is always applied so
+/// subsequent output doesn't stay green.
 ///
 /// *Example*
 ///
 /// ```gleam
 /// io.println(console.success("This message is green"))
-/// // or only have part of the message in green:
 /// io.println("Hello, " <> console.success("Gleam users!"))
 /// ```
 ///
@@ -49,15 +55,13 @@ pub fn success(output: String) -> String {
   color_success <> output <> color_reset
 }
 
-/// Helper function to color console output. Meant to be used
-/// with the io.print or io.println functions. This helper
-/// colors output using the terminal's yellow color.
+/// Yellow text signals warnings or headings in terminal
+/// conventions. Same reset-safety as success.
 ///
 /// *Example*
 ///
 /// ```gleam
 /// io.println(console.warning("This message is yellow"))
-/// // or only have part of the message in yellow:
 /// io.println("Hello, " <> console.warning("Gleam users!"))
 /// ```
 ///
@@ -65,15 +69,13 @@ pub fn warning(output: String) -> String {
   color_warning <> output <> color_reset
 }
 
-/// Helper function to color console output. Meant to be used
-/// with the io.print or io.println functions. This helper
-/// colors output using the terminal's red color.
+/// Red text signals errors in terminal conventions. Same
+/// reset-safety as success.
 ///
 /// *Example*
 ///
 /// ```gleam
 /// io.println(console.error("This message is red"))
-/// // or only have part of the message in red:
 /// io.println("Hello, " <> console.error("Gleam users!"))
 /// ```
 ///
@@ -81,9 +83,24 @@ pub fn error(output: String) -> String {
   color_error <> output <> color_reset
 }
 
-/// Creates a new Output builder with padding enabled by default.
-/// Use with line(), blank_line(), and print() to build and
-/// display multi-line console output with consistent formatting.
+/// Blue text signals informational output in terminal
+/// conventions. Same reset-safety as success.
+///
+/// *Example*
+///
+/// ```gleam
+/// io.println(console.info("This message is blue"))
+/// io.println("Hello, " <> console.info("Gleam users!"))
+/// ```
+///
+pub fn info(output: String) -> String {
+  color_info <> output <> color_reset
+}
+
+/// Starting with an empty Output lets callers build up lines
+/// incrementally via pipes. This is cleaner than calling
+/// io.println multiple times because the output is buffered
+/// and flushed together.
 ///
 /// *Example*
 ///
@@ -98,9 +115,9 @@ pub fn output() -> Output {
   Output(lines: [])
 }
 
-/// Adds a line of text to the output builder. Lines are
-/// printed in the order they are added. Use this for
-/// plain text without any color formatting applied.
+/// Appending preserves insertion order so lines print in the
+/// sequence they were added. No color is applied — use the
+/// colored variants for styled output.
 ///
 /// *Example*
 ///
@@ -115,9 +132,9 @@ pub fn line(output: Output, message: String) -> Output {
   Output(lines: list.append(output.lines, [message]))
 }
 
-/// Adds an empty line to the output builder. Useful for
-/// creating visual spacing between different sections
-/// of your console output.
+/// Visual spacing between sections makes dense command output
+/// easier to scan. Accepting an amount lets callers add
+/// multiple blank lines without chaining repeated calls.
 ///
 /// *Example*
 ///
@@ -135,9 +152,9 @@ pub fn blank_line(output: Output, amount: Int) -> Output {
   Output(lines: list.append(output.lines, empty_lines))
 }
 
-/// Adds a line colored green (success) to the output.
-/// This is a shorthand for line(output, success(message))
-/// and is useful for indicating successful operations.
+/// Shorthand that avoids nesting success() inside line() at
+/// every call site. Keeps pipe chains readable when mixing
+/// colored and plain lines.
 ///
 /// *Example*
 ///
@@ -151,9 +168,9 @@ pub fn line_success(output: Output, message: String) -> Output {
   line(output, success(message))
 }
 
-/// Adds a line colored red (error) to the output.
-/// This is a shorthand for line(output, error(message))
-/// and is useful for displaying error messages.
+/// Shorthand that avoids nesting error() inside line() at
+/// every call site. Red-colored errors stand out immediately
+/// in terminal output.
 ///
 /// *Example*
 ///
@@ -167,9 +184,9 @@ pub fn line_error(output: Output, message: String) -> Output {
   line(output, error(message))
 }
 
-/// Adds a line colored yellow (warning) to the output.
-/// This is a shorthand for line(output, warning(message))
-/// and is useful for displaying warning messages.
+/// Shorthand that avoids nesting warning() inside line() at
+/// every call site. Yellow warnings signal non-fatal issues
+/// that may need attention.
 ///
 /// *Example*
 ///
@@ -183,9 +200,25 @@ pub fn line_warning(output: Output, message: String) -> Output {
   line(output, warning(message))
 }
 
-/// Prints the output to the console. If padded is true,
-/// blank lines are printed before and after the content
-/// for visual separation from other terminal output.
+/// Shorthand that avoids nesting info() inside line() at
+/// every call site. Blue info lines distinguish progress
+/// messages from results.
+///
+/// *Example*
+///
+/// ```gleam
+/// console.output()
+/// |> console.line_info("Running migrations...")
+/// |> console.print()
+/// ```
+///
+pub fn line_info(output: Output, message: String) -> Output {
+  line(output, info(message))
+}
+
+/// Flushing all buffered lines at once keeps the output
+/// grouped in the terminal. This is the terminal step of the
+/// Output builder chain.
 ///
 /// *Example*
 ///
@@ -209,9 +242,10 @@ pub fn halt(code: Int) -> Nil {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Recursively prints each line in the list to the console.
-/// This is an internal helper function used by print() to
-/// iterate through and display all accumulated output lines.
+/// Gleam doesn't have for-loops, so recursion is the standard
+/// way to iterate a list. Separated from print so the public
+/// API stays clean — callers just call print() without seeing
+/// the recursion.
 ///
 fn do_print(lines: List(String)) -> Nil {
   case lines {

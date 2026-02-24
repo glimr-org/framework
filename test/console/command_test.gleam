@@ -9,29 +9,19 @@ import glimr/db/driver.{SqliteConnection}
 pub fn new_creates_empty_command_test() {
   let cmd = command.new()
 
-  let assert Command(name, description, args, _) = cmd
-  name |> should.equal("")
+  let Command(description, args, _) = cmd
   description |> should.equal("")
   args |> should.equal([])
 }
 
 // ------------------------------------------------------------- Fluent API
 
-pub fn name_sets_command_name_test() {
-  let cmd =
-    command.new()
-    |> command.name("greet")
-
-  let assert Command(name, _, _, _) = cmd
-  name |> should.equal("greet")
-}
-
 pub fn description_sets_command_description_test() {
   let cmd =
     command.new()
     |> command.description("Greet the user")
 
-  let assert Command(_, description, _, _) = cmd
+  let Command(description, _, _) = cmd
   description |> should.equal("Greet the user")
 }
 
@@ -43,7 +33,7 @@ pub fn args_sets_argument_list_test() {
       Flag("verbose", "v", "Verbose output"),
     ])
 
-  let assert Command(_, _, args, _) = cmd
+  let Command(_, args, _) = cmd
   args
   |> should.equal([
     Argument("name", "The name"),
@@ -119,18 +109,16 @@ pub fn get_option_returns_value_when_present_test() {
 pub fn full_command_creation_test() {
   let cmd =
     command.new()
-    |> command.name("glimr:greet")
     |> command.description("A friendly greeting")
     |> command.handler(fn(_args) { Nil })
 
-  let assert Command(name, description, _, _) = cmd
-  name |> should.equal("glimr:greet")
+  let Command(description, _, _) = cmd
   description |> should.equal("A friendly greeting")
 }
 
-// ------------------------------------------------------------- resolve_default_db
+// ------------------------------------------------------------- resolve_connection
 
-pub fn resolve_default_db_replaces_default_with_first_connection_test() {
+pub fn resolve_connection_replaces_default_with_first_connection_test() {
   // Seed the cache with a known connection
   database.clear_cache()
   cache_db_config([
@@ -144,7 +132,7 @@ pub fn resolve_default_db_replaces_default_with_first_connection_test() {
       options: dict.from_list([#("database", "_default")]),
     )
 
-  let resolved = command.resolve_default_db(parsed)
+  let assert Ok(resolved) = command.resolve_connection(parsed)
 
   command.get_option(resolved, "database")
   |> should.equal("mydb")
@@ -152,7 +140,7 @@ pub fn resolve_default_db_replaces_default_with_first_connection_test() {
   database.clear_cache()
 }
 
-pub fn resolve_default_db_keeps_explicit_connection_name_test() {
+pub fn resolve_connection_keeps_explicit_connection_name_test() {
   database.clear_cache()
   cache_db_config([
     SqliteConnection(name: "mydb", database: Ok("./data.db"), pool_size: Ok(5)),
@@ -162,18 +150,18 @@ pub fn resolve_default_db_keeps_explicit_connection_name_test() {
     Args(
       arguments: dict.from_list([#("name", "user")]),
       flags: [],
-      options: dict.from_list([#("database", "other_db")]),
+      options: dict.from_list([#("database", "mydb")]),
     )
 
-  let resolved = command.resolve_default_db(parsed)
+  let assert Ok(resolved) = command.resolve_connection(parsed)
 
   command.get_option(resolved, "database")
-  |> should.equal("other_db")
+  |> should.equal("mydb")
 
   database.clear_cache()
 }
 
-pub fn resolve_default_db_keeps_default_when_no_connections_test() {
+pub fn resolve_connection_errors_when_no_connections_test() {
   database.clear_cache()
   cache_db_config([])
 
@@ -184,12 +172,42 @@ pub fn resolve_default_db_keeps_default_when_no_connections_test() {
       options: dict.from_list([#("database", "_default")]),
     )
 
-  let resolved = command.resolve_default_db(parsed)
-
-  command.get_option(resolved, "database")
-  |> should.equal("_default")
+  command.resolve_connection(parsed)
+  |> should.be_error()
 
   database.clear_cache()
+}
+
+pub fn resolve_connection_errors_when_connection_not_found_test() {
+  database.clear_cache()
+  cache_db_config([
+    SqliteConnection(name: "mydb", database: Ok("./data.db"), pool_size: Ok(5)),
+  ])
+
+  let parsed =
+    Args(
+      arguments: dict.from_list([#("name", "user")]),
+      flags: [],
+      options: dict.from_list([#("database", "fake_db")]),
+    )
+
+  command.resolve_connection(parsed)
+  |> should.be_error()
+
+  database.clear_cache()
+}
+
+pub fn resolve_connection_noop_without_database_option_test() {
+  let parsed =
+    Args(
+      arguments: dict.from_list([#("name", "user")]),
+      flags: [],
+      options: dict.new(),
+    )
+
+  let assert Ok(resolved) = command.resolve_connection(parsed)
+
+  resolved |> should.equal(parsed)
 }
 
 @external(erlang, "glimr_kernel_ffi", "cache_db_config")
@@ -200,7 +218,6 @@ fn cache_db_config(connections: List(driver.Connection)) -> Nil
 pub fn full_command_with_args_creation_test() {
   let cmd =
     command.new()
-    |> command.name("make:controller")
     |> command.description("Create a new controller")
     |> command.args([
       Argument("name", "The controller name"),
@@ -208,8 +225,7 @@ pub fn full_command_with_args_creation_test() {
     ])
     |> command.handler(fn(_args) { Nil })
 
-  let assert Command(name, description, args, _) = cmd
-  name |> should.equal("make:controller")
+  let Command(description, args, _) = cmd
   description |> should.equal("Create a new controller")
   args
   |> should.equal([

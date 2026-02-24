@@ -1,17 +1,21 @@
 //// Database Setup
 ////
-//// Creates the directory structure for a new database connection.
-//// Sets up base directory, migrations, and models subdirectories
-//// with optional SQLite database file creation.
-////
+//// New database connections need a conventional directory
+//// layout so that the migration runner, model generator, and
+//// code-gen tools can all find files without per-project
+//// configuration. This action scaffolds that layout in one
+//// step so developers don't have to remember the structure.
 
 import gleam/io
 import glimr/console/console
 import simplifile
 
-/// Sets up the database directory structure for a named connection.
-/// Creates base directory, _migrations, and models subdirectories.
-/// Optionally creates a data.db file for SQLite databases.
+// ------------------------------------------------------------- Public Functions
+
+/// Scaffolds the directory tree for a named database
+/// connection. Checking for an existing directory first
+/// prevents accidentally overwriting a connection that was
+/// already configured.
 ///
 pub fn run(name: String, create_sqlite: Bool) -> Nil {
   let base_path = "src/data/" <> name
@@ -29,9 +33,12 @@ pub fn run(name: String, create_sqlite: Bool) -> Nil {
   }
 }
 
-/// Performs the actual directory and file creation. Creates
-/// base directory, _migrations subdirectory, models subdirectory,
-/// and optionally a data.db file for SQLite.
+// ------------------------------------------------------------- Private Functions
+
+/// Creates each subdirectory individually rather than in a
+/// batch so that partial failures still produce as much of the
+/// layout as possible and the user sees exactly which step
+/// failed.
 ///
 fn do_setup(base_path: String, create_sqlite: Bool) -> Nil {
   io.println("")
