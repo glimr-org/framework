@@ -33,7 +33,6 @@ import simplifile
 /// the folder structure or driver details.
 ///
 pub fn run(name: String, model_filter: Option(List(String))) {
-  io.println("")
   io.println(console.warning("Glimr Migration Generator"))
   io.println("  Connection: " <> name)
 

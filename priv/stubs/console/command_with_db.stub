@@ -1,6 +1,5 @@
 import glimr/console/command.{type Command, type Args}
-import glimr_sqlite/console/command as command_sqlite
-import glimr_sqlite/db/pool.{type Pool}
+import glimr/db/pool_connection.{type Pool}
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#console-commands
 
@@ -12,7 +11,7 @@ const description = "Command description"
 pub fn command() -> Command {
   command.new()
   |> command.description(description)
-  |> command_sqlite.handler(run)
+  |> command.db_handler(run)
 }
 
 /// Execute the console command.

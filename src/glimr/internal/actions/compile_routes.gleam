@@ -1,10 +1,11 @@
 //// Route Compiler Action
 ////
-//// Compiles routes from controller annotations to executable
-//// Gleam code. Discovers controllers in src/app/http/controllers
-//// and generates separate route files per route group based on
-//// URL prefix matching.
-////
+//// Controller annotations declare routes inline next to their
+//// handlers, but the router needs a single compiled module per
+//// route group at startup. This action bridges that gap —
+//// scanning controllers, grouping routes by URL prefix, and
+//// generating one .gleam file per group so the router can load
+//// them without parsing annotations at runtime.
 
 import gleam/int
 import gleam/list
@@ -15,9 +16,12 @@ import glimr/routing/annotation_parser
 import glimr/routing/compiler
 import simplifile
 
-/// Compiles all controller files in src/app/http/controllers.
-/// Discovers annotated handlers and generates compiled routes
-/// files in compiled/routes, split by route group prefix.
+// ------------------------------------------------------------- Public Functions
+
+/// Scans all controllers and regenerates every route group
+/// file. A full rebuild is needed because a single controller
+/// change can shift routes between groups when prefixes
+/// overlap.
 ///
 pub fn run(verbose: Bool) -> Result(Nil, String) {
   case verbose {
@@ -37,9 +41,10 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
   compile_controllers(controller_files, verbose, groups)
 }
 
-/// Compiles routes when specific controller files have changed.
-/// Re-scans all controllers since routes from multiple controllers
-/// are aggregated into output files.
+/// Always delegates to a full run because routes from multiple
+/// controllers are aggregated into shared output files —
+/// recompiling just one controller could produce an incomplete
+/// route file.
 ///
 pub fn run_for_controllers(
   _paths: List(String),
@@ -49,8 +54,11 @@ pub fn run_for_controllers(
   run(verbose)
 }
 
-/// Recursively finds all .gleam files in the controllers directory.
-/// Returns list of file paths for controller files to parse.
+// ------------------------------------------------------------- Private Functions
+
+/// Returns an empty list instead of erroring when the directory
+/// doesn't exist, which handles fresh projects that haven't
+/// created any controllers yet.
 ///
 fn discover_controller_files(dir: String) -> List(String) {
   case simplifile.get_files(dir) {
@@ -61,9 +69,9 @@ fn discover_controller_files(dir: String) -> List(String) {
   }
 }
 
-/// Compiles all controller files into route files split by group.
-/// Parses annotations from each controller and groups routes
-/// by URL prefix for code generation.
+/// Parsing and grouping happen together so that a single error
+/// in any controller is caught before any output files are
+/// written — preventing a half-updated route set.
 ///
 fn compile_controllers(
   files: List(String),
@@ -107,8 +115,10 @@ fn compile_controllers(
   }
 }
 
-/// Groups controller routes by matching route group prefix.
-/// Returns a list of (group_name, controller_results) tuples.
+/// Each route group gets only the routes matching its prefix so
+/// that group-level middleware doesn't apply to unrelated
+/// routes. Longest-prefix-wins ensures /api/v2 routes don't
+/// accidentally land in the /api group.
 ///
 fn group_routes_by_prefix(
   controller_results: List(#(String, annotation_parser.ParseResult)),
@@ -147,9 +157,9 @@ fn group_routes_by_prefix(
   |> list.filter(fn(entry) { !list.is_empty(entry.1) })
 }
 
-/// Checks if a route matches a group prefix. A route matches if
-/// its path starts with the prefix AND no other more specific
-/// prefix matches (longest prefix wins).
+/// Longest-prefix-wins prevents ambiguity when groups share a
+/// common ancestor — e.g., /api/v2/users goes to the /api/v2
+/// group, not /api, even though both prefixes match.
 ///
 fn route_matches_prefix(
   route: annotation_parser.ParsedRoute,
@@ -174,7 +184,8 @@ fn route_matches_prefix(
   }
 }
 
-/// Gets the path from a ParsedRoute (handles both route types).
+/// Unified accessor for both regular routes and redirects so
+/// prefix matching doesn't need to branch on variant.
 ///
 fn get_route_path(route: annotation_parser.ParsedRoute) -> String {
   case route {
@@ -183,7 +194,9 @@ fn get_route_path(route: annotation_parser.ParsedRoute) -> String {
   }
 }
 
-/// Checks if a path starts with a given prefix.
+/// Empty prefix matches everything — it acts as the catch-all
+/// group for routes that don't belong to any more specific
+/// prefix.
 ///
 fn path_starts_with_prefix(path: String, prefix: String) -> Bool {
   case prefix {
@@ -192,7 +205,10 @@ fn path_starts_with_prefix(path: String, prefix: String) -> Bool {
   }
 }
 
-/// Compiles grouped routes to separate files.
+/// Writes one .gleam file per group and collects errors so that
+/// all groups are attempted even if one fails — partial
+/// compilation is better than no output at all during
+/// development.
 ///
 fn compile_grouped_routes(
   grouped: List(#(String, List(#(String, annotation_parser.ParseResult)))),
@@ -258,8 +274,8 @@ fn compile_grouped_routes(
   }
 }
 
-/// Parses a single controller file for route annotations.
-/// Returns the module path and parsed routes.
+/// Reads source and extracts the module path in one step so
+/// callers don't need to coordinate file I/O with path parsing.
 ///
 fn parse_controller(
   path: String,

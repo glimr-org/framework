@@ -39,7 +39,7 @@ glimr_run() {
     fi
 
     echo ""
-    gleam run --no-print-progress -m "$MODULE" -- "$@"
+    gleam run --no-print-progress -m "$MODULE" -- "_c_name=$CMD" "$@"
     echo ""
 }
 

@@ -26,7 +26,7 @@ import simplifile
 // ------------------------------------------------------------- Public Functions
 
 /// Entry point for full compilation. Components must be
-/// compiled before pages so that component data/slot maps are 
+/// compiled before pages so that component data/slot maps are
 /// available during page generation.
 ///
 pub fn run(verbose: Bool) -> Result(Nil, String) {
@@ -87,9 +87,9 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Iterates over files and stops on the first error so that the 
-/// user sees the most relevant failure instead of a cascade 
-/// of downstream errors.
+/// Iterates over files and stops on the first error so that the
+/// user sees the most relevant failure instead of a cascade of
+/// downstream errors.
 ///
 fn compile_files(
   files: List(String),
@@ -101,8 +101,8 @@ fn compile_files(
 }
 
 /// Single-file entry point used by the file watcher. Validates
-/// the path ends in .loom.html before attempting compilation
-/// to prevent non-template files from entering the pipeline.
+/// the path ends in .loom.html before attempting compilation to
+/// prevent non-template files from entering the pipeline.
 ///
 pub fn run_path(path: String, verbose: Bool) -> Result(Nil, String) {
   case string.ends_with(path, ".loom.html") {
@@ -111,8 +111,8 @@ pub fn run_path(path: String, verbose: Bool) -> Result(Nil, String) {
   }
 }
 
-/// Handles both existing and deleted templates so the file 
-/// watcher can pass any path change without needing to 
+/// Handles both existing and deleted templates so the file
+/// watcher can pass any path change without needing to
 /// distinguish deletions from modifications.
 ///
 fn compile_loom_path(path: String, verbose: Bool) -> Result(Nil, String) {
@@ -126,8 +126,8 @@ fn compile_loom_path(path: String, verbose: Bool) -> Result(Nil, String) {
   }
 }
 
-/// Routes to the correct compilation strategy because layouts 
-/// affect all templates, components cascade to dependents, and 
+/// Routes to the correct compilation strategy because layouts
+/// affect all templates, components cascade to dependents, and
 /// regular templates stand alone.
 ///
 fn compile_existing_loom_path(
@@ -172,8 +172,8 @@ fn compile_existing_loom_path(
   Ok(Nil)
 }
 
-/// Prevents stale generated files from lingering after a source 
-/// template is deleted, which would cause compile errors or 
+/// Prevents stale generated files from lingering after a source
+/// template is deleted, which would cause compile errors or
 /// serve outdated content.
 ///
 fn cleanup_deleted_loom_file(path: String, verbose: Bool) -> Nil {
@@ -202,8 +202,8 @@ fn cleanup_deleted_loom_file(path: String, verbose: Bool) -> Nil {
   }
 }
 
-/// Component changes cascade to consumers because the generated 
-/// code for each consumer depends on the component's props and 
+/// Component changes cascade to consumers because the generated
+/// code for each consumer depends on the component's props and
 /// slot definitions.
 ///
 fn compile_component_and_dependents(
@@ -272,8 +272,8 @@ fn compile_component_and_dependents(
   Ok(Nil)
 }
 
-/// Derives the component name used in template tags from the 
-/// file path. Subdirectories become colon-separated prefixes 
+/// Derives the component name used in template tags from the
+/// file path. Subdirectories become colon-separated prefixes
 /// (e.g., forms/input.loom.html -> "forms:input").
 ///
 fn component_name_from_template_path(path: String) -> String {
@@ -283,8 +283,8 @@ fn component_name_from_template_path(path: String) -> String {
   |> string.replace("/", ":")
 }
 
-/// Generated code is machine-written and unformatted, so we run 
-/// gleam format to keep it readable for debugging and to match 
+/// Generated code is machine-written and unformatted, so we run
+/// gleam format to keep it readable for debugging and to match
 /// the project's code style.
 ///
 fn format_generated_files() -> Nil {
@@ -293,7 +293,7 @@ fn format_generated_files() -> Nil {
 }
 
 /// Runs the full compilation pipeline for a single file.
-/// Validation happens before generation so invalid templates 
+/// Validation happens before generation so invalid templates
 /// fail fast without producing broken output.
 ///
 fn compile_file(
@@ -364,8 +364,8 @@ fn compile_file(
   Ok(Nil)
 }
 
-/// Builds both the component data map and slot map in a single 
-/// pass over the component files. Avoids reading and parsing 
+/// Builds both the component data map and slot map in a single
+/// pass over the component files. Avoids reading and parsing
 /// each component template twice.
 ///
 fn build_component_maps(
@@ -411,9 +411,9 @@ fn build_component_maps(
   #(data_map, slot_map)
 }
 
-/// The module name must match the output file location so that 
-/// Gleam's import system can find the compiled template 
-/// (e.g., "compiled/loom/pages/home").
+/// The module name must match the output file location so that
+/// Gleam's import system can find the compiled template (e.g.,
+/// "compiled/loom/pages/home").
 ///
 fn path_to_module_name(path: String) -> String {
   let relative =
@@ -430,8 +430,8 @@ fn path_to_module_name(path: String) -> String {
   "compiled/loom/" <> relative
 }
 
-/// Maps source template paths to their compiled output location 
-/// so generated .gleam files mirror the same directory 
+/// Maps source template paths to their compiled output location
+/// so generated .gleam files mirror the same directory
 /// structure as the source templates.
 ///
 fn path_to_output_path(path: String) -> String {
@@ -443,9 +443,9 @@ fn path_to_output_path(path: String) -> String {
   loom.output_path <> relative
 }
 
-/// Translates internal lexer errors into user-facing messages 
-/// with position info so developers can locate the problem 
-/// in their template source.
+/// Translates internal lexer errors into user-facing messages
+/// with position info so developers can locate the problem in
+/// their template source.
 ///
 fn lexer_error_to_string(err: lexer.LexerError) -> String {
   case err {
@@ -488,8 +488,8 @@ fn lexer_error_to_string(err: lexer.LexerError) -> String {
   }
 }
 
-/// Translates internal parser errors into user-facing messages 
-/// with context so developers can understand and fix structural 
+/// Translates internal parser errors into user-facing messages
+/// with context so developers can understand and fix structural
 /// issues in their templates.
 ///
 fn parser_error_to_string(err: parser.ParserError) -> String {
