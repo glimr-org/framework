@@ -1,11 +1,15 @@
 //// Pool Connection Abstraction
 ////
-//// Provides types and utilities for database connections.
-//// The actual connection handling is delegated to driver
-//// packages (glimr_sqlite, glimr_postgres) which register
-//// with the driver registry.
+//// Supporting multiple database drivers (PostgreSQL, SQLite)
+//// without duplicating query logic across the framework
+//// requires a driver-agnostic interface. This module defines
+//// the core Pool and Connection types using Dynamic-typed
+//// vtables so the framework can execute queries without
+//// importing any driver-specific library.
 
 import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode.{type Decoder}
+import gleam/erlang/process
 import gleam/int
 import gleam/option.{type Option}
 import gleam/result
@@ -13,18 +17,20 @@ import gleam/string
 
 // ------------------------------------------------------------- Public Types
 
-/// Identifies which database driver is being used. This allows
-/// you to seamlessly use multiple connections of different
-/// database drivers throughout your app.
+/// Some operations need driver-specific SQL (e.g., BEGIN vs
+/// BEGIN TRANSACTION, placeholder styles). Tagging each pool
+/// with its driver lets the framework branch on syntax without
+/// inspecting the connection handle.
 ///
 pub type Driver {
   Postgres
   Sqlite
 }
 
-/// Configuration for establishing a database connection. Use
-/// `postgres_config`, `postgres_params_config`, or
-/// `sqlite_config` to create instances.
+/// A shared union lets console commands and startup code pass
+/// config around without knowing which driver it targets.
+/// The driver adapter pattern-matches at pool creation to
+/// extract only the fields it understands.
 ///
 pub type Config {
   PostgresConfig(url: String, pool_size: Int)
@@ -39,17 +45,40 @@ pub type Config {
   SqliteConfig(path: String, pool_size: Int)
 }
 
-/// A pooled database connection that wraps the underlying
-/// driver connection. The actual connection is stored as
-/// Dynamic and unwrapped by driver packages.
+/// Opaque so the framework controls checkout/checkin and callers
+/// can't call driver functions with the wrong handle type.
+/// Storing query_fn and exec_fn as Dynamic lets each adapter
+/// register its own typed implementation without a shared trait.
 ///
-pub opaque type PoolConnection {
-  PoolConnection(driver: Driver, handle: Dynamic, pool_ref: Dynamic)
+pub opaque type Pool {
+  Pool(
+    driver: Driver,
+    query_fn: Dynamic,
+    exec_fn: Dynamic,
+    checkout: fn() -> Result(#(Dynamic, fn() -> Nil), String),
+    stop: fn() -> Nil,
+  )
 }
 
-/// Unified error type for database operations. Provides
-/// specific error variants for common failure cases, allowing
-/// precise error handling in application code.
+/// Bundling the handle with its query/exec closures ensures
+/// every query goes through the correct driver implementation.
+/// Opaque so callers can't extract the handle and use it after
+/// the connection is returned to the pool.
+///
+pub opaque type Connection {
+  Connection(
+    driver: Driver,
+    handle: Dynamic,
+    query_fn: Dynamic,
+    exec_fn: Dynamic,
+  )
+}
+
+/// A unified error type lets application code handle database
+/// failures without knowing which driver produced them.
+/// Specific variants like ConstraintError enable precise
+/// handling (e.g., showing "email taken" on unique violations)
+/// without string-matching on error messages.
 ///
 pub type DbError {
   /// The requested row was not found (for single-row queries)
@@ -68,17 +97,19 @@ pub type DbError {
   ConfigError(message: String)
 }
 
-/// The result of a database query, containing the number of
-/// affected rows and the list of decoded row data. The count
-/// is useful for INSERT/UPDATE/DELETE operations.
+/// Returning both the row count and decoded rows in one type
+/// avoids separate queries to check affected rows after writes.
+/// SELECT queries use the rows field while INSERT/UPDATE/DELETE
+/// primarily use the count.
 ///
 pub type QueryResult(t) {
   QueryResult(count: Int, rows: List(t))
 }
 
-/// A parameter value that can be passed to a database query.
-/// Use the constructor functions (int, string, bool, etc.) to
-/// create type-safe parameter values.
+/// A driver-agnostic value union so query parameters can be
+/// passed through the vtable without the framework knowing
+/// which driver-specific types they'll become. Each adapter
+/// converts these to its native parameter type at execution.
 ///
 pub type Value {
   IntValue(Int)
@@ -91,11 +122,9 @@ pub type Value {
 
 // ------------------------------------------------------------- Config Functions
 
-/// Creates a PostgreSQL configuration from a connection URL.
-/// This configuration will have its own pool of connections
-/// specific to this database.
-///
-/// URL format: `postgresql://user:password@host:port/database`
+/// Connection URLs are the standard way to configure PostgreSQL
+/// in cloud environments (DATABASE_URL). Accepting a URL avoids
+/// forcing callers to parse it into individual fields.
 ///
 /// *Example:*
 ///
@@ -110,10 +139,10 @@ pub fn postgres_config(url: String, pool_size pool_size: Int) -> Config {
   PostgresConfig(url: url, pool_size: pool_size)
 }
 
-/// Creates a PostgreSQL configuration from individual
-/// parameters. This is an alternative to `postgres_config` when
-/// you have separate host, port, database, username, and
-/// password values.
+/// Some deployments provide credentials as separate fields
+/// (e.g., Kubernetes secrets per field) rather than a URL.
+/// Accepting discrete parameters supports that pattern without
+/// forcing callers to assemble a URL string.
 ///
 /// *Example:*
 ///
@@ -146,11 +175,9 @@ pub fn postgres_params_config(
   )
 }
 
-/// Creates a SQLite configuration from a file path. This
-/// configuration will have its own pool of connections
-/// specific to this database.
-///
-/// Use `:memory:` for an in-memory database.
+/// SQLite databases are just files, so the path is all that's
+/// needed. The `:memory:` sentinel creates an ephemeral
+/// database useful for tests.
 ///
 /// *Example:*
 ///
@@ -163,97 +190,209 @@ pub fn sqlite_config(path: String, pool_size pool_size: Int) -> Config {
   SqliteConfig(path: path, pool_size: pool_size)
 }
 
-// ------------------------------------------------------------- Connection Functions
+// ------------------------------------------------------------- Pool Functions
 
-/// Creates a pool connection wrapper from driver-specific
-/// handles. Called by driver packages when checking out a
-/// connection from the pool.
+/// Adapters call this at startup to register their driver-
+/// specific implementations. Using labeled arguments makes
+/// construction self-documenting and prevents argument-order
+/// mistakes across the five required fields.
 ///
-pub fn wrap_connection(
-  driver: Driver,
-  handle: Dynamic,
-  pool_ref: Dynamic,
-) -> PoolConnection {
-  PoolConnection(driver, handle, pool_ref)
+pub fn new_pool(
+  driver driver: Driver,
+  query_fn query_fn: Dynamic,
+  exec_fn exec_fn: Dynamic,
+  checkout checkout: fn() -> Result(#(Dynamic, fn() -> Nil), String),
+  stop stop: fn() -> Nil,
+) -> Pool {
+  Pool(
+    driver: driver,
+    query_fn: query_fn,
+    exec_fn: exec_fn,
+    checkout: checkout,
+    stop: stop,
+  )
 }
 
-/// Returns the driver type for the provided pool connection.
-/// Useful for conditionally handling driver-specific behavior
-/// in application code.
+/// A callback-based API guarantees the connection is returned
+/// to the pool even if the function crashes, preventing
+/// connection leaks that would eventually exhaust the pool
+/// under sustained traffic.
 ///
-pub fn driver(connection: PoolConnection) -> Driver {
-  connection.driver
+pub fn get_connection(pool: Pool, f: fn(Connection) -> a) -> a {
+  case pool.checkout() {
+    Ok(#(handle, release)) -> {
+      let conn =
+        Connection(
+          driver: pool.driver,
+          handle: handle,
+          query_fn: pool.query_fn,
+          exec_fn: pool.exec_fn,
+        )
+      let result = f(conn)
+      release()
+      result
+    }
+    Error(msg) -> panic as { "Failed to checkout connection: " <> msg }
+  }
 }
 
-/// Gets the raw connection handle as Dynamic. Used by driver
-/// packages to unwrap and cast to the native connection type
-/// for executing queries.
+/// Convenience wrapper so callers that only need a single query
+/// don't have to manually check out and return a connection.
+/// Placeholder conversion is automatic so SQL can use $1 style
+/// everywhere regardless of driver.
 ///
-pub fn unwrap_handle(connection: PoolConnection) -> Dynamic {
-  connection.handle
+pub fn query(
+  pool: Pool,
+  sql: String,
+  params: List(Value),
+  decoder: Decoder(a),
+) -> Result(QueryResult(a), DbError) {
+  use conn <- get_connection(pool)
+  query_with(conn, sql, params, decoder)
 }
 
-/// Extracts the pool reference from a pool connection. This
-/// reference must be passed to checkin when returning the
-/// connection to the pool.
+/// Transactions require all queries to run on the same
+/// connection. This variant accepts a pre-checked-out
+/// Connection so multiple queries share the same transaction
+/// context without redundant checkout/checkin cycles.
 ///
-pub fn get_pool_ref(connection: PoolConnection) -> Dynamic {
-  connection.pool_ref
+pub fn query_with(
+  conn: Connection,
+  sql: String,
+  params: List(Value),
+  decoder: Decoder(a),
+) -> Result(QueryResult(a), DbError) {
+  let converted_sql = convert_placeholders(sql, conn.driver)
+  let typed_query_fn: fn(Dynamic, String, List(Value), Decoder(a)) ->
+    Result(QueryResult(a), DbError) = coerce(conn.query_fn)
+  typed_query_fn(conn.handle, converted_sql, params, decoder)
+}
+
+/// Convenience wrapper for write operations that only need a
+/// single statement. Checks out a connection, executes, and
+/// returns the affected row count.
+///
+pub fn exec(
+  pool: Pool,
+  sql: String,
+  params: List(Value),
+) -> Result(Int, DbError) {
+  use conn <- get_connection(pool)
+  exec_with(conn, sql, params)
+}
+
+/// Transaction blocks need writes on the same connection as
+/// the BEGIN statement. This variant accepts a Connection so
+/// INSERT/UPDATE/DELETE execute within the active transaction.
+///
+pub fn exec_with(
+  conn: Connection,
+  sql: String,
+  params: List(Value),
+) -> Result(Int, DbError) {
+  let converted_sql = convert_placeholders(sql, conn.driver)
+  let typed_exec_fn: fn(Dynamic, String, List(Value)) -> Result(Int, DbError) =
+    coerce(conn.exec_fn)
+  typed_exec_fn(conn.handle, converted_sql, params)
+}
+
+/// Wrapping BEGIN/COMMIT/ROLLBACK in a callback prevents
+/// callers from accidentally leaving transactions open.
+/// Automatic retry on deadlock errors handles the common case
+/// where concurrent writes conflict — backing off and retrying
+/// resolves most transient lock contention.
+///
+pub fn transaction(
+  pool: Pool,
+  retries: Int,
+  callback: fn(Connection) -> Result(a, DbError),
+) -> Result(a, DbError) {
+  case retries < 0 {
+    True -> Error(ConnectionError("Transaction retries cannot be negative"))
+    False -> do_transaction(pool, retries, callback)
+  }
+}
+
+/// Database connections hold server-side resources that aren't
+/// released until explicitly closed. Stopping the pool frees
+/// those resources instead of waiting for process exit.
+///
+pub fn stop_pool(pool: Pool) -> Nil {
+  pool.stop()
+}
+
+/// Code that needs driver-specific SQL (like transaction
+/// syntax) can branch on the driver without accessing the
+/// opaque Pool internals.
+///
+pub fn pool_driver(pool: Pool) -> Driver {
+  pool.driver
+}
+
+/// Same as pool_driver but for an already checked-out
+/// connection. Useful inside transaction callbacks where
+/// only the Connection is available, not the Pool.
+///
+pub fn connection_driver(conn: Connection) -> Driver {
+  conn.driver
 }
 
 // ------------------------------------------------------------- Value Functions
 
-/// Creates an integer parameter value for use in database
-/// queries. Maps to INTEGER type in both PostgreSQL and
-/// SQLite databases.
+/// Wrapping raw Gleam values in a tagged union lets the
+/// driver adapter convert them to the correct native type
+/// at execution time without the caller knowing the driver.
 ///
 pub fn int(value: Int) -> Value {
   IntValue(value)
 }
 
-/// Creates a floating-point parameter value for use in
-/// database queries. Maps to REAL/DOUBLE PRECISION depending
-/// on the database driver.
+/// Float values map to REAL in SQLite and DOUBLE PRECISION in
+/// PostgreSQL. The adapter handles the conversion so callers
+/// don't need to know the target column type.
 ///
 pub fn float(value: Float) -> Value {
   FloatValue(value)
 }
 
-/// Creates a string/text parameter value for use in database
-/// queries. Maps to TEXT/VARCHAR depending on the database
-/// driver and column type.
+/// Text is the most common parameter type — used for VARCHAR,
+/// TEXT, timestamps, UUIDs, and JSON columns. The database
+/// handles any necessary casting from the text representation.
 ///
 pub fn string(value: String) -> Value {
   StringValue(value)
 }
 
-/// Creates a boolean parameter value for use in database
-/// queries. PostgreSQL uses native BOOLEAN, while SQLite
-/// stores booleans as integers (0/1).
+/// PostgreSQL has native BOOLEAN but SQLite stores booleans
+/// as 0/1 integers. Tagging the value here lets each adapter
+/// do the right conversion at execution time.
 ///
 pub fn bool(value: Bool) -> Value {
   BoolValue(value)
 }
 
-/// Creates a NULL parameter value for use in database queries.
-/// Use this for optional fields where the value should be
-/// stored as database NULL.
+/// Explicit NULL values are needed for INSERT/UPDATE of
+/// optional fields. Using a dedicated variant instead of
+/// Option(Value) keeps the Value type flat and avoids
+/// nested wrapping.
 ///
 pub fn null() -> Value {
   NullValue
 }
 
-/// Creates a binary/blob parameter value for storing raw
-/// bytes in the database. Maps to BYTEA in PostgreSQL and
-/// BLOB in SQLite.
+/// Binary data like file uploads or encrypted tokens can't
+/// be stored as text without encoding. A dedicated blob
+/// variant passes raw bytes through to the driver without
+/// any encoding/decoding overhead.
 ///
 pub fn blob(value: BitArray) -> Value {
   BlobValue(value)
 }
 
-/// Creates a parameter value from an Option, converting None
-/// to NULL. Pass the appropriate constructor function for the
-/// inner type (e.g., nullable(int, some_option)).
+/// Optional fields in Gleam are Option types, but the query
+/// layer needs Value. This bridges the two by converting None
+/// to NullValue and Some to the inner Value type, avoiding
+/// a case expression at every call site.
 ///
 pub fn nullable(inner: fn(a) -> Value, value: Option(a)) -> Value {
   case value {
@@ -264,9 +403,10 @@ pub fn nullable(inner: fn(a) -> Value, value: Option(a)) -> Value {
 
 // ------------------------------------------------------------- SQL Utilities
 
-/// Converts $1, $2, etc. placeholders to ? for SQLite.
-/// This allows using consistent Postgres-style placeholders
-/// in SQL files.
+/// SQL files use PostgreSQL-style $1 placeholders everywhere
+/// for consistency. SQLite requires ? instead, so this
+/// conversion runs transparently at execution time so
+/// developers don't maintain duplicate SQL files.
 ///
 pub fn convert_placeholders(sql: String, driver: Driver) -> String {
   case driver {
@@ -277,17 +417,96 @@ pub fn convert_placeholders(sql: String, driver: Driver) -> String {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Entry point for placeholder conversion. Converts the SQL
-/// string to graphemes and delegates to the recursive helper
-/// that processes each character.
+/// Separated from transaction to hide the retry counter from
+/// the public API. Each attempt checks out a fresh connection
+/// because the previous one may be in a broken state after a
+/// rollback.
+///
+fn do_transaction(
+  pool: Pool,
+  retries_remaining: Int,
+  callback: fn(Connection) -> Result(a, DbError),
+) -> Result(a, DbError) {
+  use conn <- get_connection(pool)
+
+  let begin_sql = case pool.driver {
+    Postgres -> "BEGIN"
+    Sqlite -> "BEGIN TRANSACTION"
+  }
+
+  case exec_with(conn, begin_sql, []) {
+    Error(e) -> Error(e)
+    Ok(_) -> {
+      case callback(conn) {
+        Ok(value) -> {
+          case exec_with(conn, "COMMIT", []) {
+            Ok(_) -> Ok(value)
+            Error(e) -> {
+              let _ = exec_with(conn, "ROLLBACK", [])
+              maybe_retry(pool, retries_remaining, callback, e)
+            }
+          }
+        }
+        Error(e) -> {
+          let _ = exec_with(conn, "ROLLBACK", [])
+          maybe_retry(pool, retries_remaining, callback, e)
+        }
+      }
+    }
+  }
+}
+
+/// Only deadlock/lock errors are worth retrying — other errors
+/// like constraint violations will fail again immediately.
+/// Sleeping proportionally to remaining retries creates a
+/// simple backoff that gives concurrent transactions time to
+/// release their locks.
+///
+fn maybe_retry(
+  pool: Pool,
+  retries_remaining: Int,
+  callback: fn(Connection) -> Result(a, DbError),
+  error: DbError,
+) -> Result(a, DbError) {
+  case is_deadlock_error(error) && retries_remaining > 0 {
+    True -> {
+      process.sleep(50 * retries_remaining)
+      do_transaction(pool, retries_remaining - 1, callback)
+    }
+    False -> Error(error)
+  }
+}
+
+/// PostgreSQL and SQLite report lock errors with different
+/// messages ("deadlock detected" vs "database is locked").
+/// Checking multiple keywords in a single function handles
+/// both drivers without driver-specific error inspection.
+///
+fn is_deadlock_error(error: DbError) -> Bool {
+  case error {
+    QueryError(msg) -> {
+      let lower = string.lowercase(msg)
+      string.contains(lower, "deadlock")
+      || string.contains(lower, "lock")
+      || string.contains(lower, "serialization")
+      || string.contains(lower, "database is locked")
+      || string.contains(lower, "busy")
+    }
+    _ -> False
+  }
+}
+
+/// String-level replace can't be used because $1 and $10 would
+/// conflict. Character-by-character processing correctly
+/// replaces each $N as a unit regardless of digit count.
 ///
 fn convert_pg_to_sqlite_placeholders(sql: String) -> String {
   do_convert_placeholders(string.to_graphemes(sql), "", False)
 }
 
-/// Recursively processes characters, replacing $N placeholders
-/// with ? for SQLite. Tracks whether we're inside a placeholder
-/// to skip the numeric portion after the $.
+/// The in_placeholder flag skips digits after $ so "$12" emits
+/// a single "?" rather than "?2". Once a non-digit is hit the
+/// flag resets and normal character copying resumes.
 ///
 fn do_convert_placeholders(
   chars: List(String),
@@ -306,3 +525,21 @@ fn do_convert_placeholders(
     [c, ..rest] -> do_convert_placeholders(rest, acc <> c, False)
   }
 }
+
+// ------------------------------------------------------------- FFI
+
+/// The vtable stores typed functions as Dynamic. Coercing back
+/// is safe because Gleam types are erased at runtime on the
+/// BEAM — the Dynamic is always the exact function type we
+/// stored during pool construction.
+///
+@external(erlang, "glimr_pool_ffi", "identity")
+fn coerce(value: Dynamic) -> a
+
+/// Adapters need to store driver-specific functions and
+/// connection handles in the Dynamic-typed vtable fields.
+/// Identity coercion to Dynamic is safe on the BEAM where
+/// all values are already untyped at runtime.
+///
+@external(erlang, "glimr_pool_ffi", "identity")
+pub fn to_dynamic(value: a) -> Dynamic
