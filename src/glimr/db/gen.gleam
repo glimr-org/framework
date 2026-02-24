@@ -1,16 +1,12 @@
 //// Database Code Generator
 ////
-//// Generates typed Gleam code from schema definitions and SQL
-//// query files. Scans `src/data/{conn_name}/models/` for model
-//// directories, reads schema definitions and SQL queries, and
-//// generates repository modules with type-safe database functions.
-////
-//// Each model directory should contain:
-//// - `{model}_schema.gleam` - Schema definition with table/columns
-//// - `queries/` - Directory containing `.sql` query files
-////
-//// Generated code is written to `{model}/gen/{model}.gleam`
-//// and automatically formatted with `gleam format`.
+//// Querying a database in Gleam requires writing types,
+//// decoders, and wrapper functions for every model — all of 
+//// which must stay in sync with the schema and SQL files. This 
+//// module automates that by scanning model directories, 
+//// parsing schemas and .sql files, and emitting fully-typed 
+//// repository modules so schema changes only require re-
+//// running the generator.
 
 import gleam/int
 import gleam/io
@@ -26,19 +22,15 @@ import simplifile
 
 // ------------------------------------------------------------- Public Functions
 
-/// Runs code generation for a named database connection.
-/// Scans src/data/{name}/models/ for model directories and
-/// generates typed repository modules from schemas and SQL.
+/// Single entry point so console commands just pass a
+/// connection name without knowing the folder structure. The 
+/// optional model filter lets developers regenerate a subset of 
+/// models without touching the rest.
 ///
-pub fn run(
-  name: String,
-  driver_type: String,
-  model_filter: Option(List(String)),
-) {
+pub fn run(name: String, model_filter: Option(List(String))) {
   io.println("")
   io.println(console.warning("Glimr Query Generator"))
   io.println("  Connection: " <> name)
-  io.println("  Driver: " <> driver_type)
 
   case model_filter {
     Some(models) -> io.println("  Models: " <> string.join(models, ", "))
@@ -46,20 +38,17 @@ pub fn run(
   }
 
   let models_path = "src/data/" <> name <> "/models"
-  generate_models(models_path, model_filter, driver_type)
+  generate_models(models_path, model_filter)
 }
 
 // ------------------------------------------------------------- Private Functions
 
-/// Internal implementation for code generation. Reads model
-/// directories, filters by the optional model list, and
-/// processes each model to generate repository code.
+/// Separated from run to keep path construction out of the
+/// main logic. Reads the models directory, applies the
+/// optional filter, then processes each model independently so 
+/// a parse failure in one model doesn't block the rest.
 ///
-fn generate_models(
-  models_path: String,
-  model_filter: Option(List(String)),
-  driver_type: String,
-) {
+fn generate_models(models_path: String, model_filter: Option(List(String))) {
   case simplifile.read_directory(models_path) {
     Ok(entries) -> {
       let model_dirs =
@@ -82,7 +71,7 @@ fn generate_models(
       list.each(model_dirs, fn(model_name) {
         io.println("")
         io.println("  Processing: " <> model_name)
-        process_model(models_path, model_name, driver_type)
+        process_model(models_path, model_name)
       })
 
       io.println("")
@@ -95,15 +84,13 @@ fn generate_models(
   }
 }
 
-/// Processes a single model directory. Reads the schema file,
-/// parses all SQL query files, generates the repository module,
-/// writes it to the gen/ directory, and formats it.
+/// Each model is self-contained: its schema and queries live
+/// in the same directory. Processing one at a time means a
+/// broken schema or unparseable SQL file produces a clear
+/// error for that model without affecting others. The output
+/// is auto-formatted so generated code matches project style.
 ///
-fn process_model(
-  models_path: String,
-  model_name: String,
-  driver_type: String,
-) -> Nil {
+fn process_model(models_path: String, model_name: String) -> Nil {
   let model_path = models_path <> "/" <> model_name
   let schema_path = model_path <> "/" <> model_name <> "_schema.gleam"
   let queries_path = model_path <> "/queries"
@@ -150,8 +137,7 @@ fn process_model(
 
           io.println("    Queries: " <> int.to_string(list.length(queries)))
 
-          let generated =
-            generator.generate(model_name, table, queries, driver_type)
+          let generated = generator.generate(model_name, table, queries)
 
           let _ = simplifile.create_directory_all(gen_path)
 

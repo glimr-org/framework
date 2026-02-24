@@ -1,27 +1,21 @@
 //// Migration Generator
 ////
-//// Compares current schema definitions against a stored snapshot
-//// to detect changes and automatically generate migration SQL.
-////
-//// The workflow is:
-//// 1. Load the previous schema snapshot from JSON
-//// 2. Scan current schema files in src/data/{conn_name}/models/
-//// 3. Compute the diff (new tables, dropped tables, column changes)
-//// 4. Generate driver-specific SQL (PostgreSQL or SQLite)
-//// 5. Write migration file to src/data/{conn_name}/_migrations/
-//// 6. Update the snapshot for next run
-////
-//// Supports column renames via the `rename_from` modifier, which
-//// is automatically cleaned up after migration generation.
-////
-//// Run with: `gleam run -m glimr/db/gen/migrate`
+//// Writing migration SQL by hand after every schema change
+//// is tedious and error-prone — developers forget columns,
+//// get types wrong, or miss renames. This module compares
+//// the current schema files against a stored snapshot to
+//// detect changes automatically and emit driver-specific
+//// SQL. The snapshot is updated after each run so only
+//// new changes appear in subsequent migrations.
 
 import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
+import glimr/config/database
 import glimr/console/console
+import glimr/db/driver
 import glimr/db/gen/migrate/cleanup
 import glimr/db/gen/migrate/snapshot
 import glimr/db/gen/migrate/sql.{Postgres, Sqlite}
@@ -32,21 +26,28 @@ import simplifile
 
 // ------------------------------------------------------------- Public Functions
 
-/// Run migration generation for a named connection.
-/// Uses the folder structure:
-/// - src/data/{name}/models/
-/// - src/data/{name}/_migrations/
-/// - src/data/{name}/._schema_snapshot.json
+/// Single entry point that resolves the driver type from
+/// database.toml and delegates to do_run with the correct
+/// paths. Keeping driver resolution here means console
+/// commands just pass a connection name without knowing
+/// the folder structure or driver details.
 ///
-pub fn run(
-  name: String,
-  driver_type: String,
-  model_filter: Option(List(String)),
-) {
+pub fn run(name: String, model_filter: Option(List(String))) {
   io.println("")
   io.println(console.warning("Glimr Migration Generator"))
   io.println("  Connection: " <> name)
-  io.println("  Driver: " <> driver_type)
+
+  // Resolve driver type from database.toml config
+  let connections = database.load()
+  let connection = driver.find_by_name(name, connections)
+  let driver_type = driver.connection_type(connection)
+
+  let driver_type_str = case driver_type {
+    driver.Postgres -> "postgres"
+    driver.Sqlite -> "sqlite"
+  }
+
+  io.println("  Driver: " <> driver_type_str)
 
   let is_filtered = option.is_some(model_filter)
   case model_filter {
@@ -60,15 +61,10 @@ pub fn run(
   let snapshot_path = base_path <> "/._schema_snapshot.json"
   let migrations_path = base_path <> "/_migrations"
 
-  // Convert driver type string to sql.Driver
+  // Convert driver type to sql.Driver
   let sql_driver = case driver_type {
-    "postgres" -> Postgres
-    "sqlite" -> Sqlite
-    _ -> {
-      io.println("  Error: Unknown driver type '" <> driver_type <> "'")
-      io.println("  Valid types: postgres, sqlite")
-      panic as "Invalid driver type"
-    }
+    driver.Postgres -> Postgres
+    driver.Sqlite -> Sqlite
   }
 
   do_run(
@@ -76,7 +72,7 @@ pub fn run(
     snapshot_path,
     migrations_path,
     sql_driver,
-    name,
+    driver_type_str,
     model_filter,
     is_filtered,
   )
@@ -84,9 +80,10 @@ pub fn run(
 
 // ------------------------------------------------------------- Private Functions
 
-/// Internal implementation that handles the actual migration
-/// generation logic including snapshot loading, schema scanning,
-/// diff computation, and SQL file generation.
+/// Separated from run to keep the public API clean — run
+/// handles config resolution while this function owns the
+/// full pipeline: load snapshot, scan schemas, diff, generate
+/// SQL, write file, and update the snapshot.
 ///
 fn do_run(
   models_path: String,
@@ -184,9 +181,10 @@ fn do_run(
   io.println(console.success("  Successfully generated migrations!"))
 }
 
-/// Scan model directories and parse their schema files. Applies
-/// the optional model filter to limit which models are included
-/// in the migration diff.
+/// Large projects may only want to migrate a subset of models
+/// at a time. The optional filter limits which model directories
+/// are scanned so the diff only includes changes for the
+/// specified models, leaving others untouched.
 ///
 fn scan_schemas(
   models_path: String,
@@ -234,9 +232,10 @@ fn scan_schemas(
   }
 }
 
-/// Get current timestamp in YYYYMMDDHHMMSS format for migration
-/// filenames. Uses the system date command to generate a unique
-/// timestamp prefix.
+/// Migration files are sorted lexicographically to determine
+/// execution order. A timestamp prefix guarantees chronological
+/// ordering without a central counter, and matches the
+/// convention used by Rails, Laravel, and other frameworks.
 ///
 fn get_timestamp() -> String {
   case shellout.command("date", ["+%Y%m%d%H%M%S"], ".", []) {
