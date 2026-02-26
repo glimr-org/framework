@@ -34,9 +34,6 @@ pub type CacheError {
   /// The entry existed but has expired — used internally by
   /// backends that do lazy expiration
   Expired
-  /// The callback passed to remember() failed, so there's nothing
-  /// to cache
-  ComputeError(message: String)
 }
 
 /// The trick that makes multiple backends work is closures —
@@ -179,19 +176,19 @@ pub fn decrement(
   increment(pool, key, -by)
 }
 
-/// The most common caching pattern: try the cache first, and if
-/// it's a miss, run an expensive computation (database query,
-/// API call, etc.) and store the result for next time. The
-/// compute callback returns Result so a failed API call doesn't
-/// cache an error response — only successful computations get
-/// stored.
+/// The bread and butter of caching — try the cache first, and
+/// if it's a miss, run an expensive computation (database
+/// query, API call, etc.) and store the result for next time.
+/// Returns the value directly, no Result to unwrap. If the
+/// cache backend is down, it just calls compute every time —
+/// your app stays working, it's just slower.
 ///
 pub fn remember(
   pool: CachePool,
   key: String,
   ttl_seconds: Int,
-  compute: fn() -> Result(String, e),
-) -> Result(String, CacheError) {
+  compute: fn() -> String,
+) -> String {
   do_remember(pool, key, compute, fn(value) {
     put(pool, key, value, ttl_seconds)
   })
@@ -206,8 +203,8 @@ pub fn remember(
 pub fn remember_forever(
   pool: CachePool,
   key: String,
-  compute: fn() -> Result(String, e),
-) -> Result(String, CacheError) {
+  compute: fn() -> String,
+) -> String {
   do_remember(pool, key, compute, fn(value) { put_forever(pool, key, value) })
 }
 
@@ -223,20 +220,40 @@ pub fn remember_json(
   key: String,
   ttl_seconds: Int,
   decoder: decode.Decoder(a),
-  compute: fn() -> Result(a, e),
   encoder: fn(a) -> Json,
-) -> Result(a, CacheError) {
+  compute: fn() -> a,
+) -> a {
   case get_json(pool, key, decoder) {
-    Ok(value) -> Ok(value)
-    Error(NotFound) | Error(SerializationError(_)) -> {
-      use value <- result.try(
-        compute()
-        |> result.replace_error(ComputeError("Compute function failed")),
-      )
+    Ok(value) -> value
+    Error(_) -> {
+      let value = compute()
       let _ = put_json(pool, key, value, encoder, ttl_seconds)
-      Ok(value)
+      value
     }
-    Error(e) -> Error(e)
+  }
+}
+
+/// Same as remember_json but the cached result never expires.
+/// Good for things like a site's configuration or navigation
+/// tree that are expensive to build from the database but
+/// change so rarely that TTL-based expiry would just waste
+/// computation. The only way to refresh is an explicit forget()
+/// or flush().
+///
+pub fn remember_json_forever(
+  pool: CachePool,
+  key: String,
+  decoder: decode.Decoder(a),
+  encoder: fn(a) -> Json,
+  compute: fn() -> a,
+) -> a {
+  case get_json(pool, key, decoder) {
+    Ok(value) -> value
+    Error(_) -> {
+      let value = compute()
+      let _ = put_json_forever(pool, key, value, encoder)
+      value
+    }
   }
 }
 
@@ -357,19 +374,15 @@ pub fn default_increment(
 fn do_remember(
   pool: CachePool,
   key: String,
-  compute: fn() -> Result(String, e),
+  compute: fn() -> String,
   store: fn(String) -> Result(Nil, CacheError),
-) -> Result(String, CacheError) {
+) -> String {
   case get(pool, key) {
-    Ok(value) -> Ok(value)
-    Error(NotFound) -> {
-      use value <- result.try(
-        compute()
-        |> result.replace_error(ComputeError("Compute function failed")),
-      )
+    Ok(value) -> value
+    Error(_) -> {
+      let value = compute()
       let _ = store(value)
-      Ok(value)
+      value
     }
-    Error(e) -> Error(e)
   }
 }

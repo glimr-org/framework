@@ -3,7 +3,7 @@ import gleam/json
 import gleam/string
 import gleeunit/should
 import glimr/cache/cache.{
-  type CachePool, ComputeError, NotFound, SerializationError,
+  type CachePool, NotFound, SerializationError,
 }
 import glimr/cache/file
 import glimr/cache/file/cache as file_cache
@@ -338,8 +338,7 @@ pub fn remember_returns_cached_value_test() {
   |> should.be_ok()
 
   // Compute function should not be called
-  cache.remember(pool, "cached", 3600, fn() { Ok("computed_value") })
-  |> should.be_ok()
+  cache.remember(pool, "cached", 3600, fn() { "computed_value" })
   |> should.equal("existing_value")
 
   cleanup_test_pool()
@@ -348,8 +347,7 @@ pub fn remember_returns_cached_value_test() {
 pub fn remember_computes_when_missing_test() {
   let pool = setup_test_pool()
 
-  cache.remember(pool, "missing", 3600, fn() { Ok("computed_value") })
-  |> should.be_ok()
+  cache.remember(pool, "missing", 3600, fn() { "computed_value" })
   |> should.equal("computed_value")
 
   // Value should now be cached
@@ -360,21 +358,10 @@ pub fn remember_computes_when_missing_test() {
   cleanup_test_pool()
 }
 
-pub fn remember_handles_compute_error_test() {
-  let pool = setup_test_pool()
-
-  cache.remember(pool, "will_fail", 3600, fn() { Error("compute failed") })
-  |> should.be_error()
-  |> should.equal(ComputeError("Compute function failed"))
-
-  cleanup_test_pool()
-}
-
 pub fn remember_forever_test() {
   let pool = setup_test_pool()
 
-  cache.remember_forever(pool, "permanent", fn() { Ok("computed") })
-  |> should.be_ok()
+  cache.remember_forever(pool, "permanent", fn() { "computed" })
   |> should.equal("computed")
 
   cache.get(pool, "permanent")
@@ -398,10 +385,9 @@ pub fn remember_json_returns_cached_test() {
     "user_cached",
     3600,
     user_decoder(),
-    fn() { Ok(User(name: "Computed", age: 99)) },
     user_encoder,
+    fn() { User(name: "Computed", age: 99) },
   )
-  |> should.be_ok()
   |> should.equal(user)
 
   cleanup_test_pool()
@@ -416,10 +402,9 @@ pub fn remember_json_computes_when_missing_test() {
     "new_user",
     3600,
     user_decoder(),
-    fn() { Ok(user) },
     user_encoder,
+    fn() { user },
   )
-  |> should.be_ok()
   |> should.equal(user)
 
   // Should now be cached
