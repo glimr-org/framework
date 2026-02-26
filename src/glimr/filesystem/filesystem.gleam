@@ -2,15 +2,14 @@
 ////
 //// Console commands like make:controller and make:migration
 //// need to scaffold files from templates, but the file I/O
-//// boilerplate (read stub, create directories, replace
-//// variables, write output) would be duplicated across every
+//// boilerplate — read stub, create directories, replace
+//// variables, write output — would be duplicated across every
 //// command. This module centralizes that workflow so commands
-//// just specify which stub to use, where to write it, and
-//// what variables to substitute.
+//// just specify which stub to use, where to write it, and what
+//// variables to substitute.
 ////
 
 import gleam/dict.{type Dict}
-import gleam/list
 import gleam/result
 import gleam/string
 import simplifile.{type FileError}
@@ -18,11 +17,12 @@ import wisp
 
 // ------------------------------------------------------------- Public Functions
 
-/// Scaffold commands write files into directories that may not
-/// exist yet (e.g., src/controllers/admin/). Creating parents
-/// automatically avoids forcing users to mkdir before every
-/// make: command, and simplifile.create_directory_all is a
-/// no-op when the directory already exists.
+/// When you run `make:controller admin/users`, the target
+/// directory `src/controllers/admin/` probably doesn't exist
+/// yet. Nobody wants to manually mkdir before every scaffold
+/// command, so this creates the full directory tree
+/// automatically. It's a no-op if the path already exists, so
+/// it's safe to call every time.
 ///
 pub fn ensure_directory_exists(
   file_path: String,
@@ -33,29 +33,31 @@ pub fn ensure_directory_exists(
   }
 }
 
-/// Wraps simplifile.is_file so callers don't need to import
-/// simplifile directly. Commands use this to warn before
-/// overwriting an existing file — scaffolding should never
-/// silently clobber user code.
+/// Scaffold commands check this before writing so they can warn
+/// developers instead of silently overwriting existing code.
+/// Accidentally clobbering a controller someone has spent hours
+/// customizing would be a terrible experience — better to ask
+/// for confirmation first.
 ///
 pub fn file_exists(path: String) -> Result(Bool, FileError) {
   simplifile.is_file(path)
 }
 
-/// Wraps simplifile.is_directory so callers don't need to
-/// import simplifile directly. Used by commands that need to
-/// verify a project structure exists before generating files
-/// into it.
+/// Some commands need to verify that a project directory exists
+/// before generating files into it — for example, checking that
+/// src/controllers/ is there before creating a new controller.
+/// Without this check, generated files could end up in
+/// unexpected locations.
 ///
 pub fn directory_exists(path: String) -> Result(Bool, FileError) {
   simplifile.is_directory(path)
 }
 
 /// Stubs live in each package's priv/stubs/ directory so they
-/// ship with the compiled package and are available at runtime
-/// without hardcoding file paths relative to the source tree.
-/// wisp.priv_directory resolves the correct path regardless of
-/// how or where the package is installed.
+/// ship with the compiled package and are available at runtime.
+/// Using wisp.priv_directory means the path resolves correctly
+/// regardless of how or where the package is installed — no
+/// hardcoded paths that break when someone installs from Hex.
 ///
 pub fn read_stub(package: String, stub_path: String) -> Result(String, Nil) {
   case wisp.priv_directory(package) {
@@ -68,11 +70,11 @@ pub fn read_stub(package: String, stub_path: String) -> Result(String, Nil) {
   }
 }
 
-/// Combines read_stub, ensure_directory_exists, and write into
-/// a single call for the common case where the stub content is
-/// used as-is without variable substitution. Commands that
-/// generate static files (like .gitkeep or config templates)
-/// use this instead of the _with_variables variant.
+/// For static files like .gitkeep or boilerplate config that
+/// don't need any variable substitution, this handles the
+/// entire read-stub-create-dirs-write workflow in one call.
+/// Most scaffold commands use the _with_variables variant
+/// instead, but this keeps the simple cases simple.
 ///
 pub fn write_from_stub(
   package: String,
@@ -89,11 +91,12 @@ pub fn write_from_stub(
   }
 }
 
-/// Most scaffold commands need to inject a module name, table
-/// name, or route path into the stub template before writing.
-/// Labeled arguments make the call site self-documenting and
-/// hard to get wrong — without labels, four string arguments
-/// in a row would be easy to accidentally swap.
+/// The workhorse of file scaffolding — reads a stub template,
+/// replaces `@{{ variable }}` markers with real values (module
+/// name, table name, route path, etc.), and writes the result.
+/// Labeled arguments are essential here because four string
+/// parameters in a row would be a nightmare to get in the right
+/// order.
 ///
 pub fn write_from_stub_with_variables(
   package package: String,
@@ -116,13 +119,14 @@ pub fn write_from_stub_with_variables(
 
 // ------------------------------------------------------------- Internal Public Functions
 
-/// The @{{ }} syntax is distinct from Gleam's string
-/// interpolation and HTML template tags, so stubs can contain
-/// real Gleam code without the variable markers being
-/// misinterpreted. Handling all four spacing variants
-/// (with/without inner spaces) means stub authors don't need
-/// to worry about formatting consistency. Unused variables are
-/// stripped so leftover placeholders never appear in output.
+/// The `@{{ }}` syntax was chosen to be distinct from both
+/// Gleam's string interpolation and HTML template tags, so
+/// stubs can contain real Gleam code without the variable
+/// markers being misinterpreted. All four spacing variants
+/// (with/without inner spaces) are handled so stub authors
+/// don't need to worry about formatting consistency — and any
+/// leftover placeholders get stripped so they never appear in
+/// generated output.
 ///
 @internal
 pub fn replace_variables(data: Dict(String, String), content: String) -> String {
@@ -138,11 +142,13 @@ pub fn replace_variables(data: Dict(String, String), content: String) -> String 
   strip_unused_variables(html)
 }
 
-/// After variable substitution, any @{{ }} markers left in the
-/// content are undefined variables. Stripping them recursively
-/// ensures generated files never contain raw placeholder syntax
-/// that would cause compile errors or confuse users. Recursion
-/// handles nested or adjacent markers in a single pass.
+/// After variable substitution, any `@{{ }}` markers still left
+/// in the content are undefined variables — maybe the stub was
+/// updated but the command wasn't. Stripping them prevents
+/// generated files from having raw placeholder syntax that
+/// would cause compile errors or confuse developers. The
+/// recursion handles cases where multiple markers are adjacent
+/// or scattered through the content.
 ///
 @internal
 pub fn strip_unused_variables(content: String) -> String {
@@ -159,22 +165,20 @@ pub fn strip_unused_variables(content: String) -> String {
 
 // ------------------------------------------------------------- Private Functions
 
-/// ensure_directory_exists receives a full file path but needs
-/// to create only the parent directories, not a directory named
-/// after the file. Splitting off the last segment extracts the
-/// directory portion without depending on a path manipulation
-/// library. Empty string for bare filenames signals that no
-/// directory creation is needed.
+/// This function receives a full file path like
+/// `src/controllers/admin/users_controller.gleam` but
+/// ensure_directory_exists only needs to create the parent
+/// directories, not a directory named after the file itself.
+/// The reverse-split-reverse trick extracts just the directory
+/// portion without needing a path library. Returns empty string
+/// for bare filenames, signaling that no directory creation is
+/// needed.
 ///
 fn get_directory_path(file_path: String) -> String {
-  case string.split(file_path, "/") {
-    [] -> ""
-    parts -> {
-      parts
-      |> list.reverse
-      |> list.drop(1)
-      |> list.reverse
-      |> string.join("/")
-    }
+  // Strip the filename by reversing, splitting at the first
+  // "/", and reversing back
+  case string.split_once(string.reverse(file_path), "/") {
+    Ok(#(_, dir)) -> string.reverse(dir)
+    Error(_) -> ""
   }
 }

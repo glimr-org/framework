@@ -2,8 +2,8 @@
 ////
 //// Wrapping `gleam build` behind this action gives the CLI a
 //// single place to attach pre/post build hooks and consistent
-//// formatted output — without it, every caller would
-//// duplicate the shellout call and error handling.
+//// formatted output — without it, every caller would duplicate
+//// the shellout call and error handling.
 
 import glimr/console/console
 import shellout

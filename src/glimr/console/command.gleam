@@ -3,9 +3,9 @@
 //// Console commands need argument parsing, help output, and
 //// (for database commands) pool lifecycle management. Without
 //// a shared abstraction, every command would duplicate that
-//// boilerplate. This module provides a fluent builder API
-//// so commands declare their args and handler, and the
-//// framework handles parsing, validation, and cleanup.
+//// boilerplate. This module provides a fluent builder API so
+//// commands declare their args and handler, and the framework
+//// handles parsing, validation, and cleanup.
 
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -15,8 +15,11 @@ import gleam/io
 import gleam/list
 import gleam/result
 import gleam/string
-import glimr/cache/driver.{type CacheStore} as _cache_driver
-import glimr/config/cache
+import glimr/cache/cache.{type CachePool}
+import glimr/cache/database as cache_database
+import glimr/cache/driver.{type CacheStore, DatabaseStore, FileStore, RedisStore} as cache_driver
+import glimr/cache/file as cache_file
+import glimr/config/cache as cache_config
 import glimr/config/database
 import glimr/console/console
 import glimr/db/driver
@@ -37,8 +40,8 @@ pub type Command {
 
 /// A union of all argument kinds keeps the args list
 /// homogeneous so commands can mix positional args, flags, and
-/// options in a single list. The parser uses the variant tag
-/// to decide how to match each CLI token.
+/// options in a single list. The parser uses the variant tag to
+/// decide how to match each CLI token.
 ///
 pub type CommandArg {
   Argument(name: String, description: String)
@@ -89,8 +92,8 @@ pub fn description(cmd: Command, description: String) -> Command {
 }
 
 /// Plain handlers receive only parsed Args — they don't need
-/// database access. Database commands should use db_handler
-/// or cache_db_handler which inject the pool automatically.
+/// database access. Database commands should use db_handler or
+/// cache_db_handler which inject the pool automatically.
 ///
 pub fn handler(cmd: Command, handler: fn(Args) -> Nil) -> Command {
   Command(..cmd, handler: handler)
@@ -125,6 +128,14 @@ pub fn db_option() -> CommandArg {
   Option("database", "Database connection to use", "_default")
 }
 
+/// Every cache command needs a --cache option to select which
+/// store to use. Centralizing it here keeps the default value
+/// ("_default" → first configured store) consistent.
+///
+pub fn cache_option() -> CommandArg {
+  Option("cache", "Cache store to use", "_default")
+}
+
 /// Database commands must start a pool, run their logic, and
 /// stop the pool — repeating that at every call site is error-
 /// prone. This wrapper captures the lifecycle in the handler
@@ -137,26 +148,42 @@ pub fn db_handler(cmd: Command, user_handler: fn(Args, Pool) -> Nil) -> Command 
   })
 }
 
-/// Cache commands need both a database pool and the list of
-/// configured cache stores (for table names). Loading stores
-/// and managing the pool here keeps that boilerplate out of
-/// every cache command's handler.
+/// Cache commands need a CachePool for the selected store. This
+/// wrapper adds --cache, resolves the store, starts the pool,
+/// runs the handler, and stops the pool — matching the pattern
+/// of db_handler but for cache stores.
 ///
-pub fn cache_db_handler(
+pub fn cache_handler(
   cmd: Command,
-  user_handler: fn(Args, Pool, List(CacheStore)) -> Nil,
+  user_handler: fn(Args, CachePool) -> Nil,
 ) -> Command {
-  let new_args = list.append(cmd.args, [db_option()])
+  let new_args = list.append(cmd.args, [cache_option()])
   Command(..cmd, args: new_args, handler: fn(args) {
-    let cache_stores = cache.load()
-    with_db_pool(args, fn(a, p) { user_handler(a, p, cache_stores) })
+    with_cache_pool(args, user_handler)
   })
 }
 
-/// Required arguments are validated before the handler runs,
-/// so a missing value here is a programming error, not user
-/// input. The assert crash makes that obvious rather than
-/// silently returning a default.
+/// Commands like cache table migrations need the raw database
+/// pool behind a DatabaseStore — not the CachePool abstraction,
+/// but the actual SQL connection — because they're creating or
+/// altering the cache table itself. This gives them both the
+/// pool and the table name from the store config, following the
+/// same lifecycle pattern as db_handler and cache_handler.
+///
+pub fn cache_db_handler(
+  cmd: Command,
+  user_handler: fn(Args, Pool, String) -> Nil,
+) -> Command {
+  let new_args = list.append(cmd.args, [cache_option()])
+  Command(..cmd, args: new_args, handler: fn(args) {
+    with_cache_db_pool(args, user_handler)
+  })
+}
+
+/// Required arguments are validated before the handler runs, so
+/// a missing value here is a programming error, not user input.
+/// The assert crash makes that obvious rather than silently
+/// returning a default.
 ///
 pub fn get_arg(parsed: Args, name: String) -> String {
   let assert Ok(value) = dict.get(parsed.arguments, name)
@@ -171,22 +198,21 @@ pub fn has_flag(parsed: Args, name: String) -> Bool {
   list.contains(parsed.flags, name)
 }
 
-/// Options always have defaults (set in the arg definition),
-/// so missing values shouldn't happen after parsing. Returning
+/// Options always have defaults (set in the arg definition), so
+/// missing values shouldn't happen after parsing. Returning
 /// empty string on lookup failure is a safe fallback that
 /// avoids forcing callers to handle a Result.
 ///
 pub fn get_option(parsed: Args, name: String) -> String {
-  case dict.get(parsed.options, name) {
-    Ok(value) -> value
-    Error(_) -> ""
-  }
+  dict.get(parsed.options, name)
+  |> result.unwrap("")
 }
 
-/// Centralizing dispatch ensures every command gets env loading,
-/// help flag detection, argument validation, and connection
-/// resolution in the same order. Without this, each command
-/// would repeat those checks or skip them inconsistently.
+/// Centralizing dispatch ensures every command gets env
+/// loading, help flag detection, argument validation, and
+/// connection resolution in the same order. Without this, each
+/// command would repeat those checks or skip them
+/// inconsistently.
 ///
 pub fn run(cmd: Command) -> Nil {
   config.load_env()
@@ -200,15 +226,11 @@ pub fn run(cmd: Command) -> Nil {
 
   // Validate required args are present
   case parse_and_validate(cmd_name, cmd.args, args) {
-    Ok(parsed) ->
-      case resolve_connection(parsed) {
-        Ok(resolved) -> cmd.handler(resolved)
-        Error(msg) -> {
-          console.output()
-          |> console.line_error(msg)
-          |> console.print()
-        }
-      }
+    Ok(parsed) -> {
+      use resolved <- resolve_or_error(resolve_connection(parsed))
+      use resolved <- resolve_or_error(resolve_cache(resolved))
+      cmd.handler(resolved)
+    }
     Error(_) -> Nil
   }
 }
@@ -266,7 +288,54 @@ pub fn resolve_connection(parsed: Args) -> Result(Args, String) {
   }
 }
 
+/// Resolves the --cache option the same way resolve_connection
+/// handles --database. "_default" maps to the first configured
+/// store, and the resolved name replaces the placeholder so
+/// downstream code sees the real store name.
+///
+@internal
+pub fn resolve_cache(parsed: Args) -> Result(Args, String) {
+  case dict.get(parsed.options, "cache") {
+    Error(_) -> Ok(parsed)
+    Ok(store_name) -> {
+      let stores = cache_config.load()
+
+      // Resolve "_default" to the first store
+      use name <- result.try(case store_name {
+        "_default" ->
+          list.first(stores)
+          |> result.map(cache_driver.store_name)
+          |> result.replace_error("No cache stores configured")
+        name -> Ok(name)
+      })
+
+      // Validate store exists
+      use _ <- result.try(
+        list.find(stores, fn(s) { cache_driver.store_name(s) == name })
+        |> result.replace_error("Cache store not found: " <> name),
+      )
+
+      Ok(Args(..parsed, options: dict.insert(parsed.options, "cache", name)))
+    }
+  }
+}
+
 // ------------------------------------------------------------- Private Functions
+
+/// Unwraps an Ok result into the continuation, or prints the
+/// error message. Used by run() to chain resolve_connection and
+/// resolve_cache without duplicating error handling.
+///
+fn resolve_or_error(result: Result(Args, String), next: fn(Args) -> Nil) -> Nil {
+  case result {
+    Ok(resolved) -> next(resolved)
+    Error(msg) -> {
+      console.output()
+      |> console.line_error(msg)
+      |> console.print()
+    }
+  }
+}
 
 /// Console commands are short-lived, so a pool_size of 1 is
 /// sufficient and avoids wasting connections. Dynamic dispatch
@@ -305,6 +374,134 @@ fn with_db_pool(args: Args, user_handler: fn(Args, Pool) -> Nil) -> Nil {
   }
 }
 
+/// Starts a CachePool for the resolved --cache store. File
+/// stores are created directly, Redis stores use dynamic
+/// dispatch to the adapter, and Database stores start a db pool
+/// first then wrap it with cache_database.
+///
+fn with_cache_pool(args: Args, user_handler: fn(Args, CachePool) -> Nil) -> Nil {
+  let cache_name = get_option(args, "cache")
+  let stores = cache_config.load()
+
+  // Store is guaranteed to exist (validated by resolve_cache)
+  let assert Ok(store) =
+    list.find(stores, fn(s) { cache_driver.store_name(s) == cache_name })
+
+  case store {
+    FileStore(_, _) -> {
+      let pool = cache_file.wrap_pool(cache_file.start_pool(cache_name))
+      user_handler(args, pool)
+      cache.stop(pool)
+    }
+    RedisStore(_, _, _) -> {
+      case dynamic_start_cache("glimr_redis@redis", store) {
+        Ok(pool) -> {
+          user_handler(args, pool)
+          cache.stop(pool)
+        }
+        Error(msg) -> {
+          console.output()
+          |> console.line_error("Failed to start cache pool:")
+          |> console.line(msg)
+          |> console.print()
+        }
+      }
+    }
+    DatabaseStore(_, db_name, table) -> {
+      // Start a database pool for the referenced connection
+      let connections = database.load()
+      let assert Ok(conn) =
+        list.find(connections, fn(c) { driver.connection_name(c) == db_name })
+
+      let conn = driver.with_pool_size(conn, 1)
+      let config = driver.to_config(conn)
+
+      let module = case driver.connection_type(conn) {
+        driver.Postgres -> "glimr_postgres@postgres"
+        driver.Sqlite -> "glimr_sqlite@sqlite"
+      }
+
+      suppress_pool_shutdown_reports()
+
+      case dynamic_start_pool(module, config) {
+        Ok(db_pool) -> {
+          let pool = cache_database.start_with_table(db_pool, table)
+          user_handler(args, pool)
+          pool_connection.stop_pool(db_pool)
+        }
+        Error(msg) -> {
+          console.output()
+          |> console.line_error("Failed to start database pool for cache:")
+          |> console.line(msg)
+          |> console.print()
+        }
+      }
+    }
+  }
+}
+
+/// The heavy lifting behind cache_db_handler — looks up the
+/// selected cache store, confirms it's a DatabaseStore (not
+/// file or Redis), then boots a one-connection pool against the
+/// referenced database. The table name from the store config
+/// and a "database" option are passed through so the handler
+/// can run SQL against the right connection and table without
+/// any config lookup of its own.
+///
+fn with_cache_db_pool(
+  args: Args,
+  user_handler: fn(Args, Pool, String) -> Nil,
+) -> Nil {
+  let cache_name = get_option(args, "cache")
+  let stores = cache_config.load()
+
+  // Store is guaranteed to exist (validated by resolve_cache)
+  let assert Ok(store) =
+    list.find(stores, fn(s) { cache_driver.store_name(s) == cache_name })
+
+  case store {
+    DatabaseStore(_, db_name, table) -> {
+      // Insert db_name into options so handler can use get_option(args, "database")
+      let updated_args =
+        Args(..args, options: dict.insert(args.options, "database", db_name))
+
+      let connections = database.load()
+      let assert Ok(conn) =
+        list.find(connections, fn(c) { driver.connection_name(c) == db_name })
+
+      let conn = driver.with_pool_size(conn, 1)
+      let config = driver.to_config(conn)
+
+      let module = case driver.connection_type(conn) {
+        driver.Postgres -> "glimr_postgres@postgres"
+        driver.Sqlite -> "glimr_sqlite@sqlite"
+      }
+
+      suppress_pool_shutdown_reports()
+
+      case dynamic_start_pool(module, config) {
+        Ok(pool) -> {
+          user_handler(updated_args, pool, table)
+          pool_connection.stop_pool(pool)
+        }
+        Error(msg) -> {
+          console.output()
+          |> console.line_error("Failed to start database pool for cache:")
+          |> console.line(msg)
+          |> console.print()
+        }
+      }
+    }
+    _ -> {
+      console.output()
+      |> console.line_error(
+        "Cache store '" <> cache_name <> "' is not a database store",
+      )
+      |> console.print()
+    }
+  }
+}
+
 /// The CLI script injects _c_name= so the Gleam entrypoint
 /// knows which command was invoked without re-parsing the
 /// command registry. Stripping it here keeps the rest of the
@@ -332,8 +529,8 @@ fn has_help_flag(raw_args: List(String)) -> Bool {
 
 /// Per-command help shows all arguments, flags, and options
 /// with aligned descriptions — more detail than the main help
-/// screen which only shows command names. Column alignment
-/// is calculated dynamically so labels of different lengths
+/// screen which only shows command names. Column alignment is
+/// calculated dynamically so labels of different lengths
 /// produce clean output.
 ///
 fn print_command_help(cmd_name: String, cmd: Command) -> Nil {
@@ -582,8 +779,8 @@ fn parse_and_validate(
 
 /// Separating parsing from validation keeps this function
 /// focused on tokenization. Ignoring unknown flags means
-/// commands don't break when new global flags are added to
-/// the CLI wrapper.
+/// commands don't break when new global flags are added to the
+/// CLI wrapper.
 ///
 fn parse_raw_args(
   raw_args: List(String),
@@ -706,10 +903,24 @@ fn erlang_get_args() -> List(charlist.Charlist)
 @external(erlang, "glimr_command_ffi", "dynamic_start_pool")
 fn dynamic_start_pool(module: String, config: Config) -> Result(Pool, String)
 
-/// Console commands exit immediately after running, but the
-/// pgo supervisor logs noisy shutdown reports as the VM tears
-/// down. Suppressing them keeps command output clean without
-/// affecting actual error reporting.
+/// The framework can't import the Redis adapter directly
+/// without creating a circular dependency, same as the database
+/// adapter. This lets with_cache_pool call glimr_redis's
+/// try_start_cache at runtime by module name, so console cache
+/// commands work without the framework depending on glimr_redis
+/// at compile time.
+///
+@external(erlang, "glimr_command_ffi", "dynamic_start_cache")
+fn dynamic_start_cache(
+  module: String,
+  store: CacheStore,
+) -> Result(CachePool, String)
+
+/// Console commands exit immediately after running, but the pgo
+/// supervisor logs noisy shutdown reports as the VM tears down.
+/// Suppressing them keeps console output clean — users running
+/// `glimr migrate` don't want to see Erlang supervisor teardown
+/// noise mixed in with their migration results.
 ///
 @external(erlang, "glimr_command_ffi", "suppress_pool_shutdown_reports")
 fn suppress_pool_shutdown_reports() -> Nil

@@ -52,7 +52,7 @@ fn with_clean_session(f: fn() -> a) -> a {
 
   setup_config()
 
-  let pool = file.start("session_test")
+  let pool = file.start_pool("session_test")
 
   // Create and cache the session store
   let session = file_store.create(pool)

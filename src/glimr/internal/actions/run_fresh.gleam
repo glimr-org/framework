@@ -49,10 +49,9 @@ pub fn run(pool: Pool, database: String) -> Nil {
 // ------------------------------------------------------------- Private Functions
 
 /// Branching on the driver for the catalog query is unavoidable
-/// — Postgres and SQLite expose table lists through
-/// completely different system tables. CASCADE is only appended
-/// for Postgres because SQLite doesn't support it and would
-/// error.
+/// — Postgres and SQLite expose table lists through completely
+/// different system tables. CASCADE is only appended for
+/// Postgres because SQLite doesn't support it and would error.
 ///
 fn drop_all_tables(conn: Connection) -> Result(Nil, pool_connection.DbError) {
   let decoder = {

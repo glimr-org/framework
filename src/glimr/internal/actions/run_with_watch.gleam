@@ -251,8 +251,8 @@ fn watch_loop(
 // ------------------------------------------------------------- FFI Bindings
 
 /// Spawning via Erlang port gives us a handle to stop the
-/// process later — unlike os:cmd which blocks and offers no
-/// way to terminate the child.
+/// process later — unlike os:cmd which blocks and offers no way
+/// to terminate the child.
 ///
 @external(erlang, "glimr_port_ffi", "start_gleam_run")
 fn start_gleam_run() -> Port

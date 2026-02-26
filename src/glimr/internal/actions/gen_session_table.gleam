@@ -1,11 +1,11 @@
 //// Session Table Migration Generator
 ////
 //// The session system needs a backing table that varies by
-//// database driver — Postgres uses BIGINT for Unix
-//// timestamps while SQLite only has INTEGER. Generating the
-//// migration here instead of shipping a static SQL file lets
-//// us branch on the driver at generation time and produce a
-//// file that the standard migration runner can apply without
+//// database driver — Postgres uses BIGINT for Unix timestamps
+//// while SQLite only has INTEGER. Generating the migration
+//// here instead of shipping a static SQL file lets us branch
+//// on the driver at generation time and produce a file that
+//// the standard migration runner can apply without
 //// special-casing.
 
 import gleam/string
@@ -19,8 +19,8 @@ import simplifile
 /// Entry point for the CLI `gen session_table` command.
 /// Producing a timestamped file in the migrations directory
 /// means the normal migration workflow picks it up
-/// automatically — no manual SQL authoring or registration
-/// step required.
+/// automatically — no manual SQL authoring or registration step
+/// required.
 ///
 pub fn run(
   database: String,

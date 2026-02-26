@@ -1,25 +1,27 @@
 //// Error Handler
 ////
-//// Handlers that return bare status codes like wisp.not_found()
-//// produce empty bodies — browsers show a blank page and API
-//// clients get no indication of what went wrong. This module
-//// intercepts those empty error responses and fills them with
-//// appropriate content based on the response format, so every
-//// error path produces a useful response without handlers
-//// needing to render error templates or build JSON manually.
+//// Ever called `wisp.not_found()` and gotten a completely
+//// blank page? That's because bare status-code responses have
+//// empty bodies — browsers show nothing and API clients get no
+//// clue what went wrong. This module intercepts those empty
+//// error responses and fills them with real content: an HTML
+//// error page for browsers, a JSON `{"error": "..."}` for
+//// APIs. Handlers never need to manually render error
+//// templates or build error JSON — it just happens.
+////
 
-import gleam/bool
 import gleam/json
 import glimr/response/response.{type ResponseFormat}
 import wisp.{type Response}
 
 // ------------------------------------------------------------- Public Functions
 
-/// Dispatches to the HTML or JSON error handler based on the
-/// response format so the kernel pipeline doesn't need separate
-/// middleware for each format. Routes that serve both web and
-/// API traffic can use a single middleware entry and let the
-/// format flag pick the right error style automatically.
+/// A single middleware entry handles both web and API error
+/// formatting by checking the response format flag. This means
+/// routes that serve both HTML and JSON traffic don't need
+/// separate error middleware — the format is already known from
+/// earlier in the pipeline, so we just dispatch to the right
+/// handler automatically.
 ///
 pub fn default_responses(
   response_format: ResponseFormat,
@@ -33,79 +35,37 @@ pub fn default_responses(
 
 // ------------------------------------------------------------- Private Functions
 
-/// Success responses pass through untouched so handlers that
-/// already render their own content are never interfered with.
-/// Only specific error codes get replaced — unknown status codes
-/// are left as-is so custom error handling in handlers isn't
-/// overridden by the default pages.
+/// Successful responses pass through untouched — if a handler
+/// already rendered its own 200 page, we don't want to
+/// interfere. But any error status (400+) gets replaced with a
+/// proper error page via response.error, which checks the app's
+/// views/errors/ directory for a custom template first, then
+/// falls back to the framework's built-in page.
 ///
 fn default_html_responses(handle_request: fn() -> Response) -> Response {
   let res = handle_request()
 
-  use <- bool.guard(
-    // Return the response as is if it's not an error response.
-    when: res.status >= 200 && res.status < 300,
-    return: res,
-  )
-
-  case res.status {
-    404 | 405 | 400 | 422 | 413 | 500 -> response.error(res.status)
-    _ -> res
+  case res.status >= 400 {
+    True -> response.error(res.status)
+    False -> res
   }
 }
 
-/// API clients expect a consistent JSON shape for every error
-/// so they can parse the response without status-code-specific
-/// logic. Each status gets its own human-readable message to
-/// aid debugging, while the uniform {"error": "..."} structure
-/// lets client code handle all errors with one code path.
+/// API clients need a predictable JSON shape for every error so
+/// they can parse failures without status-code-specific logic.
+/// Returning `{"error": "Not Found"}` or `{"error":
+/// "Forbidden"}` lets client code handle all errors with one
+/// code path instead of special-casing each status code.
 ///
 fn default_json_responses(handle_request: fn() -> Response) -> Response {
   let res = handle_request()
 
-  use <- bool.guard(
-    // Return the response as is if it's not an error response.
-    when: res.status >= 200 && res.status < 300,
-    return: res,
-  )
-
-  case res.status {
-    404 ->
+  case res.status >= 400 {
+    True ->
       json.object([
-        #("error", json.string("Not Found")),
+        #("error", json.string(response.status_reason(res.status))),
       ])
       |> response.json(res.status)
-
-    405 ->
-      json.object([
-        #("error", json.string("Method Not Allowed")),
-      ])
-      |> response.json(res.status)
-
-    400 ->
-      json.object([
-        #("error", json.string("Bad Request")),
-      ])
-      |> response.json(res.status)
-
-    422 ->
-      json.object([
-        #("error", json.string("Bad Request")),
-      ])
-      |> response.json(res.status)
-
-    413 ->
-      json.object([
-        #("error", json.string("Request Entity Too Large")),
-      ])
-      |> response.json(res.status)
-
-    500 ->
-      json.object([
-        #("error", json.string("Internal Server Error")),
-      ])
-      |> response.json(res.status)
-
-    _ -> res
+    False -> res
   }
 }

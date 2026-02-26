@@ -1,11 +1,11 @@
 //// Cache Table Migration Generator
 ////
 //// The cache system needs a backing table that varies by
-//// database driver — Postgres uses BIGINT for Unix
-//// timestamps while SQLite only has INTEGER. Generating the
-//// migration here instead of shipping a static SQL file lets
-//// us branch on the driver at generation time and produce a
-//// file that the standard migration runner can apply without
+//// database driver — Postgres uses BIGINT for Unix timestamps
+//// while SQLite only has INTEGER. Generating the migration
+//// here instead of shipping a static SQL file lets us branch
+//// on the driver at generation time and produce a file that
+//// the standard migration runner can apply without
 //// special-casing.
 
 import gleam/string

@@ -80,7 +80,7 @@ pub fn html_413_test() {
   case result.body {
     wisp.Text(body) -> {
       body
-      |> string.contains("Request Entity Too Large")
+      |> string.contains("Payload Too Large")
       |> should.be_true()
     }
     _ -> should.fail()
@@ -190,7 +190,7 @@ pub fn json_422_test() {
   case result.body {
     wisp.Text(body) -> {
       body
-      |> string.contains("Bad Request")
+      |> string.contains("Unprocessable Entity")
       |> should.be_true()
     }
     _ -> should.fail()
@@ -208,7 +208,7 @@ pub fn json_413_test() {
   case result.body {
     wisp.Text(body) -> {
       body
-      |> string.contains("Request Entity Too Large")
+      |> string.contains("Payload Too Large")
       |> should.be_true()
     }
     _ -> should.fail()
