@@ -50,7 +50,7 @@ fn run(args: Args) -> Nil {
           variables: [#("table_name", table_name)],
         )
 
-      let query_stubs = ["create", "delete", "find", "list_all", "update"]
+      let query_stubs = ["create", "delete", "find", "list", "update"]
       list.each(query_stubs, fn(query_name) {
         let query_path = queries_dir <> "/" <> query_name <> ".sql"
         let assert Ok(_) =

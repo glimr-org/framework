@@ -636,14 +636,16 @@ fn generate_row_json_decoder(
   <> ")\n}"
 }
 
-/// Every query gets two generated functions: one that takes a
-/// Pool (convenient for normal use) and a _wc variant that
-/// takes a Connection directly (for use inside transactions).
-/// Without the _wc variant, transaction blocks would have to
-/// check out a second connection from the pool, which defeats
-/// the purpose of the transaction. The list_ prefix convention
-/// determines whether the function returns a single row or a
-/// list.
+/// Every query produces four generated functions — two axes of
+/// variation that cover different needs. The base variants
+/// (`fn_name`, `fn_name_wc`) return Results for explicit error
+/// handling. The `_or_fail` variants unwrap via `db.expect`,
+/// which halts the request with a proper HTTP error status on
+/// failure — perfect for controllers where a missing row means
+/// a 404 and you don't want to write `case` blocks everywhere.
+/// The `_wc` suffix means "with connection" for use inside
+/// transactions where you already have a connection checked
+/// out.
 ///
 fn generate_query_function(
   fn_name: String,
@@ -656,8 +658,8 @@ fn generate_query_function(
 ) -> String {
   let param_count = list.length(params)
 
-  // Detect if this is a multi-row query (list_*) or single-row (everything else)
-  let is_single_row = !string.starts_with(fn_name, "list_")
+  // Detect if this is a multi-row query (list or list_*) or single-row
+  let is_single_row = fn_name != "list" && !string.starts_with(fn_name, "list_")
 
   // Generate parameter list with proper types and labeled names
   let param_list = case param_count {
@@ -739,7 +741,19 @@ fn generate_query_function(
     False -> snake_case(row_type_name) <> "_row_decoder()"
   }
 
-  // Generate _wc (with connection) variant using db.query_with
+  // The return type for or_fail variants (no Result wrapper)
+  let or_fail_type = case is_single_row {
+    True -> row_type_name
+    False -> "List(" <> row_type_name <> ")"
+  }
+
+  // The return type for default variants (with Result wrapper)
+  let result_type = case is_single_row {
+    True -> "Result(" <> row_type_name <> ", db.DbError)"
+    False -> "Result(List(" <> row_type_name <> "), db.DbError)"
+  }
+
+  // Generate _wc (default, with connection) — the core implementation
   let wc_fn =
     generate_wc_query(
       fn_name,
@@ -751,48 +765,64 @@ fn generate_query_function(
       is_single_row,
     )
 
-  // Generate main function that accepts Pool using get_connection
-  let main_fn = case is_single_row {
-    True ->
-      "pub fn "
-      <> fn_name
-      <> "(pool pool: db.Pool"
-      <> param_list
-      <> ") -> Result("
-      <> row_type_name
-      <> ", db.DbError) {\n"
-      <> "  use connection <- db.get_connection(pool)\n"
-      <> "  "
-      <> fn_name
-      <> "_wc(connection: connection"
-      <> param_names
-      <> ")\n}"
-    False ->
-      "pub fn "
-      <> fn_name
-      <> "(pool pool: db.Pool"
-      <> param_list
-      <> ") -> Result(List("
-      <> row_type_name
-      <> "), db.DbError) {\n"
-      <> "  use connection <- db.get_connection(pool)\n"
-      <> "  "
-      <> fn_name
-      <> "_wc(connection: connection"
-      <> param_names
-      <> ")\n}"
-  }
+  // Generate default (with pool, returns Result)
+  let main_fn =
+    "pub fn "
+    <> fn_name
+    <> "(pool pool: db.Pool"
+    <> param_list
+    <> ") -> "
+    <> result_type
+    <> " {\n"
+    <> "  use connection <- db.get_connection(pool)\n"
+    <> "  "
+    <> fn_name
+    <> "_wc(connection: connection"
+    <> param_names
+    <> ")\n}"
 
-  string.join([main_fn, wc_fn], "\n\n")
+  // Generate _or_fail_wc (with connection, unwraps via db.expect)
+  let or_fail_wc_fn =
+    "pub fn "
+    <> fn_name
+    <> "_or_fail_wc(connection connection: db.Connection"
+    <> param_list
+    <> ") -> "
+    <> or_fail_type
+    <> " {\n"
+    <> "  "
+    <> fn_name
+    <> "_wc(connection: connection"
+    <> param_names
+    <> ")\n"
+    <> "  |> db.expect\n}"
+
+  // Generate _or_fail (with pool, unwraps via db.expect)
+  let or_fail_fn =
+    "pub fn "
+    <> fn_name
+    <> "_or_fail(pool pool: db.Pool"
+    <> param_list
+    <> ") -> "
+    <> or_fail_type
+    <> " {\n"
+    <> "  use connection <- db.get_connection(pool)\n"
+    <> "  "
+    <> fn_name
+    <> "_or_fail_wc(connection: connection"
+    <> param_names
+    <> ")\n}"
+
+  string.join([main_fn, wc_fn, or_fail_fn, or_fail_wc_fn], "\n\n")
 }
 
-/// The _wc function body differs between single-row and list
-/// queries in an important way: single-row queries pattern
-/// match on exactly [row] and return NotFound for empty
-/// results, while list queries just pass all rows through. This
-/// distinction means find_by_id returns a clear NotFound error
-/// instead of an empty list that callers would have to check
-/// manually.
+/// All other query variants delegate to this one — it's the
+/// actual SQL call. Single-row queries pattern match on exactly
+/// `[row]` and return NotFound for empty results, which means
+/// `find_by_id` gives you a clear error instead of an empty
+/// list you'd have to check manually. List queries just pass
+/// all rows through since an empty list is a perfectly valid
+/// result for those.
 ///
 fn generate_wc_query(
   fn_name: String,
@@ -847,9 +877,11 @@ fn generate_wc_query(
 
 /// INSERT, UPDATE, and DELETE don't return rows, so they use
 /// db.exec_with instead of db.query_with — no decoder needed.
-/// They still get the same Pool/_wc dual-function treatment so
-/// you can use them inside transactions the same way you use
-/// query functions.
+/// They still get the same four-function treatment as queries:
+/// base variants return `Result(Int, DbError)` with the
+/// affected row count, and `_or_fail` variants unwrap via
+/// `db.expect` for controllers that just want to fire and move
+/// on without writing error handling boilerplate.
 ///
 fn generate_execute_function(
   fn_name: String,
@@ -935,11 +967,11 @@ fn generate_execute_function(
   // Strip comments and escape the SQL for Gleam string
   let escaped_sql = escape_string(strip_sql_comments(sql))
 
-  // Generate _wc (with connection) variant using db.exec_with
+  // Generate _wc (default, with connection) — the core implementation
   let wc_fn =
     generate_wc_execute(fn_name, escaped_sql, param_values, param_list)
 
-  // Generate main function that accepts Pool using get_connection
+  // Generate default (with pool, returns Result)
   let main_fn =
     "pub fn "
     <> fn_name
@@ -953,14 +985,43 @@ fn generate_execute_function(
     <> param_names
     <> ")\n}"
 
-  string.join([main_fn, wc_fn], "\n\n")
+  // Generate _or_fail_wc (with connection, unwraps via db.expect)
+  let or_fail_wc_fn =
+    "pub fn "
+    <> fn_name
+    <> "_or_fail_wc(connection connection: db.Connection"
+    <> param_list
+    <> ") -> Int {\n"
+    <> "  "
+    <> fn_name
+    <> "_wc(connection: connection"
+    <> param_names
+    <> ")\n"
+    <> "  |> db.expect\n}"
+
+  // Generate _or_fail (with pool, unwraps via db.expect)
+  let or_fail_fn =
+    "pub fn "
+    <> fn_name
+    <> "_or_fail(pool pool: db.Pool"
+    <> param_list
+    <> ") -> Int {\n"
+    <> "  use connection <- db.get_connection(pool)\n"
+    <> "  "
+    <> fn_name
+    <> "_or_fail_wc(connection: connection"
+    <> param_names
+    <> ")\n}"
+
+  string.join([main_fn, wc_fn, or_fail_fn, or_fail_wc_fn], "\n\n")
 }
 
-/// The _wc execute variant returns the number of affected rows,
-/// which is surprisingly useful — "0 rows updated" tells you
-/// the WHERE clause matched nothing, saving you from doing a
-/// separate SELECT to check if the row exists before deciding
-/// to return a 404.
+/// All other execute variants delegate to this one — it's the
+/// actual db.exec_with call. Returns the number of affected
+/// rows wrapped in a Result, which is surprisingly useful: "0
+/// rows updated" tells you the WHERE clause matched nothing,
+/// saving a separate SELECT to check if the row exists before
+/// returning a 404.
 ///
 fn generate_wc_execute(
   fn_name: String,

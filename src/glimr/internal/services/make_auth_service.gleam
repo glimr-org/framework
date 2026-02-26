@@ -56,7 +56,7 @@ pub fn create_model(model_name: String, connection: String) -> Nil {
         )
 
       let query_stubs = [
-        "create", "delete", "find", "by_email", "list_all", "update",
+        "create", "delete", "find", "by_email", "list", "update",
       ]
       list.each(query_stubs, fn(query_name) {
         let query_path = queries_dir <> "/" <> query_name <> ".sql"
