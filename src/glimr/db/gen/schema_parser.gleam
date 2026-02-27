@@ -1,15 +1,12 @@
 //// Schema Parser
 ////
 //// Parses schema.gleam files to extract table definitions.
-//// This parser handles the list-based schema definition format:
+//// This parser handles the list-based schema definition
+//// format:
 ////
-//// table(name, [
-////   id(),
-////   string("name"),
-////   string("bio") |> nullable(),
-////   boolean("is_active") |> default(DefaultBool(True)),
-////   timestamps(),
-//// ])
+//// table(name, [ id(), string("name"), string("bio") |>
+//// nullable(), boolean("is_active") |>
+//// default(DefaultBool(True)), timestamps(), ])
 
 import gleam/float
 import gleam/int
@@ -29,8 +26,8 @@ pub type Table {
 }
 
 /// Represents a database column with its name, type,
-/// nullability, default value, and optional rename tracking
-/// for migration generation.
+/// nullability, default value, and optional rename tracking for
+/// migration generation.
 ///
 pub type Column {
   Column(
@@ -81,7 +78,7 @@ pub type ColumnType {
 
 /// Parse a schema.gleam file content into a Table structure.
 /// Extracts the table name from `pub const name = "..."` and
-/// parses the column definitions from the `table(name, [...])` 
+/// parses the column definitions from the `table(name, [...])`
 /// call.
 ///
 pub fn parse(content: String) -> Result(Table, String) {
@@ -104,9 +101,9 @@ pub fn parse(content: String) -> Result(Table, String) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Extract the table name from a schema file by looking for
-/// the `pub const name = "tablename"` declaration at the
-/// module level.
+/// Extract the table name from a schema file by looking for the
+/// `pub const name = "tablename"` declaration at the module
+/// level.
 ///
 fn extract_table_name(content: String) -> Option(String) {
   // Look for: pub const name = "tablename"
@@ -148,8 +145,8 @@ fn extract_column_list(content: String) -> Option(String) {
   }
 }
 
-/// Recursively extract content until the matching closing 
-/// bracket is found, tracking bracket depth for nested 
+/// Recursively extract content until the matching closing
+/// bracket is found, tracking bracket depth for nested
 /// structures.
 ///
 fn extract_until_balanced_bracket(s: String, depth: Int, acc: String) -> String {
@@ -178,8 +175,8 @@ fn parse_column_list(list_content: String) -> List(Column) {
 }
 
 /// Split a string by commas, but only at the top level (not
-/// inside parentheses). Used to separate column definitions
-/// in the schema list.
+/// inside parentheses). Used to separate column definitions in
+/// the schema list.
 ///
 fn split_by_top_level_comma(content: String) -> List(String) {
   split_by_comma_helper(content, 0, "", [])
@@ -299,8 +296,8 @@ fn extract_modifiers(
   #(base, is_nullable, default_value, renamed_from)
 }
 
-/// Parse a rename_from modifier and extract the old column name.
-/// Handles both `rename_from("old")` and 
+/// Parse a rename_from modifier and extract the old column
+/// name. Handles both `rename_from("old")` and
 /// `schema.rename_from("old")`.
 ///
 fn parse_rename_from(s: String) -> Result(String, Nil) {
@@ -330,8 +327,8 @@ fn extract_quoted_string(s: String) -> Result(String, Nil) {
 }
 
 /// Extract the content between the first pair of parentheses.
-/// Returns the trimmed content inside the parentheses, used
-/// for parsing function arguments like default values.
+/// Returns the trimmed content inside the parentheses, used for
+/// parsing function arguments like default values.
 ///
 fn extract_parens_content(s: String) -> Result(String, Nil) {
   case string.split_once(s, "(") {
@@ -345,8 +342,8 @@ fn extract_parens_content(s: String) -> Result(String, Nil) {
   }
 }
 
-/// Parse a default value modifier and extract the default.
-/// Uses a lookup table to match prefix and delegate to the
+/// Parse a default value modifier and extract the default. Uses
+/// a lookup table to match prefix and delegate to the
 /// appropriate extractor function.
 ///
 fn parse_default_value(s: String) -> Result(DefaultValue, Nil) {
@@ -479,9 +476,9 @@ fn parse_named_column(func: String, col_type: ColumnType) -> Option(Column) {
   }
 }
 
-/// Parse a foreign key column from 
-/// `foreign("column_name", "table")`. Extracts both the column 
-/// name and the referenced table.
+/// Parse a foreign key column from `foreign("column_name",
+/// "table")`. Extracts both the column name and the referenced
+/// table.
 ///
 fn parse_foreign_column(func: String) -> Option(Column) {
   let parts = string.split(func, "\"")

@@ -18,12 +18,11 @@ import wisp.{type FormData, type UploadedFile}
 // ------------------------------------------------------------- Public Functions
 
 /// Defaulting to an empty string on missing fields avoids
-/// forcing callers to handle a Result for every optional
-/// input. Most form fields like name or bio are safe to treat
-/// as empty when absent, so the common case stays clean.
+/// forcing callers to handle a Result for every optional input.
+/// Most form fields like name or bio are safe to treat as empty
+/// when absent, so the common case stays clean.
 ///
 /// *Example:*
-/// 
 /// ```gleam
 /// let email = form |> form.get("email")
 /// ```
@@ -38,7 +37,6 @@ pub fn get(form: FormData, field: String) -> String {
 /// reads more clearly than matching on a Result in guards.
 ///
 /// *Example:*
-/// 
 /// ```gleam
 /// case form |> form.has("email") {
 ///   True -> process_email(form_data)
@@ -59,7 +57,6 @@ pub fn has(form: FormData, field: String) -> Bool {
 /// rather than propagating a silent default downstream.
 ///
 /// *Example:*
-/// 
 /// ```gleam
 /// form.get_file("avatar")
 /// ```
@@ -75,7 +72,6 @@ pub fn get_file(form: FormData, field: String) -> UploadedFile {
 /// placeholder when not provided.
 ///
 /// *Example:*
-/// 
 /// ```gleam
 /// case form |> form.get_file("avatar") {
 ///   Ok(file) -> save_upload(file)
@@ -90,13 +86,12 @@ pub fn get_file_result(
   list.key_find(form.files, field)
 }
 
-/// A Bool check for file presence is cleaner than matching on
-/// a Result when the controller just needs to branch — for
+/// A Bool check for file presence is cleaner than matching on a
+/// Result when the controller just needs to branch — for
 /// example, deciding whether to update an avatar or keep the
 /// existing one without unwrapping the file itself.
 ///
 /// *Example:*
-/// 
 /// ```gleam
 /// case form_data |> form.has_file("avatar") {
 ///   True -> process_upload(form_data)

@@ -1,12 +1,12 @@
 //// Glimr Mist Handler
 ////
-//// Wisp has no built-in WebSocket support, but Loom Live needs 
-//// it for real-time template updates. Rather than requiring 
-//// users to manually wire up WebSocket routes and static file 
-//// serving, this drop-in replacement for wisp_mist.handler 
-//// transparently intercepts the Loom-specific paths
-//// (/loom/ws, /loom.js) while passing everything
-//// else through to wisp unchanged.
+//// Wisp has no built-in WebSocket support, but Loom Live needs
+//// it for real-time template updates. Rather than requiring
+//// users to manually wire up WebSocket routes and static file
+//// serving, this drop-in replacement for wisp_mist.handler
+//// transparently intercepts the Loom-specific paths (/loom/ws,
+//// /loom.js) while passing everything else through to wisp
+//// unchanged.
 ////
 
 import gleam/bytes_tree
@@ -23,10 +23,10 @@ import wisp/wisp_mist
 
 // ------------------------------------------------------------- Public Functions
 
-/// Users shouldn't need to understand WebSocket plumbing to use 
-/// Loom Live — swapping one import is enough. This function 
-/// wraps wisp_mist.handler with a routing layer that intercepts 
-/// Loom paths before they reach wisp, keeping the upgrade 
+/// Users shouldn't need to understand WebSocket plumbing to use
+/// Loom Live — swapping one import is enough. This function
+/// wraps wisp_mist.handler with a routing layer that intercepts
+/// Loom paths before they reach wisp, keeping the upgrade
 /// seamless and reversible.
 ///
 /// ```gleam
@@ -96,11 +96,11 @@ fn serve_loom_asset(
   }
 }
 
-/// A request to /loom/ws could be a regular HTTP request (e.g., 
-/// a browser navigating directly to the URL) rather than a 
-/// WebSocket upgrade. Checking the Connection and Upgrade 
-/// headers ensures we only hand off to mist's WebSocket handler 
-/// when the client actually wants one, falling back to wisp for 
+/// A request to /loom/ws could be a regular HTTP request (e.g.,
+/// a browser navigating directly to the URL) rather than a
+/// WebSocket upgrade. Checking the Connection and Upgrade
+/// headers ensures we only hand off to mist's WebSocket handler
+/// when the client actually wants one, falling back to wisp for
 /// normal HTTP otherwise.
 ///
 fn is_websocket_upgrade(request: HttpRequest(mist.Connection)) -> Bool {

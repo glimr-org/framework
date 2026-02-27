@@ -1,10 +1,10 @@
 //// Loom Module Registry
 ////
-//// The WebSocket init message includes a module name chosen by 
-//// the client. Without validation, a malicious client could 
-//// invoke arbitrary Erlang modules via dynamic dispatch. This 
-//// registry acts as an allowlist — only modules explicitly 
-//// registered during compilation can be dispatched to, closing 
+//// The WebSocket init message includes a module name chosen by
+//// the client. Without validation, a malicious client could
+//// invoke arbitrary Erlang modules via dynamic dispatch. This
+//// registry acts as an allowlist — only modules explicitly
+//// registered during compilation can be dispatched to, closing
 //// the arbitrary-execution hole.
 ////
 
@@ -21,8 +21,8 @@ const registry_path = "priv/storage/framework/loom/modules.json"
 // ------------------------------------------------------------- Public Types
 
 /// Each entry tracks both the module path (for dispatch
-/// validation) and the source template path (for debugging and 
-/// recompilation). Storing both avoids a second lookup to map 
+/// validation) and the source template path (for debugging and
+/// recompilation). Storing both avoids a second lookup to map
 /// between module names and their source files.
 ///
 pub type ModuleEntry {
@@ -31,9 +31,9 @@ pub type ModuleEntry {
 
 // ------------------------------------------------------------- Public Functions
 
-/// The WebSocket handler calls this before starting an actor to 
-/// ensure the client-requested module was actually compiled by 
-/// the framework. Rejecting unknown modules here prevents 
+/// The WebSocket handler calls this before starting an actor to
+/// ensure the client-requested module was actually compiled by
+/// the framework. Rejecting unknown modules here prevents
 /// arbitrary code execution via the dynamic dispatch path.
 ///
 pub fn is_valid_module(module: String) -> Bool {
@@ -42,10 +42,10 @@ pub fn is_valid_module(module: String) -> Bool {
   |> result.unwrap(False)
 }
 
-/// The compiler calls this after successfully generating a live 
-/// template module. Adding the module to the registry at 
-/// compile time ensures the allowlist is always in sync with 
-/// the actual set of generated modules, without requiring a 
+/// The compiler calls this after successfully generating a live
+/// template module. Adding the module to the registry at
+/// compile time ensures the allowlist is always in sync with
+/// the actual set of generated modules, without requiring a
 /// separate configuration step.
 ///
 pub fn register_module(module: String, source: String) -> Result(Nil, String) {
@@ -60,9 +60,9 @@ pub fn register_module(module: String, source: String) -> Result(Nil, String) {
   write_entries(updated)
 }
 
-/// When a template file is deleted, its compiled module should 
-/// no longer be dispatchable. Removing it from the registry 
-/// ensures stale module names can't be exploited after the 
+/// When a template file is deleted, its compiled module should
+/// no longer be dispatchable. Removing it from the registry
+/// ensures stale module names can't be exploited after the
 /// template source is gone.
 ///
 pub fn unregister_module(module: String) -> Result(Nil, String) {
@@ -73,9 +73,9 @@ pub fn unregister_module(module: String) -> Result(Nil, String) {
   }
 }
 
-/// The compiler and diagnostic tools need to inspect the full 
-/// registry contents — for example, to rebuild all known 
-/// modules or display the list of live templates in development 
+/// The compiler and diagnostic tools need to inspect the full
+/// registry contents — for example, to rebuild all known
+/// modules or display the list of live templates in development
 /// tooling.
 ///
 pub fn list_modules() -> List(ModuleEntry) {
@@ -83,9 +83,9 @@ pub fn list_modules() -> List(ModuleEntry) {
 }
 
 /// A full recompilation starts fresh to avoid stale entries
-/// from renamed or deleted templates lingering in the registry. 
-/// Clearing first and re-registering during compilation 
-/// guarantees the registry exactly matches the current template 
+/// from renamed or deleted templates lingering in the registry.
+/// Clearing first and re-registering during compilation
+/// guarantees the registry exactly matches the current template
 /// set.
 ///
 pub fn clear() -> Result(Nil, String) {
@@ -95,8 +95,8 @@ pub fn clear() -> Result(Nil, String) {
 // ------------------------------------------------------------- Private Functions
 
 /// is_valid_module only needs module names, not full entries.
-/// Converting to a set here provides O(1) membership checks for 
-/// the hot path where every WebSocket init message triggers a 
+/// Converting to a set here provides O(1) membership checks for
+/// the hot path where every WebSocket init message triggers a
 /// validation lookup.
 ///
 fn read_registry() -> Result(Set(String), Nil) {
@@ -108,7 +108,7 @@ fn read_registry() -> Result(Set(String), Nil) {
 
 /// The registry is persisted as JSON on disk so it survives
 /// application restarts without requiring recompilation.
-/// Returning an empty list on read failure (missing file) is 
+/// Returning an empty list on read failure (missing file) is
 /// safe because a fresh install has no registered modules yet.
 ///
 fn read_entries() -> Result(List(ModuleEntry), Nil) {
@@ -120,10 +120,10 @@ fn read_entries() -> Result(List(ModuleEntry), Nil) {
   }
 }
 
-/// Persists the full entry list to disk as JSON. Creating the 
-/// directory tree first handles the cold-start case where the 
-/// storage directory doesn't exist yet. Writing the entire list 
-/// atomically avoids partial-update corruption from concurrent 
+/// Persists the full entry list to disk as JSON. Creating the
+/// directory tree first handles the cold-start case where the
+/// storage directory doesn't exist yet. Writing the entire list
+/// atomically avoids partial-update corruption from concurrent
 /// compilations.
 ///
 fn write_entries(entries: List(ModuleEntry)) -> Result(Nil, String) {
@@ -146,9 +146,9 @@ fn write_entries(entries: List(ModuleEntry)) -> Result(Nil, String) {
   |> result.replace_error("Failed to write loom registry")
 }
 
-/// The JSON schema must match write_entries exactly. Decoding 
+/// The JSON schema must match write_entries exactly. Decoding
 /// into a typed ModuleEntry ensures the registry data is well-
-/// formed before any module name reaches the dispatch 
+/// formed before any module name reaches the dispatch
 /// validation path.
 ///
 fn entry_decoder() -> decode.Decoder(ModuleEntry) {

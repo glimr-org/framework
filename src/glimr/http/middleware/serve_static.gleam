@@ -1,12 +1,11 @@
 //// Serve Static Middleware
 ////
 //// Each middleware lives in its own module so the kernel
-//// pipeline can compose them independently — apps that
-//// don't serve static files can simply omit this step.
-//// Pulling the directory prefix from app config rather
-//// than hardcoding it means the URL path and filesystem
-//// path stay in sync without duplicating the value
-//// across middleware and config.
+//// pipeline can compose them independently — apps that don't
+//// serve static files can simply omit this step. Pulling the
+//// directory prefix from app config rather than hardcoding it
+//// means the URL path and filesystem path stay in sync without
+//// duplicating the value across middleware and config.
 ////
 
 import glimr/config/app as app_config

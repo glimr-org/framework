@@ -1,12 +1,12 @@
 //// Migration Generator
 ////
-//// Writing migration SQL by hand after every schema change
-//// is tedious and error-prone — developers forget columns,
-//// get types wrong, or miss renames. This module compares
-//// the current schema files against a stored snapshot to
-//// detect changes automatically and emit driver-specific
-//// SQL. The snapshot is updated after each run so only
-//// new changes appear in subsequent migrations.
+//// Writing migration SQL by hand after every schema change is
+//// tedious and error-prone — developers forget columns, get
+//// types wrong, or miss renames. This module compares the
+//// current schema files against a stored snapshot to detect
+//// changes automatically and emit driver-specific SQL. The
+//// snapshot is updated after each run so only new changes
+//// appear in subsequent migrations.
 
 import gleam/int
 import gleam/io
@@ -28,9 +28,9 @@ import simplifile
 
 /// Single entry point that resolves the driver type from
 /// database.toml and delegates to do_run with the correct
-/// paths. Keeping driver resolution here means console
-/// commands just pass a connection name without knowing
-/// the folder structure or driver details.
+/// paths. Keeping driver resolution here means console commands
+/// just pass a connection name without knowing the folder
+/// structure or driver details.
 ///
 pub fn run(name: String, model_filter: Option(List(String))) {
   io.println(console.warning("Glimr Migration Generator"))
@@ -80,9 +80,9 @@ pub fn run(name: String, model_filter: Option(List(String))) {
 // ------------------------------------------------------------- Private Functions
 
 /// Separated from run to keep the public API clean — run
-/// handles config resolution while this function owns the
-/// full pipeline: load snapshot, scan schemas, diff, generate
-/// SQL, write file, and update the snapshot.
+/// handles config resolution while this function owns the full
+/// pipeline: load snapshot, scan schemas, diff, generate SQL,
+/// write file, and update the snapshot.
 ///
 fn do_run(
   models_path: String,
@@ -181,9 +181,9 @@ fn do_run(
 }
 
 /// Large projects may only want to migrate a subset of models
-/// at a time. The optional filter limits which model directories
-/// are scanned so the diff only includes changes for the
-/// specified models, leaving others untouched.
+/// at a time. The optional filter limits which model
+/// directories are scanned so the diff only includes changes
+/// for the specified models, leaving others untouched.
 ///
 fn scan_schemas(
   models_path: String,

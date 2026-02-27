@@ -12,7 +12,7 @@ import gleam/dynamic/decode
 import gleam/list
 import gleam/result
 import gleam/string
-import glimr/db/pool_connection.{type Connection, type DbError}
+import glimr/db/db.{type Connection, type DbError}
 import simplifile
 
 // ------------------------------------------------------------- Public Types
@@ -106,19 +106,15 @@ pub fn extract_sql(sql: String) -> String {
 /// stores dates as TEXT.
 ///
 pub fn ensure_table(conn: Connection) -> Result(Nil, DbError) {
-  let applied_at_type = case pool_connection.connection_driver(conn) {
-    pool_connection.Postgres -> "TIMESTAMP"
-    pool_connection.Sqlite -> "TEXT"
+  let applied_at_type = case db.connection_driver(conn) {
+    db.Postgres -> "TIMESTAMP"
+    db.Sqlite -> "TEXT"
   }
 
-  pool_connection.exec_with(
-    conn,
-    "CREATE TABLE IF NOT EXISTS _glimr_migrations (
+  db.exec_with(conn, "CREATE TABLE IF NOT EXISTS _glimr_migrations (
         version TEXT PRIMARY KEY,
         applied_at " <> applied_at_type <> " DEFAULT CURRENT_TIMESTAMP
-      )",
-    [],
-  )
+      )", [])
   |> result.replace(Nil)
 }
 
@@ -132,7 +128,7 @@ pub fn get_applied(conn: Connection) -> Result(List(String), DbError) {
     decode.success(version)
   }
 
-  pool_connection.query_with(
+  db.query_with(
     conn,
     "SELECT version FROM _glimr_migrations ORDER BY version",
     [],
@@ -193,11 +189,9 @@ fn apply_single(conn: Connection, migration: Migration) -> Result(Nil, DbError) 
 
   use _ <- result.try(execute_statements(conn, statements))
 
-  pool_connection.exec_with(
-    conn,
-    "INSERT INTO _glimr_migrations (version) VALUES ($1)",
-    [pool_connection.string(migration.version)],
-  )
+  db.exec_with(conn, "INSERT INTO _glimr_migrations (version) VALUES ($1)", [
+    db.string(migration.version),
+  ])
   |> result.replace(Nil)
 }
 
@@ -211,6 +205,6 @@ fn execute_statements(
   statements: List(String),
 ) -> Result(Nil, DbError) {
   list.try_each(statements, fn(stmt) {
-    pool_connection.exec_with(conn, stmt, []) |> result.replace(Nil)
+    db.exec_with(conn, stmt, []) |> result.replace(Nil)
   })
 }

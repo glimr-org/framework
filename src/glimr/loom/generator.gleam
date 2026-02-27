@@ -2,9 +2,9 @@
 ////
 //// Templates are authored in HTML with directives, but the
 //// server needs executable Gleam functions to render them.
-//// This module closes that gap by transforming the parsed AST 
-//// into string-building Gleam code that calls runtime helpers, 
-//// so templates get full type-checking and compile to native 
+//// This module closes that gap by transforming the parsed AST
+//// into string-building Gleam code that calls runtime helpers,
+//// so templates get full type-checking and compile to native
 //// BEAM code with no interpretation overhead.
 ////
 
@@ -39,7 +39,7 @@ pub type ComponentDataMap =
 /// Components may accept a default slot, named slots, or
 /// neither. The generator needs this information to decide
 /// which slot arguments to include in the generated render call
-/// and which to supply as empty strings when the parent doesn't 
+/// and which to supply as empty strings when the parent doesn't
 /// provide content.
 ///
 pub type ComponentSlotInfo {
@@ -48,16 +48,16 @@ pub type ComponentSlotInfo {
 
 /// Without knowing which slots each component expects, the
 /// generator would either omit required slot arguments (causing
-/// compile errors) or always include every possible slot 
-/// (wasting code). This map lets it emit exactly the right set 
+/// compile errors) or always include every possible slot
+/// (wasting code). This map lets it emit exactly the right set
 /// of slot parameters.
 ///
 pub type ComponentSlotMap =
   Dict(String, ComponentSlotInfo)
 
 /// The compiler pipeline needs both the module name (to
-/// determine the output file path) and the generated source 
-/// code (to write it). Bundling them together keeps the caller 
+/// determine the output file path) and the generated source
+/// code (to write it). Bundling them together keeps the caller
 /// from having to track which code belongs to which module.
 ///
 pub type GeneratedCode {
@@ -65,9 +65,9 @@ pub type GeneratedCode {
 }
 
 /// The generated handle function signature only includes
-/// special variable parameters ($value, $checked, $key) that 
-/// are actually referenced. Tracking usage as bools lets the 
-/// generator conditionally include each parameter and avoid 
+/// special variable parameters ($value, $checked, $key) that
+/// are actually referenced. Tracking usage as bools lets the
+/// generator conditionally include each parameter and avoid
 /// unused-variable warnings.
 ///
 pub type UsedSpecialVars {
@@ -78,8 +78,8 @@ pub type UsedSpecialVars {
 
 /// Handlers are collected once upfront but referenced many
 /// times during code generation when emitting data-l-*
-/// attributes. A lookup by (event, handler_str, line) lets the 
-/// generator resolve the correct handler ID in O(1) without 
+/// attributes. A lookup by (event, handler_str, line) lets the
+/// generator resolve the correct handler ID in O(1) without
 /// re-scanning the handler list each time.
 ///
 type HandlerLookup =
@@ -88,8 +88,8 @@ type HandlerLookup =
 // ------------------------------------------------------------- Public Functions
 
 /// Public entry point for the code generator. Wraps the
-/// internal generate_module with the GeneratedCode return type 
-/// so the compiler pipeline can write the output to the correct 
+/// internal generate_module with the GeneratedCode return type
+/// so the compiler pipeline can write the output to the correct
 /// file path based on the module name.
 ///
 pub fn generate(
@@ -123,8 +123,8 @@ pub fn extract_named_slots(template: Template) -> List(String) {
 
 /// Combines default slot detection and named slot collection
 /// into a single ComponentSlotInfo. The compiler calls this
-/// once per component template and caches the result so every 
-/// parent template that uses the component can generate correct 
+/// once per component template and caches the result so every
+/// parent template that uses the component can generate correct
 /// slot arguments.
 ///
 pub fn extract_slot_info(template: Template) -> ComponentSlotInfo {
@@ -135,9 +135,9 @@ pub fn extract_slot_info(template: Template) -> ComponentSlotInfo {
 }
 
 /// Generated code that references undefined variables would
-/// fail to compile with confusing Gleam errors. Validating at 
-/// the template level lets us produce clear, actionable error 
-/// messages pointing to the template source line rather than 
+/// fail to compile with confusing Gleam errors. Validating at
+/// the template level lets us produce clear, actionable error
+/// messages pointing to the template source line rather than
 /// the generated code.
 ///
 pub fn validate_template(
@@ -161,10 +161,10 @@ pub fn validate_template(
 
 // ------------------------------------------------------------- Private Functions
 
-/// Loop variables (from l-for) are scoped to their loop body, 
-/// so the set of valid variables changes as we descend into 
-/// nested structures. Threading the loop_vars set through 
-/// recursion ensures each variable reference is checked against 
+/// Loop variables (from l-for) are scoped to their loop body,
+/// so the set of valid variables changes as we descend into
+/// nested structures. Threading the loop_vars set through
+/// recursion ensures each variable reference is checked against
 /// the correct scope.
 ///
 fn validate_nodes(
@@ -184,9 +184,9 @@ fn validate_nodes(
 }
 
 /// Different node types introduce variables differently —
-/// EachNode adds loop variables to scope, IfNode branches are 
-/// independent, and leaf nodes just need checking. Dispatching 
-/// per node type keeps each validation path focused and ensures 
+/// EachNode adds loop variables to scope, IfNode branches are
+/// independent, and leaf nodes just need checking. Dispatching
+/// per node type keeps each validation path focused and ensures
 /// scope changes are applied correctly.
 ///
 fn validate_node(
@@ -243,10 +243,10 @@ fn validate_node(
   }
 }
 
-/// A mismatch between the number of destructuring variables and 
-/// the tuple arity would produce a cryptic Gleam pattern match 
-/// error in generated code. Catching this at the template level 
-/// gives the author a clear message about which l-for loop has 
+/// A mismatch between the number of destructuring variables and
+/// the tuple arity would produce a cryptic Gleam pattern match
+/// error in generated code. Catching this at the template level
+/// gives the author a clear message about which l-for loop has
 /// the wrong variable count.
 ///
 fn validate_tuple_arity(
@@ -299,10 +299,10 @@ fn validate_tuple_arity(
   }
 }
 
-/// Tuple arity validation only applies when the collection type 
-/// is a List of tuples. Parsing the type string to extract the 
-/// tuple size lets us compare it against the destructuring 
-/// pattern without requiring a full type system — just enough 
+/// Tuple arity validation only applies when the collection type
+/// is a List of tuples. Parsing the type string to extract the
+/// tuple size lets us compare it against the destructuring
+/// pattern without requiring a full type system — just enough
 /// to catch common mistakes.
 ///
 fn extract_tuple_arity_from_list_type(type_str: String) -> Option(Int) {
@@ -337,7 +337,7 @@ fn count_tuple_elements(tuple_inner: String) -> Int {
 }
 
 /// Tail-recursive walker that tracks parenthesis depth so
-/// commas inside nested type parameters (e.g., List(Int)) are 
+/// commas inside nested type parameters (e.g., List(Int)) are
 /// correctly ignored when counting tuple elements.
 ///
 fn count_tuple_elements_helper(input: String, depth: Int, count: Int) -> Int {
@@ -355,8 +355,8 @@ fn count_tuple_elements_helper(input: String, depth: Int, count: Int) -> Int {
 }
 
 /// Each branch in a conditional chain has its own node tree
-/// that may reference variables. All branches must be validated 
-/// independently since they share the same outer scope but 
+/// that may reference variables. All branches must be validated
+/// independently since they share the same outer scope but
 /// don't introduce variables visible to sibling branches.
 ///
 fn validate_if_branches(
@@ -371,11 +371,11 @@ fn validate_if_branches(
   })
 }
 
-/// Orchestrates the full module output: header warning, imports, 
-/// render function, and optional live functions. Keeping this 
-/// as the single assembly point ensures all generated modules 
-/// have a consistent structure and the "DO NOT EDIT" header is 
-/// never accidentally omitted.
+/// Orchestrates the full module output: header warning,
+/// imports, render function, and optional live functions.
+/// Keeping this as the single assembly point ensures all
+/// generated modules have a consistent structure and the "DO
+/// NOT EDIT" header is never accidentally omitted.
 ///
 fn generate_module(
   template: Template,
@@ -388,8 +388,9 @@ fn generate_module(
     "//// This file was generated by Glimr ✨
 //// https://github.com/glimr-org/glimr?tab=readme-ov-file#loom
 ////
-//// DO NOT EDIT THIS FILE DIRECTLY. Instead, edit the corresponding
-//// .loom.html template file and run `./glimr loom:compile`.
+//// DO NOT EDIT THIS FILE DIRECTLY. Instead, edit the
+//// corresponding .loom.html template file and run `./glimr
+//// loom:compile`.
 ////
 "
   let imports = generate_imports(template, component_data)
@@ -427,10 +428,10 @@ fn generate_module(
   string.join([header, imports, "", html_fn, live_fns], "\n")
 }
 
-/// Live templates need server-side event handling beyond just 
-/// rendering. These extra functions (is_live, handlers, handle, 
-/// handle_json, render_json) provide the runtime with 
-/// everything it needs for WebSocket-driven interactivity 
+/// Live templates need server-side event handling beyond just
+/// rendering. These extra functions (is_live, handlers, handle,
+/// handle_json, render_json) provide the runtime with
+/// everything it needs for WebSocket-driven interactivity
 /// without external configuration.
 ///
 fn generate_live_functions(
@@ -525,7 +526,7 @@ fn generate_live_functions(
 
 /// A single pass over all handlers determines the union of
 /// special variables needed. Scanning once upfront avoids
-/// redundant per-handler checks when generating both the typed 
+/// redundant per-handler checks when generating both the typed
 /// handle function and the JSON wrapper.
 ///
 fn collect_used_special_vars(
@@ -542,10 +543,10 @@ fn collect_used_special_vars(
   )
 }
 
-/// The live runtime dispatches events by handler ID and needs 
-/// updated prop values back. A typed handle function with a 
-/// case expression per handler gives the Gleam compiler full 
-/// visibility into the handler logic, catching type errors at 
+/// The live runtime dispatches events by handler ID and needs
+/// updated prop values back. A typed handle function with a
+/// case expression per handler gives the Gleam compiler full
+/// visibility into the handler logic, catching type errors at
 /// compile time.
 ///
 fn generate_handle_function(
@@ -626,10 +627,10 @@ fn generate_handle_function(
   <> "}\n"
 }
 
-/// Each handler case binds the expression result to the target 
-/// prop(s) and returns all props — not just the changed ones. 
-/// Returning the full tuple lets the runtime replace the entire 
-/// prop set atomically without tracking which specific props 
+/// Each handler case binds the expression result to the target
+/// prop(s) and returns all props — not just the changed ones.
+/// Returning the full tuple lets the runtime replace the entire
+/// prop set atomically without tracking which specific props
 /// were modified.
 ///
 fn generate_handler_case(
@@ -669,10 +670,10 @@ fn generate_handler_case(
   <> "    }\n"
 }
 
-/// Template authors write $value/$checked/$key for readability, 
-/// but generated Gleam code receives these as Option types from 
-/// the JS runtime. Replacing them with option.unwrap calls 
-/// provides sensible defaults and avoids forcing authors to 
+/// Template authors write $value/$checked/$key for readability,
+/// but generated Gleam code receives these as Option types from
+/// the JS runtime. Replacing them with option.unwrap calls
+/// provides sensible defaults and avoids forcing authors to
 /// handle Option explicitly.
 ///
 fn transform_special_vars(expr: String) -> String {
@@ -683,9 +684,9 @@ fn transform_special_vars(expr: String) -> String {
 }
 
 /// The WebSocket runtime dispatches events dynamically by
-/// module name, so it can't call typed functions directly. This 
-/// JSON wrapper provides a uniform String->String interface 
-/// that the runtime can call via dynamic dispatch while the 
+/// module name, so it can't call typed functions directly. This
+/// JSON wrapper provides a uniform String->String interface
+/// that the runtime can call via dynamic dispatch while the
 /// typed handle() stays type-safe.
 ///
 fn generate_handle_json_function(
@@ -780,10 +781,10 @@ fn generate_handle_json_function(
   <> "}\n"
 }
 
-/// After handling an event, the runtime needs to re-render the 
-/// template with updated props. Like handle_json, this wrapper 
-/// bridges the gap between dynamic dispatch (JSON strings) and 
-/// the typed render function so the runtime can trigger 
+/// After handling an event, the runtime needs to re-render the
+/// template with updated props. Like handle_json, this wrapper
+/// bridges the gap between dynamic dispatch (JSON strings) and
+/// the typed render function so the runtime can trigger
 /// re-renders without knowing prop types.
 ///
 fn generate_render_json_function(
@@ -819,10 +820,10 @@ fn generate_render_json_function(
   <> "}\n"
 }
 
-/// JSON wrapper functions receive props as a JSON string that 
-/// must be decoded into typed Gleam values before calling 
-/// handle() or render(). Generating a decoder per template 
-/// ensures the correct field names and types are used without 
+/// JSON wrapper functions receive props as a JSON string that
+/// must be decoded into typed Gleam values before calling
+/// handle() or render(). Generating a decoder per template
+/// ensures the correct field names and types are used without
 /// manual boilerplate.
 ///
 fn generate_props_decoder(props: List(#(String, String))) -> String {
@@ -854,8 +855,8 @@ fn generate_props_decoder(props: List(#(String, String))) -> String {
 }
 
 /// The JSON wrapper decodes props into a tuple but handle()
-/// expects individual named parameters. This function generates 
-/// the destructuring and call expression that bridges between 
+/// expects individual named parameters. This function generates
+/// the destructuring and call expression that bridges between
 /// the decoded tuple and the typed function signature.
 ///
 fn generate_handle_call(
@@ -902,7 +903,7 @@ fn generate_handle_call(
 
 /// Similar to generate_handle_call but for render(). The
 /// decoded props tuple must be destructured into named
-/// arguments matching the render function's signature so the 
+/// arguments matching the render function's signature so the
 /// JSON wrapper can call render() correctly.
 ///
 fn generate_render_call(
@@ -939,10 +940,11 @@ fn generate_render_call(
   }
 }
 
-/// After handle() returns updated prop values, the JSON wrapper 
-/// must serialize them back to JSON for the WebSocket runtime. 
-/// Generating the encoder per template ensures each prop is 
-/// encoded with the correct JSON type (string, int, bool, etc.).
+/// After handle() returns updated prop values, the JSON wrapper
+/// must serialize them back to JSON for the WebSocket runtime.
+/// Generating the encoder per template ensures each prop is
+/// encoded with the correct JSON type (string, int, bool,
+/// etc.).
 ///
 fn generate_result_encoder(props: List(#(String, String))) -> String {
   case props {
@@ -977,8 +979,8 @@ fn generate_result_encoder(props: List(#(String, String))) -> String {
 }
 
 /// The props decoder needs type-specific decoders for each
-/// field. Mapping from the type annotation string avoids a full 
-/// type system while covering the common prop types that 
+/// field. Mapping from the type annotation string avoids a full
+/// type system while covering the common prop types that
 /// templates actually use.
 ///
 fn type_to_decoder(gleam_type: String) -> String {
@@ -998,7 +1000,7 @@ fn type_to_decoder(gleam_type: String) -> String {
 
 /// The result encoder needs type-specific encoding for each
 /// prop. Mirroring type_to_decoder ensures the encode/decode
-/// round-trip preserves types correctly between the server and 
+/// round-trip preserves types correctly between the server and
 /// client.
 ///
 fn type_to_encoder(name: String, gleam_type: String) -> String {
@@ -1019,7 +1021,7 @@ fn type_to_encoder(name: String, gleam_type: String) -> String {
 /// Handler IDs must match between the data-l-* attributes in
 /// the rendered HTML and the handler dispatch function.
 /// Building the lookup once before code generation ensures
-/// consistent IDs across both the attribute emission and the 
+/// consistent IDs across both the attribute emission and the
 /// handle function's case branches.
 ///
 fn build_handler_lookup(template: Template) -> HandlerLookup {
@@ -1034,9 +1036,9 @@ fn build_handler_lookup(template: Template) -> HandlerLookup {
 
 /// Generated modules need imports for the runtime (always),
 /// JSON/decode libraries (live templates only), user-specified
-/// imports (@import directives), and every referenced component. 
-/// Collecting them here ensures the generated module compiles 
-/// without missing dependencies.
+/// imports (@import directives), and every referenced
+/// component. Collecting them here ensures the generated module
+/// compiles without missing dependencies.
 ///
 fn generate_imports(
   template: Template,
@@ -1101,8 +1103,8 @@ fn generate_imports(
 }
 
 /// Checks whether any component embedded in this template is a
-/// live component. Used to conditionally add the json import for
-/// non-live pages that embed live components.
+/// live component. Used to conditionally add the json import
+/// for non-live pages that embed live components.
 ///
 fn has_live_component_embeddings(
   template: Template,
@@ -1143,10 +1145,10 @@ fn collect_component_names(nodes: List(Node), acc: Set(String)) -> Set(String) {
   })
 }
 
-/// Named slots at any depth in the template become parameters 
-/// on the generated render function. Collecting them 
-/// recursively ensures slots inside conditionals or loops are 
-/// still discovered, and using a set prevents duplicate 
+/// Named slots at any depth in the template become parameters
+/// on the generated render function. Collecting them
+/// recursively ensures slots inside conditionals or loops are
+/// still discovered, and using a set prevents duplicate
 /// parameters when the same slot appears twice.
 ///
 fn collect_named_slots(nodes: List(Node), acc: Set(String)) -> Set(String) {
@@ -1170,10 +1172,10 @@ fn collect_named_slots(nodes: List(Node), acc: Set(String)) -> Set(String) {
   })
 }
 
-/// The render function is the primary output of code generation 
-/// — it's what application code calls to turn props into HTML. 
-/// Components get automatic @attributes injection into the root 
-/// element so parent-provided attributes pass through without 
+/// The render function is the primary output of code generation
+/// — it's what application code calls to turn props into HTML.
+/// Components get automatic @attributes injection into the root
+/// element so parent-provided attributes pass through without
 /// explicit placement.
 ///
 fn generate_html_function(
@@ -1224,10 +1226,10 @@ fn generate_html_function(
   }
 }
 
-/// Live templates need a container div with data attributes and 
-/// a script tag for the WebSocket client. Injecting these via 
-/// runtime.inject_live_wrapper at the body tag ensures correct 
-/// HTML structure even when the template uses layout components 
+/// Live templates need a container div with data attributes and
+/// a script tag for the WebSocket client. Injecting these via
+/// runtime.inject_live_wrapper at the body tag ensures correct
+/// HTML structure even when the template uses layout components
 /// that produce the <body> tag.
 ///
 fn generate_live_wrapper(
@@ -1265,7 +1267,7 @@ fn generate_live_wrapper(
 /// The render function's parameter list must include every
 /// piece of data the template can reference: declared props,
 /// slot content strings, and the attributes list (for
-/// components). Building it from template metadata ensures the 
+/// components). Building it from template metadata ensures the
 /// generated signature is always in sync with usage.
 ///
 fn generate_function_params(template: Template, is_component: Bool) -> String {
@@ -1306,11 +1308,11 @@ fn generate_function_params(template: Template, is_component: Bool) -> String {
   |> string.join(", ")
 }
 
-/// The render function only includes a `slot` parameter if the 
+/// The render function only includes a `slot` parameter if the
 /// template actually uses <slot /> somewhere. Checking
-/// recursively covers slots nested inside conditionals or loops, 
-/// so the parameter isn't omitted when a slot appears only in a 
-/// branch.
+/// recursively covers slots nested inside conditionals or
+/// loops, so the parameter isn't omitted when a slot appears
+/// only in a branch.
 ///
 fn has_default_slot(nodes: List(Node)) -> Bool {
   list.any(nodes, fn(node) {
@@ -1328,10 +1330,10 @@ fn has_default_slot(nodes: List(Node)) -> Bool {
   })
 }
 
-/// When generating a component call, slot definitions (content 
-/// passed to named slots) must be rendered as separate 
-/// arguments, not as part of the default child content. 
-/// Splitting them here lets the generator handle default 
+/// When generating a component call, slot definitions (content
+/// passed to named slots) must be rendered as separate
+/// arguments, not as part of the default child content.
+/// Splitting them here lets the generator handle default
 /// children and named slots independently.
 ///
 fn separate_slot_defs(
@@ -1352,9 +1354,9 @@ fn separate_slot_defs(
 }
 
 /// Gleam guards don't support function calls, but template
-/// conditions often call functions (e.g., list.is_empty). Using 
-/// `case condition { True -> ... False -> ... }` instead of 
-/// guards allows arbitrary expressions in conditions while 
+/// conditions often call functions (e.g., list.is_empty). Using
+/// `case condition { True -> ... False -> ... }` instead of
+/// guards allows arbitrary expressions in conditions while
 /// still producing exhaustive matches.
 ///
 fn generate_if_branches(
@@ -1381,7 +1383,7 @@ fn generate_if_branches(
 /// Else-if chains become nested case expressions where each
 /// False branch contains the next condition's case. This
 /// recursive structure mirrors the if/else-if/else chain
-/// naturally, producing correctly indented and exhaustive Gleam 
+/// naturally, producing correctly indented and exhaustive Gleam
 /// code for any chain length.
 ///
 fn generate_if_branches_recursive(
@@ -1488,9 +1490,9 @@ fn generate_if_branches_recursive(
 }
 
 /// Template authors write `l-if="slot"` or `l-if="slot.header"`
-/// to conditionally render based on slot content, but slots are 
-/// String parameters in generated code. Transforming these to 
-/// emptiness checks lets authors use intuitive slot references 
+/// to conditionally render based on slot content, but slots are
+/// String parameters in generated code. Transforming these to
+/// emptiness checks lets authors use intuitive slot references
 /// without knowing the String representation.
 ///
 fn transform_slot_condition(condition: String) -> String {
@@ -1501,9 +1503,9 @@ fn transform_slot_condition(condition: String) -> String {
   }
 }
 
-/// Convenience entry point for node code generation when no 
-/// loop variables are in scope (i.e., at the top level). Avoids 
-/// passing an empty set through every call site that doesn't 
+/// Convenience entry point for node code generation when no
+/// loop variables are in scope (i.e., at the top level). Avoids
+/// passing an empty set through every call site that doesn't
 /// involve l-for loops.
 ///
 fn generate_nodes_code(
@@ -1524,9 +1526,9 @@ fn generate_nodes_code(
 }
 
 /// Loop variables have properties like loop.index (Int) and
-/// loop.first (Bool) that need type conversion when used in 
-/// string concatenation. Threading the set of active loop 
-/// variables through code generation lets the emitter insert 
+/// loop.first (Bool) that need type conversion when used in
+/// string concatenation. Threading the set of active loop
+/// variables through code generation lets the emitter insert
 /// the right conversion calls.
 ///
 fn generate_nodes_code_with_loop_vars(
@@ -1552,9 +1554,9 @@ fn generate_nodes_code_with_loop_vars(
 }
 
 /// Each AST node type maps to a different code generation
-/// strategy — text becomes string literals, variables become 
-/// runtime.display calls, slots become parameter references, 
-/// and components become function calls. Exhaustive pattern 
+/// strategy — text becomes string literals, variables become
+/// runtime.display calls, slots become parameter references,
+/// and components become function calls. Exhaustive pattern
 /// matching ensures every node type produces valid Gleam code.
 ///
 fn generate_node_code_with_loop_vars(
@@ -1880,9 +1882,9 @@ fn generate_node_code_with_loop_vars(
 
 /// Component attributes serve dual roles: some are props
 /// (passed as function arguments) and others are HTML
-/// attributes (passed through to the root element). Separating 
-/// them here ensures props reach the render function while HTML 
-/// attributes flow to the DOM, with type-appropriate defaults 
+/// attributes (passed through to the root element). Separating
+/// them here ensures props reach the render function while HTML
+/// attributes flow to the DOM, with type-appropriate defaults
 /// for omitted props.
 ///
 fn generate_component_attrs(
@@ -2076,10 +2078,10 @@ fn generate_component_attrs(
   #(props_code, extra_attrs_code)
 }
 
-/// When a parent template omits a component prop, the generated 
-/// code still needs a valid value to compile. Type-based 
-/// defaults (False for Bool, "" for String, etc.) provide the 
-/// safest zero-value semantics so partial component usage 
+/// When a parent template omits a component prop, the generated
+/// code still needs a valid value to compile. Type-based
+/// defaults (False for Bool, "" for String, etc.) provide the
+/// safest zero-value semantics so partial component usage
 /// doesn't cause compile errors.
 ///
 fn default_for_type(type_str: String) -> String {
@@ -2094,10 +2096,10 @@ fn default_for_type(type_str: String) -> String {
   }
 }
 
-/// HTML boolean attributes (disabled, checked, etc.) must be 
-/// rendered differently — their presence alone means true, and 
-/// they should be omitted entirely when false. Identifying them 
-/// lets the generator emit BoolAttribute instead of Attribute 
+/// HTML boolean attributes (disabled, checked, etc.) must be
+/// rendered differently — their presence alone means true, and
+/// they should be omitted entirely when false. Identifying them
+/// lets the generator emit BoolAttribute instead of Attribute
 /// for correct rendering behavior.
 ///
 fn is_html_boolean_attribute(name: String) -> Bool {
@@ -2131,10 +2133,10 @@ fn is_html_boolean_attribute(name: String) -> Bool {
   }
 }
 
-/// Named slots provided by the parent must become arguments in 
-/// the component's render call, and any expected slots not 
-/// provided must be filled with empty strings. Loop variable 
-/// tracking is threaded through because slot content can 
+/// Named slots provided by the parent must become arguments in
+/// the component's render call, and any expected slots not
+/// provided must be filled with empty strings. Loop variable
+/// tracking is threaded through because slot content can
 /// reference variables from enclosing l-for loops.
 ///
 fn generate_component_named_slots_with_loop_vars(
@@ -2342,10 +2344,10 @@ fn generate_element_attrs_code(
 }
 
 /// Normalizes l-* pass-through attributes (like l-loading,
-/// l-no-nav) to their data-l-* equivalents so the compiled
-/// HTML is valid. Directive attributes (l-if, l-on:*, etc.)
-/// are already parsed into their own AST variants and never
-/// reach this function.
+/// l-no-nav) to their data-l-* equivalents so the compiled HTML
+/// is valid. Directive attributes (l-if, l-on:*, etc.) are
+/// already parsed into their own AST variants and never reach
+/// this function.
 ///
 fn normalize_attr_name(name: String) -> String {
   case string.starts_with(name, "l-") {
@@ -2356,8 +2358,8 @@ fn normalize_attr_name(name: String) -> String {
 
 /// l-on:* handlers become data-l-{event} attributes that the
 /// client-side JS runtime reads to wire up event listeners.
-/// Looking up the handler ID from the pre-built map ensures the 
-/// attribute value matches the server-side dispatch function. 
+/// Looking up the handler ID from the pre-built map ensures the
+/// attribute value matches the server-side dispatch function.
 /// Shared by both component and element codegen.
 ///
 fn generate_handler_attr_code(
@@ -2397,9 +2399,9 @@ fn generate_handler_attr_code(
 }
 
 /// l-model is syntactic sugar for l-on:input with $value
-/// assignment. The generated attribute uses data-l-input with 
-/// the same handler ID that the desugared handler received 
-/// during collection, maintaining consistency between markup 
+/// assignment. The generated attribute uses data-l-input with
+/// the same handler ID that the desugared handler received
+/// during collection, maintaining consistency between markup
 /// and dispatch.
 ///
 fn generate_model_attr_code(
@@ -2415,9 +2417,9 @@ fn generate_model_attr_code(
   }
 }
 
-/// Void elements must be rendered as self-closing tags (<img />)
-/// rather than with a closing tag (</img>), which would be 
-/// invalid HTML. Identifying them here lets the element code 
+/// Void elements must be rendered as self-closing tags (<img
+/// />) rather than with a closing tag (</img>), which would be
+/// invalid HTML. Identifying them here lets the element code
 /// generator emit the correct syntax per HTML specification.
 ///
 fn is_void_element(tag: String) -> Bool {
@@ -2440,10 +2442,10 @@ fn is_void_element(tag: String) -> Bool {
   }
 }
 
-/// Base attributes from the component's root element need to be 
-/// passed to runtime.merge_attributes alongside the 
+/// Base attributes from the component's root element need to be
+/// passed to runtime.merge_attributes alongside the
 /// parent-provided attributes. Converting them to runtime
-/// constructors here lets the merge happen at render time so 
+/// constructors here lets the merge happen at render time so
 /// parent attributes can override component defaults.
 ///
 fn generate_base_attrs_code(attrs: List(lexer.ComponentAttr)) -> String {
@@ -2490,7 +2492,7 @@ fn generate_base_attrs_code(attrs: List(lexer.ComponentAttr)) -> String {
 
 /// Components without an explicit @attributes directive get
 /// automatic injection into the root element. Checking for
-/// existing directives first prevents double injection when the 
+/// existing directives first prevents double injection when the
 /// author has already placed @attributes where they want it.
 ///
 fn has_attributes_node(nodes: List(Node)) -> Bool {
@@ -2508,20 +2510,20 @@ fn has_attributes_node(nodes: List(Node)) -> Bool {
   })
 }
 
-/// Most component authors expect parent attributes to land on 
+/// Most component authors expect parent attributes to land on
 /// the root element without having to write @attributes
-/// explicitly. Auto-injecting into the first element provides 
-/// this convenient default behavior while still allowing 
+/// explicitly. Auto-injecting into the first element provides
+/// this convenient default behavior while still allowing
 /// explicit placement when needed.
 ///
 fn inject_attributes_into_first_element(nodes: List(Node)) -> List(Node) {
   inject_attributes_helper(nodes, False).0
 }
 
-/// The first HTML element may be inside a conditional or loop, 
-/// not at the top level. Recursing into control flow nodes with 
-/// an "injected" flag ensures we find the first element 
-/// regardless of nesting, and the flag prevents injecting into 
+/// The first HTML element may be inside a conditional or loop,
+/// not at the top level. Recursing into control flow nodes with
+/// an "injected" flag ensures we find the first element
+/// regardless of nesting, and the flag prevents injecting into
 /// more than one branch.
 ///
 fn inject_attributes_helper(
@@ -2593,9 +2595,9 @@ fn inject_attributes_helper(
 }
 
 /// When a component's root element is inside a conditional,
-/// each branch may have its own first element. Injecting into 
-/// all branches ensures attributes are applied regardless of 
-/// which branch renders, while the injected flag propagates to 
+/// each branch may have its own first element. Injecting into
+/// all branches ensures attributes are applied regardless of
+/// which branch renders, while the injected flag propagates to
 /// avoid duplicate injection.
 ///
 fn inject_attributes_into_branches(
@@ -2614,9 +2616,9 @@ fn inject_attributes_into_branches(
 }
 
 /// Text nodes from the lexer may contain raw HTML tags that
-/// weren't parsed as elements (e.g., in static content). To 
-/// inject @attributes, we need to find the first tag in the 
-/// text, split it open, and insert the attributes node between 
+/// weren't parsed as elements (e.g., in static content). To
+/// inject @attributes, we need to find the first tag in the
+/// text, split it open, and insert the attributes node between
 /// the tag name and closing bracket.
 ///
 fn find_first_tag_and_extract_attrs(
@@ -2633,10 +2635,10 @@ fn find_first_tag_and_extract_attrs(
   }
 }
 
-/// After splitting on '<', we need to distinguish real element 
-/// tags from closing tags, comments, and doctype declarations. 
-/// Parsing the tag name and any existing attributes lets 
-/// inject_attributes_helper preserve the original attributes 
+/// After splitting on '<', we need to distinguish real element
+/// tags from closing tags, comments, and doctype declarations.
+/// Parsing the tag name and any existing attributes lets
+/// inject_attributes_helper preserve the original attributes
 /// during injection.
 ///
 fn parse_tag_content(
@@ -2673,10 +2675,10 @@ fn take_until_space_or_close(input: String, acc: String) -> #(String, String) {
   }
 }
 
-/// Existing attributes on the root element must be preserved
-/// as base attributes for runtime.merge_attributes. Parsing
-/// them into structured ComponentAttr values lets the generator 
-/// emit correct merge code that combines the element's own 
+/// Existing attributes on the root element must be preserved as
+/// base attributes for runtime.merge_attributes. Parsing them
+/// into structured ComponentAttr values lets the generator emit
+/// correct merge code that combines the element's own
 /// attributes with parent-provided ones.
 ///
 fn parse_html_attributes(
@@ -2704,9 +2706,9 @@ fn parse_html_attributes(
 }
 
 /// HTML allows multiple attribute syntax forms (double-quoted,
-/// single-quoted, unquoted, valueless boolean). Supporting all 
-/// of them here means component authors can write natural HTML 
-/// without being constrained to a single quoting style for 
+/// single-quoted, unquoted, valueless boolean). Supporting all
+/// of them here means component authors can write natural HTML
+/// without being constrained to a single quoting style for
 /// their root element attributes.
 ///
 fn parse_single_html_attribute(
@@ -2745,9 +2747,9 @@ fn parse_single_html_attribute(
 }
 
 /// Attribute names are terminated by =, whitespace, or tag
-/// delimiters. Extracting the name as a separate step lets the 
-/// caller decide how to handle the value based on what follows 
-/// — an = means a valued attribute, anything else means a 
+/// delimiters. Extracting the name as a separate step lets the
+/// caller decide how to handle the value based on what follows
+/// — an = means a valued attribute, anything else means a
 /// boolean attribute.
 ///
 fn take_attr_name(input: String, acc: String) -> #(String, String) {
@@ -2763,8 +2765,8 @@ fn take_attr_name(input: String, acc: String) -> #(String, String) {
 }
 
 /// Quoted attribute values can contain any character except
-/// their closing quote. A parameterized stop character lets 
-/// this single function handle both single-quoted and 
+/// their closing quote. A parameterized stop character lets
+/// this single function handle both single-quoted and
 /// double-quoted values without duplication.
 ///
 fn take_until_char(
@@ -2785,8 +2787,8 @@ fn take_until_char(
 
 /// HTML attribute names use dashes and colons (data-value,
 /// aria-label) but Gleam identifiers require snake_case.
-/// Normalizing here ensures generated field names are valid 
-/// Gleam regardless of the naming conventions used in the 
+/// Normalizing here ensures generated field names are valid
+/// Gleam regardless of the naming conventions used in the
 /// template markup.
 ///
 fn to_field_name(name: String) -> String {
@@ -2799,8 +2801,8 @@ fn to_field_name(name: String) -> String {
 
 /// Component names and slot names may use PascalCase or
 /// camelCase in templates, but Gleam conventions and module
-/// paths require snake_case. Converting here ensures generated 
-/// identifiers follow Gleam naming rules and match expected 
+/// paths require snake_case. Converting here ensures generated
+/// identifiers follow Gleam naming rules and match expected
 /// module paths.
 ///
 fn to_snake_case(input: String) -> String {
@@ -2815,10 +2817,10 @@ fn to_snake_case(input: String) -> String {
   |> strip_leading_underscores
 }
 
-/// Snake_case conversion of names starting with uppercase (e.g., 
-/// "MyComponent" -> "_my_component") produces a leading 
-/// underscore. Stripping it prevents generating identifiers that 
-/// Gleam would interpret as unused variables.
+/// Snake_case conversion of names starting with uppercase
+/// (e.g., "MyComponent" -> "_my_component") produces a leading
+/// underscore. Stripping it prevents generating identifiers
+/// that Gleam would interpret as unused variables.
 ///
 fn strip_leading_underscores(input: String) -> String {
   case input {
@@ -2827,9 +2829,9 @@ fn strip_leading_underscores(input: String) -> String {
   }
 }
 
-/// Template text nodes are emitted as Gleam string literals, so 
+/// Template text nodes are emitted as Gleam string literals, so
 /// characters that have special meaning in Gleam strings
-/// (backslashes, quotes, newlines) must be escaped. Without 
+/// (backslashes, quotes, newlines) must be escaped. Without
 /// this, a template containing a literal backslash or quote
 /// would produce syntactically invalid generated code.
 ///
@@ -2842,10 +2844,10 @@ fn escape_gleam_string(input: String) -> String {
   |> string.replace("\t", "\\t")
 }
 
-/// Component names like "ui:button" or "nav-bar" use characters 
-/// invalid in Gleam identifiers. The alias (e.g., 
-/// components_ui_button) provides a safe identifier for the 
-/// import statement that the generated render calls can 
+/// Component names like "ui:button" or "nav-bar" use characters
+/// invalid in Gleam identifiers. The alias (e.g.,
+/// components_ui_button) provides a safe identifier for the
+/// import statement that the generated render calls can
 /// reference.
 ///
 /// Generates a JSON serialization expression for a component's
@@ -2897,30 +2899,29 @@ fn component_module_alias(name: String) -> String {
   |> string.replace("-", "_")
 }
 
-/// Bare strings in :class lists are always-on class names, but 
-/// the runtime expects uniform #(String, Bool) tuples. Wrapping 
-/// them with runtime.class() (which returns #(name, True)) 
-/// normalizes the list so build_classes can process all 
-/// entries uniformly.
+/// Bare strings in :class lists are always-on class names, but
+/// the runtime expects uniform #(String, Bool) tuples. Wrapping
+/// them with runtime.class() (which returns #(name, True))
+/// normalizes the list so build_classes can process all entries
+/// uniformly.
 ///
 fn transform_class_list(value: String) -> String {
   transform_list_strings(value, "runtime.class")
 }
 
-/// Same pattern as transform_class_list but for :style. Bare 
-/// strings in :style lists are always-on style rules, and 
-/// wrapping with runtime.style() normalizes them into
-/// #(String, Bool) tuples for uniform processing by 
-/// build_styles.
+/// Same pattern as transform_class_list but for :style. Bare
+/// strings in :style lists are always-on style rules, and
+/// wrapping with runtime.style() normalizes them into #(String,
+/// Bool) tuples for uniform processing by build_styles.
 ///
 fn transform_style_list(value: String) -> String {
   transform_list_strings(value, "runtime.style")
 }
 
 /// Only top-level string literals need wrapping — strings
-/// inside tuples like #("foo", cond) are already part of the 
-/// expected format. Tracking nesting depth ensures only the 
-/// right strings get wrapped while leaving tuple contents 
+/// inside tuples like #("foo", cond) are already part of the
+/// expected format. Tracking nesting depth ensures only the
+/// right strings get wrapped while leaving tuple contents
 /// untouched.
 ///
 fn transform_list_strings(value: String, wrapper: String) -> String {
@@ -2928,10 +2929,10 @@ fn transform_list_strings(value: String, wrapper: String) -> String {
   transform_list_chars(chars, wrapper, 0, False, "", "")
 }
 
-/// Character-by-character processing is needed because the list 
-/// expression can contain escaped quotes, nested parentheses, 
-/// and commas inside tuples. A simple regex or split-based 
-/// approach would misidentify boundaries in expressions like 
+/// Character-by-character processing is needed because the list
+/// expression can contain escaped quotes, nested parentheses,
+/// and commas inside tuples. A simple regex or split-based
+/// approach would misidentify boundaries in expressions like
 /// ["a\"b", #("c", True)].
 ///
 fn transform_list_chars(
@@ -3060,10 +3061,10 @@ fn transform_list_chars(
   }
 }
 
-/// Template variables can be any type (String, Int, Bool, etc.) 
-/// but string concatenation requires strings. runtime.display() 
-/// handles type conversion and HTML escaping in one call, 
-/// preventing XSS while supporting non-string types without 
+/// Template variables can be any type (String, Int, Bool, etc.)
+/// but string concatenation requires strings. runtime.display()
+/// handles type conversion and HTML escaping in one call,
+/// preventing XSS while supporting non-string types without
 /// explicit conversion.
 ///
 fn convert_loop_var_expr(expr: String) -> String {
@@ -3072,9 +3073,9 @@ fn convert_loop_var_expr(expr: String) -> String {
 
 /// Raw variables ({!! expr !!}) skip HTML escaping for cases
 /// like pre-rendered HTML. Loop properties (loop.index,
-/// loop.first) still need type conversion since they're Int/Bool,
-/// but regular raw variables are assumed to be strings already 
-/// and are passed through directly.
+/// loop.first) still need type conversion since they're
+/// Int/Bool, but regular raw variables are assumed to be
+/// strings already and are passed through directly.
 ///
 fn convert_loop_var_expr_raw(expr: String, loop_vars: Set(String)) -> String {
   case get_loop_property(expr, loop_vars) {
@@ -3084,9 +3085,9 @@ fn convert_loop_var_expr_raw(expr: String, loop_vars: Set(String)) -> String {
 }
 
 /// Loop variable properties (loop.index, loop.first, etc.) have
-/// non-String types that need conversion for string output. 
-/// Identifying them by checking if the expression root is a 
-/// known loop variable lets the generator insert the right 
+/// non-String types that need conversion for string output.
+/// Identifying them by checking if the expression root is a
+/// known loop variable lets the generator insert the right
 /// conversion without a full type system.
 ///
 fn get_loop_property(
@@ -3153,7 +3154,8 @@ fn generate_tree_function(
   <> "}\n"
 }
 
-/// Generates the render_tree_json() wrapper for dynamic dispatch.
+/// Generates the render_tree_json() wrapper for dynamic
+/// dispatch.
 ///
 fn generate_tree_json_function(template: Template) -> String {
   let props_decoder = generate_props_decoder(template.props)
@@ -3181,8 +3183,8 @@ fn generate_tree_json_function(template: Template) -> String {
   <> "}\n"
 }
 
-/// Generate the call expression for render_tree, matching
-/// the pattern used by generate_render_call.
+/// Generate the call expression for render_tree, matching the
+/// pattern used by generate_render_call.
 ///
 fn generate_render_tree_call(props: List(#(String, String))) -> String {
   case props {
@@ -3204,7 +3206,8 @@ fn generate_render_tree_call(props: List(#(String, String))) -> String {
 
 /// Extract the content nodes for tree rendering. For live
 /// templates with a root layout component, extract the default
-/// slot children (skipping SlotDefNodes). Otherwise use all nodes.
+/// slot children (skipping SlotDefNodes). Otherwise use all
+/// nodes.
 ///
 fn extract_tree_content_nodes(nodes: List(Node)) -> List(Node) {
   case nodes {
@@ -3314,9 +3317,9 @@ fn generate_tree_body(
   <> ")\n"
 }
 
-/// Process a single node for tree code generation.
-/// Text becomes static fragments, variables become dynamics,
-/// control flow nodes become DynTree/DynList dynamics.
+/// Process a single node for tree code generation. Text becomes
+/// static fragments, variables become dynamics, control flow
+/// nodes become DynTree/DynList dynamics.
 ///
 fn generate_node_tree(
   node: Node,
@@ -3468,8 +3471,8 @@ fn generate_node_tree(
   }
 }
 
-/// Generate a DynTree case expression for if/else-if/else branches.
-/// Each branch produces its own LiveTree.
+/// Generate a DynTree case expression for if/else-if/else
+/// branches. Each branch produces its own LiveTree.
 ///
 fn generate_if_tree_code(
   branches: List(#(Option(String), Int, List(Node))),
@@ -3570,7 +3573,8 @@ fn generate_if_tree_branches(
 }
 
 /// Generate tree code for an l-for loop. Returns a DynList
-/// expression using runtime.map_each or runtime.map_each_with_loop.
+/// expression using runtime.map_each or
+/// runtime.map_each_with_loop.
 ///
 fn generate_each_tree_code(
   collection: String,
@@ -3710,7 +3714,8 @@ fn generate_component_render_expr(
 
 /// Generate tree code for an element node. Static parts of the
 /// tag (name, static attributes) go into the static fragment.
-/// Dynamic attributes split the static and create DynString slots.
+/// Dynamic attributes split the static and create DynString
+/// slots.
 ///
 fn generate_element_tree(
   tag: String,
@@ -3772,9 +3777,9 @@ fn generate_element_tree(
 }
 
 /// Process element attributes for tree mode. Static attributes
-/// are appended to current_static; dynamic attributes (expressions,
-/// :class, :style) close the static fragment, push a DynString,
-/// and start a new static fragment.
+/// are appended to current_static; dynamic attributes
+/// (expressions, :class, :style) close the static fragment,
+/// push a DynString, and start a new static fragment.
 ///
 fn generate_element_attrs_tree(
   acc: TreeAcc,

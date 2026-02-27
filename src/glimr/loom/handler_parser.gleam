@@ -4,14 +4,13 @@
 //// written as inline assignment strings that need to become
 //// typed Gleam code. This module bridges that gap by parsing
 //// handler expressions into structured data so the code
-//// generator can emit correct function bodies with proper prop 
-//// assignments, tuple destructuring, and special variable 
+//// generator can emit correct function bodies with proper prop
+//// assignments, tuple destructuring, and special variable
 //// injection ($value, $key, etc.).
 ////
 //// *Example:*
 ////
-//// "count = count + 1"
-//// "count = counter.increment(count)"
+//// "count = count + 1" "count = counter.increment(count)"
 //// "#(count, total) = counter.increment_both(count, total)"
 ////
 
@@ -26,11 +25,11 @@ import glimr/utils/string as string_util
 
 // ------------------------------------------------------------- Public Types
 
-/// Code generation needs to know which props a handler updates 
-/// and what expression produces the new values. Bundling event 
-/// metadata (name, modifiers), assignment targets, and the 
-/// expression together lets the generator emit a complete 
-/// handler function in one pass without re-parsing the original 
+/// Code generation needs to know which props a handler updates
+/// and what expression produces the new values. Bundling event
+/// metadata (name, modifiers), assignment targets, and the
+/// expression together lets the generator emit a complete
+/// handler function in one pass without re-parsing the original
 /// string.
 ///
 pub type Handler {
@@ -139,19 +138,19 @@ pub fn get_special_vars(handler: Handler) -> List(String) {
 }
 
 /// Multiple handlers of the same event type can exist in a
-/// single template. A deterministic ID based on event name and 
-/// index ensures each generated handler function has a unique 
+/// single template. A deterministic ID based on event name and
+/// index ensures each generated handler function has a unique
 /// name that the client-side runtime can resolve.
 ///
 pub fn handler_id(event: String, index: Int) -> String {
   "handle_" <> event <> "_" <> int.to_string(index)
 }
 
-/// The code generator needs a flat list of all handlers in the 
-/// template to emit handler functions and a dispatch map. 
-/// Walking the AST here centralizes that collection so the 
-/// generator doesn't need its own traversal logic. l-model 
-/// attributes are desugared into input handlers to keep the 
+/// The code generator needs a flat list of all handlers in the
+/// template to emit handler functions and a dispatch map.
+/// Walking the AST here centralizes that collection so the
+/// generator doesn't need its own traversal logic. l-model
+/// attributes are desugared into input handlers to keep the
 /// generator's output uniform.
 ///
 pub fn collect_handlers(
@@ -163,9 +162,9 @@ pub fn collect_handlers(
 
 // ------------------------------------------------------------- Private Functions
 
-/// Handlers can appear at any depth in the node tree, so a 
-/// recursive walk is needed. The index counter threads through 
-/// the traversal to ensure every handler gets a globally unique 
+/// Handlers can appear at any depth in the node tree, so a
+/// recursive walk is needed. The index counter threads through
+/// the traversal to ensure every handler gets a globally unique
 /// ID regardless of nesting depth.
 ///
 fn collect_handlers_from_nodes(
@@ -291,9 +290,9 @@ fn collect_handlers_from_attrs(
   }
 }
 
-/// Handler expressions like "count = inc(count)" contain an 
-/// assignment, but the expression side may also contain = 
-/// inside parenthesized function calls or comparisons. 
+/// Handler expressions like "count = inc(count)" contain an
+/// assignment, but the expression side may also contain =
+/// inside parenthesized function calls or comparisons.
 /// Splitting only at the top-level = avoids misinterpreting
 /// nested equality or named arguments as the assignment.
 ///
@@ -302,9 +301,9 @@ fn find_assignment(input: String) -> Result(#(String, String), Nil) {
 }
 
 /// Walks the string character by character tracking nesting
-/// depth so that = inside parentheses or brackets is
-/// skipped. Also distinguishes = (assignment) from == (equality)
-/// to avoid false splits on comparisons.
+/// depth so that = inside parentheses or brackets is skipped.
+/// Also distinguishes = (assignment) from == (equality) to
+/// avoid false splits on comparisons.
 ///
 fn find_assignment_loop(
   input: String,
@@ -382,10 +381,10 @@ fn parse_targets(target: String) -> Result(List(String), Nil) {
   }
 }
 
-/// Tuple destructuring lets a single handler expression update 
-/// multiple props at once (e.g. a function returning 
-/// #(count, total)). Parsing the #() syntax here validates that 
-/// each element is a valid identifier before the code generator 
+/// Tuple destructuring lets a single handler expression update
+/// multiple props at once (e.g. a function returning #(count,
+/// total)). Parsing the #() syntax here validates that each
+/// element is a valid identifier before the code generator
 /// tries to emit assignments for them.
 ///
 fn parse_tuple_targets(target: String) -> Result(List(String), Nil) {
@@ -414,10 +413,10 @@ fn parse_tuple_targets(target: String) -> Result(List(String), Nil) {
   }
 }
 
-/// Assignment targets become variable names in generated Gleam 
-/// code. Validating identifier syntax here catches typos and 
-/// invalid characters at parse time rather than producing 
-/// broken generated code that fails later with confusing 
+/// Assignment targets become variable names in generated Gleam
+/// code. Validating identifier syntax here catches typos and
+/// invalid characters at parse time rather than producing
+/// broken generated code that fails later with confusing
 /// compiler errors.
 ///
 fn is_valid_identifier(s: String) -> Bool {
@@ -430,8 +429,8 @@ fn is_valid_identifier(s: String) -> Bool {
   }
 }
 
-/// Conditionally includes a special variable only if it appears 
-/// in the expression, so the generated handler function doesn't 
+/// Conditionally includes a special variable only if it appears
+/// in the expression, so the generated handler function doesn't
 /// extract unused values from the JS event object.
 ///
 fn maybe_add_var(vars: List(String), expr: String, var: String) -> List(String) {

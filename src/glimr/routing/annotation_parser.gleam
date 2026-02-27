@@ -11,9 +11,9 @@ import gleam/string
 
 // ------------------------------------------------------------- Public Types
 
-/// Represents a function parameter with its name and type.
-/// This is used to track handler signature for flexible 
-/// parameter ordering.
+/// Represents a function parameter with its name and type. This
+/// is used to track handler signature for flexible parameter
+/// ordering.
 ///
 pub type FunctionParam {
   FunctionParam(name: String, param_type: String)
@@ -89,9 +89,9 @@ pub fn parse(content: String) -> ParseResult {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Group middleware applies to all routes in a controller.
-/// This allows common authentication or logging middleware
-/// to be declared once at the file level rather than per-route.
+/// Group middleware applies to all routes in a controller. This
+/// allows common authentication or logging middleware to be
+/// declared once at the file level rather than per-route.
 ///
 fn extract_group_middleware(content: String) -> List(String) {
   content
@@ -110,9 +110,10 @@ fn extract_group_middleware(content: String) -> List(String) {
   })
 }
 
-/// Routes are defined via doc comments before handler functions.
-/// This convention keeps route metadata close to the handler
-/// code while allowing compile-time generation of dispatch code.
+/// Routes are defined via doc comments before handler
+/// functions. This convention keeps route metadata close to the
+/// handler code while allowing compile-time generation of
+/// dispatch code.
 ///
 fn extract_routes(
   content: String,
@@ -122,9 +123,9 @@ fn extract_routes(
   parse_lines(lines, group_middleware, None, [])
 }
 
-/// Annotation values are quoted to allow paths with spaces
-/// or special characters. The quotes must be properly matched
-/// for the annotation to be considered valid.
+/// Annotation values are quoted to allow paths with spaces or
+/// special characters. The quotes must be properly matched for
+/// the annotation to be considered valid.
 ///
 fn extract_quoted_arg(line: String, prefix: String) -> Result(String, Nil) {
   let after_prefix = string.drop_start(line, string.length(prefix))
@@ -142,8 +143,8 @@ fn extract_quoted_arg(line: String, prefix: String) -> Result(String, Nil) {
 }
 
 /// Annotations can span multiple doc comment lines before the
-/// function declaration. State accumulates until we hit a pub 
-/// fn, at which point we create the route and reset for the 
+/// function declaration. State accumulates until we hit a pub
+/// fn, at which point we create the route and reset for the
 /// next.
 ///
 fn parse_lines(
@@ -218,8 +219,8 @@ fn parse_lines(
 }
 
 /// Function signatures in Gleam can span multiple lines when
-/// there are many parameters. We need the complete signature
-/// to extract all parameter names and types for validation.
+/// there are many parameters. We need the complete signature to
+/// extract all parameter names and types for validation.
 ///
 fn collect_signature(
   current_line: String,
@@ -257,9 +258,9 @@ fn parse_annotation_line(
   |> result.unwrap(state)
 }
 
-/// Route methods like @get, @post define which HTTP verb 
-/// handles the route. The method is required for a valid route 
-/// annotation and determines how the route matches incoming 
+/// Route methods like @get, @post define which HTTP verb
+/// handles the route. The method is required for a valid route
+/// annotation and determines how the route matches incoming
 /// requests.
 ///
 fn try_parse_method(
@@ -344,9 +345,9 @@ fn try_parse_redirect(
   }
 }
 
-/// The function name links annotations to their handler in
-/// the generated dispatch code. We strip everything except
-/// the identifier between `pub fn` and the opening paren.
+/// The function name links annotations to their handler in the
+/// generated dispatch code. We strip everything except the
+/// identifier between `pub fn` and the opening paren.
 ///
 fn extract_fn_name(line: String) -> String {
   let after_pub_fn = string.drop_start(line, 7)
@@ -390,9 +391,9 @@ fn extract_params_string(s: String, depth: Int, acc: String) -> String {
   }
 }
 
-/// After extracting the raw parameter string, we need to
-/// split it into individual parameters while respecting
-/// commas inside generic types like `Dict(String, Int)`.
+/// After extracting the raw parameter string, we need to split
+/// it into individual parameters while respecting commas inside
+/// generic types like `Dict(String, Int)`.
 ///
 fn parse_params_string(params_str: String) -> List(FunctionParam) {
   split_params(params_str, 0, "", [])
@@ -405,8 +406,8 @@ fn parse_params_string(params_str: String) -> List(FunctionParam) {
   })
 }
 
-/// Generic types contain commas that aren't parameter 
-/// separators. Tracking parenthesis depth ensures we only split 
+/// Generic types contain commas that aren't parameter
+/// separators. Tracking parenthesis depth ensures we only split
 /// on commas at the top level of the parameter list.
 ///
 fn split_params(
@@ -429,9 +430,9 @@ fn split_params(
   }
 }
 
-/// Parameters may have type annotations or be untyped. Both
-/// the name and type are needed for the compiler to determine
-/// how to pass arguments (Request vs Context vs route params).
+/// Parameters may have type annotations or be untyped. Both the
+/// name and type are needed for the compiler to determine how
+/// to pass arguments (Request vs Context vs route params).
 ///
 fn parse_single_param(param: String) -> Result(FunctionParam, Nil) {
   case string.split_once(param, ":") {
@@ -451,9 +452,10 @@ fn parse_single_param(param: String) -> Result(FunctionParam, Nil) {
   }
 }
 
-/// Once we hit a pub fn, we have all annotations for that route.
-/// This combines group and route middleware, creates the main
-/// route, and generates any redirect routes pointing to it.
+/// Once we hit a pub fn, we have all annotations for that
+/// route. This combines group and route middleware, creates the
+/// main route, and generates any redirect routes pointing to
+/// it.
 ///
 fn create_routes_from_state(
   state: AnnotationState,
@@ -503,8 +505,8 @@ pub fn module_from_path(path: String) -> Result(String, Nil) {
 }
 
 /// Types can be imported with or without the `type` keyword.
-/// Both `import mod.{type Foo}` and `import mod.{Foo}` make
-/// the type available, so we need to check for both patterns.
+/// Both `import mod.{type Foo}` and `import mod.{Foo}` make the
+/// type available, so we need to check for both patterns.
 ///
 fn import_contains_type(line: String, type_name: String) -> Bool {
   case string.split_once(line, "{") {
@@ -542,8 +544,9 @@ fn check_wisp_request_import(content: String) -> Bool {
 }
 
 /// Handlers with validators can use `Data` as a type if they
-/// import it from the validator module. We track which 
-/// validators have Data imported to validate handler parameters.
+/// import it from the validator module. We track which
+/// validators have Data imported to validate handler
+/// parameters.
 ///
 fn extract_validator_data_imports(content: String) -> List(String) {
   content

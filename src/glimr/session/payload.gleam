@@ -16,10 +16,10 @@ import gleam/list
 // ------------------------------------------------------------- Public Functions
 
 /// Data and flash are namespaced under "_data" and "_flash"
-/// keys rather than merged flat so neither can collide with the 
-/// other — a session key called "_flash" won't shadow the 
-/// actual flash dict. JSON was chosen over ETF or other formats 
-/// because the cookie store sends it to browsers where binary 
+/// keys rather than merged flat so neither can collide with the
+/// other — a session key called "_flash" won't shadow the
+/// actual flash dict. JSON was chosen over ETF or other formats
+/// because the cookie store sends it to browsers where binary
 /// Erlang terms wouldn't be readable.
 ///
 pub fn encode(data: Dict(String, String), flash: Dict(String, String)) -> String {

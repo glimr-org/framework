@@ -1,5 +1,5 @@
 import glimr/console/command.{type Args, type Command, Flag}
-import glimr/db/pool_connection.{type DbPool}
+import glimr/db/db.{type DbPool}
 import glimr/internal/actions/run_fresh
 import glimr/internal/actions/run_migrate
 

@@ -1,12 +1,13 @@
 //// Database Configuration
 ////
 //// An app may have multiple database connections (primary,
-//// read replica, analytics) across different engines (Postgres,
-//// SQLite). Parsing the TOML file once and caching the result
-//// in persistent_term lets every process access the connection
-//// list without re-reading the file or re-resolving env vars.
-//// The ${VAR} syntax keeps credentials out of version control
-//// while allowing per-environment configuration.
+//// read replica, analytics) across different engines
+//// (Postgres, SQLite). Parsing the TOML file once and caching
+//// the result in persistent_term lets every process access the
+//// connection list without re-reading the file or re-resolving
+//// env vars. The ${VAR} syntax keeps credentials out of
+//// version control while allowing per-environment
+//// configuration.
 ////
 
 import gleam/dict
@@ -20,12 +21,12 @@ import tom
 
 // ------------------------------------------------------------- Public Functions
 
-/// Called by start functions and console commands that need
-/// the connection list, so it must be fast on repeated calls.
-/// The persistent_term cache makes subsequent calls near-zero-
+/// Called by start functions and console commands that need the
+/// connection list, so it must be fast on repeated calls. The
+/// persistent_term cache makes subsequent calls near-zero-
 /// cost. Returning an empty list on missing or invalid config
-/// lets apps start without a database.toml file — not every
-/// app uses a database.
+/// lets apps start without a database.toml file — not every app
+/// uses a database.
 ///
 pub fn load() -> List(Connection) {
   case get_cached() {
@@ -64,8 +65,8 @@ fn load_from_file() -> List(Connection) {
 /// The [connections.*] nesting lets users define multiple named
 /// connections (e.g., default, readonly, analytics) each with
 /// its own driver and credentials. Iterating dict.to_list
-/// preserves all entries so no connection definition is silently
-/// dropped.
+/// preserves all entries so no connection definition is
+/// silently dropped.
 ///
 fn parse(content: String) -> List(Connection) {
   case tom.parse(content) {
@@ -87,10 +88,10 @@ fn parse(content: String) -> List(Connection) {
 }
 
 /// Each driver string maps to a specific Connection variant
-/// with its own required fields. Defaulting to PostgresConnection
-/// for unknown or missing driver values preserves backward
-/// compatibility — configs written before the driver field existed
-/// continue working without changes.
+/// with its own required fields. Defaulting to
+/// PostgresConnection for unknown or missing driver values
+/// preserves backward compatibility — configs written before
+/// the driver field existed continue working without changes.
 ///
 fn parse_connection(name: String, toml: tom.Toml) -> Connection {
   let driver = config.get_string(toml, "driver", "postgres")
@@ -133,10 +134,10 @@ fn parse_connection(name: String, toml: tom.Toml) -> Connection {
 
 // ------------------------------------------------------------- FFI Bindings
 
-/// Stores the parsed connection list in persistent_term so every
-/// subsequent call to load() across all BEAM processes gets a
-/// near-zero-cost read instead of re-parsing TOML and re-
-/// resolving env vars.
+/// Stores the parsed connection list in persistent_term so
+/// every subsequent call to load() across all BEAM processes
+/// gets a near-zero-cost read instead of re-parsing TOML and
+/// re- resolving env vars.
 ///
 @external(erlang, "glimr_kernel_ffi", "cache_db_config")
 fn cache(connections: List(Connection)) -> Nil
@@ -150,8 +151,8 @@ fn cache(connections: List(Connection)) -> Nil
 fn get_cached() -> Result(List(Connection), Nil)
 
 /// Erases the persistent_term entry so the next load() call
-/// falls through to load_from_file(). Used by clear_cache()
-/// to support tests that need to swap configs between runs.
+/// falls through to load_from_file(). Used by clear_cache() to
+/// support tests that need to swap configs between runs.
 ///
 @external(erlang, "glimr_kernel_ffi", "clear_db_config")
 fn do_clear_cache() -> Nil

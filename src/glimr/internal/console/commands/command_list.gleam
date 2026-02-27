@@ -94,7 +94,8 @@ fn print_commands(registry: dict.Dict(String, CommandInfo)) -> Nil {
   })
 }
 
-/// Groups commands by their prefix (first part before underscore).
+/// Groups commands by their prefix (first part before
+/// underscore).
 ///
 fn group_by_prefix(
   commands: List(#(String, String)),

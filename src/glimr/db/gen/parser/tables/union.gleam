@@ -9,9 +9,9 @@ import gleam/string
 
 // ------------------------------------------------------------- Public Functions
 
-/// Split SQL query on UNION and UNION ALL keywords, returning
-/// a list of individual query parts. Preserves original case
-/// and handles both UNION and UNION ALL.
+/// Split SQL query on UNION and UNION ALL keywords, returning a
+/// list of individual query parts. Preserves original case and
+/// handles both UNION and UNION ALL.
 ///
 pub fn split(sql: String) -> List(String) {
   do_split(string.uppercase(sql), sql, [])
@@ -39,8 +39,8 @@ fn do_split(upper: String, original: String, acc: List(String)) -> List(String) 
 }
 
 /// Attempt to split on a separator, returning the before part
-/// (from original), and the after parts (both upper and original)
-/// for continued processing.
+/// (from original), and the after parts (both upper and
+/// original) for continued processing.
 ///
 fn try_split_on_separator(
   upper: String,

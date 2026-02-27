@@ -36,9 +36,10 @@ import mist.{
 
 /// A single WebSocket connection multiplexes multiple live
 /// components. Each component's actor is stored in a dict keyed
-/// by the client-assigned component ID. The shared reply_subject
-/// receives messages from all actors; the id field in each
-/// message identifies which component it belongs to.
+/// by the client-assigned component ID. The shared
+/// reply_subject receives messages from all actors; the id
+/// field in each message identifies which component it belongs
+/// to.
 ///
 pub type WsState {
   WsState(
@@ -63,8 +64,8 @@ pub type EventMessage {
   EventMessage(id: String, event: ClientEvent)
 }
 
-/// A leave message tells the server to stop the actor for
-/// the given component id.
+/// A leave message tells the server to stop the actor for the
+/// given component id.
 ///
 pub type LeaveMessage {
   LeaveMessage(id: String)
@@ -197,10 +198,10 @@ fn handle_message(
 }
 
 /// Validates the module against the registry, verifies the
-/// token, and starts a new live_socket actor for this component.
-/// A failed join sends an error message but does NOT kill the
-/// connection — other components on the same page continue
-/// working.
+/// token, and starts a new live_socket actor for this
+/// component. A failed join sends an error message but does NOT
+/// kill the connection — other components on the same page
+/// continue working.
 ///
 fn handle_join(
   state: WsState,
@@ -276,7 +277,8 @@ fn handle_leave(
   }
 }
 
-/// Sends a JSON message with a type and a single key-value pair.
+/// Sends a JSON message with a type and a single key-value
+/// pair.
 ///
 fn send_json(
   conn: WebsocketConnection,
@@ -325,7 +327,8 @@ fn parse_join_message(text: String) -> Result(JoinMessage, Nil) {
   |> result.replace_error(Nil)
 }
 
-/// Parses an event message: {type: "event", id, handler, event, special_vars}.
+/// Parses an event message: {type: "event", id, handler, event,
+/// special_vars}.
 ///
 fn parse_event_message(text: String) -> Result(EventMessage, Nil) {
   let special_vars_decoder = {

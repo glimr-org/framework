@@ -12,8 +12,8 @@ import gleam/list
 import gleam/result
 import gleam/string
 import glimr/console/console
+import glimr/db/db.{type DbPool}
 import glimr/db/migrate
-import glimr/db/pool_connection.{type DbPool}
 
 // ------------------------------------------------------------- Public Functions
 
@@ -23,7 +23,7 @@ import glimr/db/pool_connection.{type DbPool}
 /// confusing downstream failures.
 ///
 pub fn run(pool: DbPool, database: String) -> Nil {
-  use conn <- pool_connection.get_connection(pool)
+  use conn <- db.get_connection(pool)
 
   let setup = {
     use _ <- result.try(
@@ -63,7 +63,7 @@ pub fn run(pool: DbPool, database: String) -> Nil {
 /// migrations" as a gate.
 ///
 pub fn show_status(pool: DbPool, database: String) -> Nil {
-  use conn <- pool_connection.get_connection(pool)
+  use conn <- db.get_connection(pool)
 
   {
     use _ <- result.try(migrate.ensure_table(conn) |> result.replace_error(Nil))
@@ -87,10 +87,7 @@ pub fn show_status(pool: DbPool, database: String) -> Nil {
 /// instead of silently succeeding, which helps developers
 /// confirm their migration file was actually picked up.
 ///
-fn apply_pending(
-  conn: pool_connection.Connection,
-  pending: List(migrate.Migration),
-) -> Nil {
+fn apply_pending(conn: db.Connection, pending: List(migrate.Migration)) -> Nil {
   case pending {
     [] ->
       console.output()

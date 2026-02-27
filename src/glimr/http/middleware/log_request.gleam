@@ -1,11 +1,11 @@
 //// Log Request Middleware
 ////
-//// Without centralized request logging, every handler
-//// would need its own log call to track incoming requests
-//// — that's both repetitive and fragile since a forgotten
-//// log means blind spots in production. Placing logging as
-//// middleware ensures every request is recorded regardless
-//// of which handler serves it.
+//// Without centralized request logging, every handler would
+//// need its own log call to track incoming requests — that's
+//// both repetitive and fragile since a forgotten log means
+//// blind spots in production. Placing logging as middleware
+//// ensures every request is recorded regardless of which
+//// handler serves it.
 ////
 
 import glimr/http/kernel.{type Next}

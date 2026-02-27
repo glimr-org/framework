@@ -4,9 +4,9 @@
 //// you already have PostgreSQL or SQLite, why not use it? This
 //// backend stores cached values in a regular database table,
 //// with the same API as every other backend. Both Postgres and
-//// SQLite share the exact same SQL thanks to pool_connection's
-//// placeholder conversion; the only difference is the integer
-//// type for the expiration column.
+//// SQLite share the exact same SQL thanks to db's placeholder
+//// conversion; the only difference is the integer type for the
+//// expiration column.
 
 import gleam/dynamic/decode
 import gleam/int
@@ -17,7 +17,7 @@ import glimr/cache/cache.{
 }
 import glimr/cache/driver.{type CacheStore, DatabaseStore}
 import glimr/config/cache as cache_config
-import glimr/db/pool_connection.{type DbPool}
+import glimr/db/db.{type DbPool}
 import glimr/utils/unix_timestamp
 
 // ------------------------------------------------------------- Public Functions
@@ -44,9 +44,9 @@ pub fn start(db_pool: DbPool, name: String) -> CachePool {
 /// they're actually using.
 ///
 pub fn create_table(db_pool: DbPool, table: String) -> Result(Nil, CacheError) {
-  let int_type = case pool_connection.pool_driver(db_pool) {
-    pool_connection.Postgres -> "BIGINT"
-    pool_connection.Sqlite -> "INTEGER"
+  let int_type = case db.pool_driver(db_pool) {
+    db.Postgres -> "BIGINT"
+    db.Sqlite -> "INTEGER"
   }
 
   let sql = "CREATE TABLE IF NOT EXISTS " <> table <> " (
@@ -55,7 +55,7 @@ pub fn create_table(db_pool: DbPool, table: String) -> Result(Nil, CacheError) {
     expiration " <> int_type <> " NOT NULL
   )"
 
-  case pool_connection.exec(db_pool, sql, []) {
+  case db.exec(db_pool, sql, []) {
     Ok(_) -> Ok(Nil)
     Error(e) ->
       Error(ConnectionError(
@@ -79,8 +79,8 @@ pub fn cleanup_expired(
     "DELETE FROM " <> table <> " WHERE expiration > 0 AND expiration <= $1"
 
   case
-    pool_connection.exec(db_pool, sql, [
-      pool_connection.int(now),
+    db.exec(db_pool, sql, [
+      db.int(now),
     ])
   {
     Ok(_) -> Ok(Nil)
@@ -134,14 +134,14 @@ fn db_get(
     <> " WHERE key = $1 AND (expiration = 0 OR expiration > $2)"
 
   case
-    pool_connection.query(
+    db.query(
       db_pool,
       sql,
-      [pool_connection.string(key), pool_connection.int(now)],
+      [db.string(key), db.int(now)],
       decode.at([0], decode.string),
     )
   {
-    Ok(pool_connection.QueryResult(_, [value])) -> Ok(value)
+    Ok(db.QueryResult(_, [value])) -> Ok(value)
     Ok(_) -> Error(NotFound)
     Error(e) ->
       Error(ConnectionError("Failed to get cache key: " <> string.inspect(e)))
@@ -191,8 +191,8 @@ fn db_forget(
   let sql = "DELETE FROM " <> table <> " WHERE key = $1"
 
   case
-    pool_connection.exec(db_pool, sql, [
-      pool_connection.string(key),
+    db.exec(db_pool, sql, [
+      db.string(key),
     ])
   {
     Ok(_) -> Ok(Nil)
@@ -209,7 +209,7 @@ fn db_forget(
 fn db_flush(db_pool: DbPool, table: String) -> Result(Nil, CacheError) {
   let sql = "DELETE FROM " <> table
 
-  case pool_connection.exec(db_pool, sql, []) {
+  case db.exec(db_pool, sql, []) {
     Ok(_) -> Ok(Nil)
     Error(e) ->
       Error(ConnectionError("Failed to flush cache: " <> string.inspect(e)))
@@ -277,15 +277,8 @@ fn get_expiration(
 ) -> Result(Int, CacheError) {
   let sql = "SELECT expiration FROM " <> table <> " WHERE key = $1"
 
-  case
-    pool_connection.query(
-      db_pool,
-      sql,
-      [pool_connection.string(key)],
-      decode.at([0], decode.int),
-    )
-  {
-    Ok(pool_connection.QueryResult(_, [exp])) -> Ok(exp)
+  case db.query(db_pool, sql, [db.string(key)], decode.at([0], decode.int)) {
+    Ok(db.QueryResult(_, [exp])) -> Ok(exp)
     Ok(_) -> Error(NotFound)
     Error(e) ->
       Error(ConnectionError("Failed to get expiration: " <> string.inspect(e)))
@@ -310,10 +303,10 @@ fn put_with_expiration(
     ON CONFLICT (key) DO UPDATE SET value = excluded.value, expiration = excluded.expiration"
 
   case
-    pool_connection.exec(db_pool, sql, [
-      pool_connection.string(key),
-      pool_connection.string(value),
-      pool_connection.int(expiration),
+    db.exec(db_pool, sql, [
+      db.string(key),
+      db.string(value),
+      db.int(expiration),
     ])
   {
     Ok(_) -> Ok(Nil)

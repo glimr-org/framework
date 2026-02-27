@@ -1,24 +1,25 @@
 //// Database Connection Configuration
 ////
-//// Provides connection types for configuring database connections
-//// in a type-safe way. Users define connections in their
-//// database_provider.gleam file which is loaded at runtime.
+//// Provides connection types for configuring database
+//// connections in a type-safe way. Users define connections in
+//// their database_provider.gleam file which is loaded at
+//// runtime.
 
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
-import glimr/db/pool_connection.{type Config}
+import glimr/db/db.{type Config}
 
 // ------------------------------------------------------------- Public Types
 
-/// Represents a named database connection configuration.
-/// Each connection has a name that identifies it and connection
+/// Represents a named database connection configuration. Each
+/// connection has a name that identifies it and connection
 /// parameters specific to the database type.
 ///
-/// Use `PostgresUriConnection` for PostgreSQL with a connection URL.
-/// Use `PostgresConnection` for PostgreSQL with individual parameters.
-/// Use `SqliteConnection` for SQLite databases.
+/// Use `PostgresUriConnection` for PostgreSQL with a connection
+/// URL. Use `PostgresConnection` for PostgreSQL with individual
+/// parameters. Use `SqliteConnection` for SQLite databases.
 ///
 pub type Connection {
   PostgresUriConnection(
@@ -77,8 +78,8 @@ pub fn connection_name(connection: Connection) -> String {
   }
 }
 
-/// Returns a new connection with the pool size overridden to 
-/// the specified value. Useful for console commands that only 
+/// Returns a new connection with the pool size overridden to
+/// the specified value. Useful for console commands that only
 /// need a single connection.
 ///
 pub fn with_pool_size(connection: Connection, size: Int) -> Connection {
@@ -100,16 +101,15 @@ pub fn with_pool_size(connection: Connection, size: Int) -> Connection {
   }
 }
 
-/// Converts a Connection to a pool_connection.Config. Panics 
-/// with a helpful message if any required environment variables 
-/// are missing.
+/// Converts a Connection to a db.Config. Panics with a helpful
+/// message if any required environment variables are missing.
 ///
 pub fn to_config(connection: Connection) -> Config {
   case connection {
     PostgresUriConnection(name, url_result, pool_size_r) -> {
       let url = unwrap_or_panic(url_result, name, "url")
       let pool_size = unwrap_or_panic(pool_size_r, name, "pool_size")
-      pool_connection.postgres_config(url, pool_size: pool_size)
+      db.postgres_config(url, pool_size: pool_size)
     }
 
     PostgresConnection(
@@ -130,7 +130,7 @@ pub fn to_config(connection: Connection) -> Config {
         Error(_) -> None
       }
       let pool_size = unwrap_or_panic(pool_size_r, name, "pool_size")
-      pool_connection.postgres_params_config(
+      db.postgres_params_config(
         host: host,
         port: port,
         database: database,
@@ -143,7 +143,7 @@ pub fn to_config(connection: Connection) -> Config {
     SqliteConnection(name, database_r, pool_size_r) -> {
       let database = unwrap_or_panic(database_r, name, "database")
       let pool_size = unwrap_or_panic(pool_size_r, name, "pool_size")
-      pool_connection.sqlite_config(database, pool_size: pool_size)
+      db.sqlite_config(database, pool_size: pool_size)
     }
   }
 }
@@ -211,9 +211,20 @@ pub fn validate(connection: Connection) -> List(String) {
   }
 }
 
-/// Searches through a list of connections to find one with
-/// the specified name. Returns Ok with the connection if found,
-/// or Error(Nil) if no connection matches the given name.
+/// Finds a connection by name from a list of connections.
+/// Returns Error(Nil) if the connection is not found instead of
+/// panicking. Useful when connection existence is uncertain.
+///
+pub fn get_connection_safe(
+  connections: List(Connection),
+  name: String,
+) -> Result(Connection, Nil) {
+  list.find(connections, fn(c: Connection) { c.name == name })
+}
+
+/// Searches through a list of connections to find one with the
+/// specified name. Returns Ok with the connection if found, or
+/// Error(Nil) if no connection matches the given name.
 ///
 pub fn find_by_name(name: String, connections: List(Connection)) -> Connection {
   let conn =
@@ -233,7 +244,7 @@ pub fn find_by_name(name: String, connections: List(Connection)) -> Connection {
 // ------------------------------------------------------------- Private Functions
 
 /// Unwraps a Result or panics with a helpful error message
-/// indicating which connection and parameter is missing. Used 
+/// indicating which connection and parameter is missing. Used
 /// internally to provide clear configuration error messages.
 ///
 fn unwrap_or_panic(
@@ -254,9 +265,9 @@ fn unwrap_or_panic(
   }
 }
 
-/// Converts a snake_case or lowercase name to PascalCase.
-/// Used for generating type names from connection names.
-/// Splits on underscores and capitalizes each segment.
+/// Converts a snake_case or lowercase name to PascalCase. Used
+/// for generating type names from connection names. Splits on
+/// underscores and capitalizes each segment.
 ///
 pub fn to_pascal_case(name: String) -> String {
   name

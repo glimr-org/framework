@@ -1,5 +1,5 @@
 import glimr/console/command.{type Command, type Args}
-import glimr/db/pool_connection.{type DbPool}
+import glimr/db/db.{type DbPool}
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#console-commands
 

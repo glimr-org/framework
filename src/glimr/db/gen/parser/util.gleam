@@ -1,7 +1,8 @@
 //// SQL Parser Utilities
 ////
-//// Shared utility functions for SQL parsing including character
-//// classification, identifier extraction, and keyword detection.
+//// Shared utility functions for SQL parsing including
+//// character classification, identifier extraction, and
+//// keyword detection.
 
 import gleam/int
 import gleam/list
@@ -19,8 +20,8 @@ pub const identifier_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX
 // ------------------------------------------------------------- Public Functions
 
 /// Remove content from single-quoted string literals to prevent
-/// false positives when parsing SQL keywords. Replaces 'content'
-/// with '' to preserve SQL structure.
+/// false positives when parsing SQL keywords. Replaces
+/// 'content' with '' to preserve SQL structure.
 ///
 pub fn strip_string_literals(sql: String) -> String {
   do_strip_string_literals(sql, "", False)
@@ -63,7 +64,7 @@ pub fn is_identifier_char(c: String) -> Bool {
 
 /// Extract a SQL identifier (table or column name) from the
 /// start of a string. Handles both regular identifiers and
-/// double-quoted identifiers like "table-name" or 
+/// double-quoted identifiers like "table-name" or
 /// "schema"."table".
 ///
 pub fn extract_identifier(s: String) -> String {
@@ -89,9 +90,9 @@ pub fn extract_last_identifier(s: String) -> String {
 }
 
 /// Recursive helper that extracts valid identifier characters
-/// from a reversed character list. Used by 
-/// extract_last_identifier to work backwards from the end of 
-/// a string.
+/// from a reversed character list. Used by
+/// extract_last_identifier to work backwards from the end of a
+/// string.
 ///
 fn extract_identifier_chars(chars: List(String), acc: List(String)) -> String {
   case chars {
@@ -239,7 +240,7 @@ fn extract_quoted_identifier(s: String, acc: String) -> String {
 }
 
 /// Handle what comes after a closing quote. Checks for a dot
-/// separator indicating schema.table patterns like 
+/// separator indicating schema.table patterns like
 /// "schema"."table" or "schema".table.
 ///
 fn after_closing_quote(s: String, acc: String) -> String {

@@ -34,8 +34,8 @@ fn strip_comments(sql: String) -> String {
 }
 
 /// Recursively strip multi-line comments from SQL which would
-/// be /* */ block comments specifically. This ensures
-/// block comments are not parsed as valid SQL.
+/// be /* */ block comments specifically. This ensures block
+/// comments are not parsed as valid SQL.
 ///
 fn strip_block_comments(sql: String) -> String {
   case string.split_once(sql, "/*") {

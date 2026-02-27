@@ -1,9 +1,9 @@
 //// Router
 ////
 //// Pattern matching router with prefix-based route groups for
-//// organizing routes with shared middleware. Provides type-safe
-//// parameter extraction and lazy loading of route handlers
-//// based on URL prefix matching.
+//// organizing routes with shared middleware. Provides
+//// type-safe parameter extraction and lazy loading of route
+//// handlers based on URL prefix matching.
 
 import gleam/http.{type Method}
 import gleam/http/response
@@ -32,15 +32,14 @@ pub type RouteGroup(context) {
 /// request path against registered route groups, applies
 /// middleware, and calls the route handler with the full path.
 ///
-/// Route groups are checked in order. The first matching
-/// prefix wins. Empty prefix ("") acts as a catch-all and
-/// should always be last in your route group list.
+/// Route groups are checked in order. The first matching prefix
+/// wins. Empty prefix ("") acts as a catch-all and should
+/// always be last in your route group list.
 ///
-/// Flow for GET /api/users/123:
-/// 1. Parse path into ["api", "users", "123"]
-/// 2. Find group with prefix "/api"
-/// 3. Apply API middleware group
-/// 4. Call routes(["api", "users", "123"], Get, req, ctx)
+/// Flow for GET /api/users/123: 1. Parse path into ["api",
+/// "users", "123"] 2. Find group with prefix "/api" 3. Apply
+/// API middleware group 4. Call routes(["api", "users", "123"],
+/// Get, req, ctx)
 ///
 pub fn handle(
   req: Request,
@@ -91,9 +90,9 @@ pub fn handle(
 }
 
 /// Registers route groups by loading config from
-/// config/route_group.toml and attaching route handlers.
-/// Takes a loader function that returns the routes function
-/// for each named group.
+/// config/route_group.toml and attaching route handlers. Takes
+/// a loader function that returns the routes function for each
+/// named group.
 ///
 pub fn register(
   routes_for: fn(String) ->
@@ -112,8 +111,8 @@ pub fn register(
 // ------------------------------------------------------------- Private Functions
 
 /// Checks if a list starts with a given prefix. Used to match
-/// URL path segments against route group prefixes. Returns True 
-/// if list begins with all elements in prefix, False otherwise. 
+/// URL path segments against route group prefixes. Returns True
+/// if list begins with all elements in prefix, False otherwise.
 /// Empty prefix always matches.
 ///
 fn starts_with(list: List(a), prefix: List(a)) -> Bool {

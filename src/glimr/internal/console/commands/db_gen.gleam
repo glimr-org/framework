@@ -3,9 +3,9 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 import glimr/console/command.{type Args, type Command, Flag, Option as CmdOption}
 import glimr/console/console
+import glimr/db/db.{type DbPool}
 import glimr/db/gen as db_gen
 import glimr/db/gen/migrate as gen_migrate
-import glimr/db/pool_connection.{type DbPool}
 import glimr/internal/actions/run_migrate
 import simplifile
 

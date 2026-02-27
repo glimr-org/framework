@@ -45,8 +45,8 @@ fn do_extract(sql: String) -> Result(List(#(Int, String)), Nil) {
   Ok(parse_set_assignments(set_clause))
 }
 
-/// Parse SET clause assignments like "col = $1, col2 = $2"
-/// and extract parameter-to-column mappings. Only includes
+/// Parse SET clause assignments like "col = $1, col2 = $2" and
+/// extract parameter-to-column mappings. Only includes
 /// assignments where the value is a parameter placeholder.
 ///
 fn parse_set_assignments(clause: String) -> List(#(Int, String)) {
@@ -74,9 +74,9 @@ fn parse_set_assignments(clause: String) -> List(#(Int, String)) {
   })
 }
 
-/// Extract only the leading digits from a string. Used to
-/// parse parameter numbers that may have trailing content
-/// like commas or spaces.
+/// Extract only the leading digits from a string. Used to parse
+/// parameter numbers that may have trailing content like commas
+/// or spaces.
 ///
 fn extract_digits(s: String) -> String {
   let #(digits, _) = util.consume_digits(s, "")

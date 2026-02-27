@@ -78,7 +78,8 @@ pub fn create_model(model_name: String, connection: String) -> Nil {
 
 /// Scaffolds the loader middleware that resolves the current
 /// user from the session and loads the full model from the
-/// database. Written to src/app/http/middleware/load_{model}.gleam.
+/// database. Written to
+/// src/app/http/middleware/load_{model}.gleam.
 ///
 pub fn create_load_middleware(
   model_name: String,
@@ -98,8 +99,8 @@ pub fn create_load_middleware(
 
 /// Scaffolds the auth guard middleware that redirects
 /// unauthenticated users. Written to
-/// src/app/http/middleware/auth/{model}.gleam so it works
-/// with @middleware "auth/{model}".
+/// src/app/http/middleware/auth/{model}.gleam so it works with
+/// @middleware "auth/{model}".
 ///
 pub fn create_auth_middleware(model_name: String) -> Nil {
   let file_path = "src/app/http/middleware/auth/" <> model_name <> ".gleam"
@@ -111,8 +112,8 @@ pub fn create_auth_middleware(model_name: String) -> Nil {
 
 /// Scaffolds the guest guard middleware that redirects
 /// authenticated users away. Written to
-/// src/app/http/middleware/guest/{model}.gleam so it works
-/// with @middleware "guest/{model}".
+/// src/app/http/middleware/guest/{model}.gleam so it works with
+/// @middleware "guest/{model}".
 ///
 pub fn create_guest_middleware(model_name: String) -> Nil {
   let file_path = "src/app/http/middleware/guest/" <> model_name <> ".gleam"
@@ -123,9 +124,9 @@ pub fn create_guest_middleware(model_name: String) -> Nil {
 }
 
 /// Patches the kernel file to import and register the load
-/// middleware for this model. Inserts the import after the
-/// last import line and adds load_{model}.run after the last
-/// .run entry in each middleware group.
+/// middleware for this model. Inserts the import after the last
+/// import line and adds load_{model}.run after the last .run
+/// entry in each middleware group.
 ///
 pub fn register_in_kernel(model_name: String) -> Nil {
   let kernel_path = "src/app/http/kernel.gleam"
@@ -163,9 +164,8 @@ pub fn register_in_kernel(model_name: String) -> Nil {
 }
 
 /// Patches the context file to add a typed field for this
-/// model. Inserts {model}: Option({model}.Model)
-/// into the Context type constructor, along with the
-/// repository import.
+/// model. Inserts {model}: Option({model}.Model) into the
+/// Context type constructor, along with the repository import.
 ///
 pub fn register_in_context(model_name: String, connection: String) -> Nil {
   let ctx_path = "src/app/http/context/ctx.gleam"
@@ -238,8 +238,8 @@ pub fn register_in_ctx_provider(model_name: String) -> Nil {
   }
 }
 
-/// Pure string transformation for kernel injection. Exposed
-/// as public so the test suite can verify the transformation
+/// Pure string transformation for kernel injection. Exposed as
+/// public so the test suite can verify the transformation
 /// without touching the filesystem.
 ///
 pub fn inject_into_kernel(content: String, model_name: String) -> String {
@@ -253,8 +253,8 @@ pub fn inject_into_kernel(content: String, model_name: String) -> String {
   string.join(lines, "\n")
 }
 
-/// Pure string transformation for context injection. Exposed
-/// as public so the test suite can verify the transformation
+/// Pure string transformation for context injection. Exposed as
+/// public so the test suite can verify the transformation
 /// without touching the filesystem. Adds a typed field using
 /// the generated repository's model type.
 ///
@@ -293,8 +293,8 @@ pub fn inject_into_context(
   string.join(lines, "\n")
 }
 
-/// Pure string transformation for ctx_provider injection.
-/// Adds option.None initialization for the model field in the
+/// Pure string transformation for ctx_provider injection. Adds
+/// option.None initialization for the model field in the
 /// Context constructor, and ensures gleam/option is imported.
 ///
 pub fn inject_into_ctx_provider(content: String, model_name: String) -> String {
@@ -416,8 +416,8 @@ fn insert_import(lines: List(String), import_line: String) -> List(String) {
 }
 
 /// Scans all lines to find the last import rather than stopping
-/// at the first gap, because gleam format may insert blank lines
-/// between import groups.
+/// at the first gap, because gleam format may insert blank
+/// lines between import groups.
 ///
 fn find_last_import_index(lines: List(String), current: Int, last: Int) -> Int {
   case lines {
@@ -435,7 +435,8 @@ fn find_last_import_index(lines: List(String), current: Int, last: Int) -> Int {
 /// Finds every middleware list in the kernel and appends the
 /// new .run entry after the last .run entry in each list.
 /// Inserting at the end means the loader runs after all other
-/// middleware, which is correct since it depends on the session.
+/// middleware, which is correct since it depends on the
+/// session.
 ///
 fn insert_middleware_entries(lines: List(String), entry: String) -> List(String) {
   insert_middleware_entries_loop(lines, entry, -1, 0, [])
@@ -554,10 +555,10 @@ fn insert_context_field_loop(
 }
 
 /// Expands single-line record constructors into multi-line so
-/// the field scanner can work uniformly. Detects lines like
-/// `  Context(field: Type, field: Type)` and splits them into
-/// one field per line. Already multi-line constructors pass
-/// through unchanged.
+/// the field scanner can work uniformly. Detects lines like `
+/// Context(field: Type, field: Type)` and splits them into one
+/// field per line. Already multi-line constructors pass through
+/// unchanged.
 ///
 fn expand_single_line_constructor(lines: List(String)) -> List(String) {
   list.flat_map(lines, fn(line) {
@@ -634,8 +635,8 @@ fn get_indent_loop(chars: List(String), acc: String) -> String {
 
 /// Gleam lists don't support random access, so this walks to
 /// the target index. Used only to grab the indentation of a
-/// known .run line, so the O(n) cost is negligible on the
-/// small line counts of a kernel file.
+/// known .run line, so the O(n) cost is negligible on the small
+/// line counts of a kernel file.
 ///
 fn get_at(lines: List(String), index: Int) -> String {
   case lines, index {
@@ -647,9 +648,9 @@ fn get_at(lines: List(String), index: Int) -> String {
 
 /// Gleam's immutable lists have no splice operation, so this
 /// rebuilds the list with a new value at the target position.
-/// Shared by import, middleware, and context field injection
-/// to avoid duplicating the same accumulator-reversal pattern
-/// in each caller.
+/// Shared by import, middleware, and context field injection to
+/// avoid duplicating the same accumulator-reversal pattern in
+/// each caller.
 ///
 fn insert_at(lines: List(String), index: Int, value: String) -> List(String) {
   insert_at_loop(lines, index, value, 0, [])

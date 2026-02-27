@@ -1,11 +1,11 @@
 //// Console Output Helpers
 ////
-//// Raw ANSI escape codes scattered across command handlers
-//// are hard to read and easy to get wrong (missing resets
-//// leave the whole terminal colored). These helpers wrap
-//// the codes so callers just pick a semantic level like
-//// success or error, and the Output builder lets multi-line
-//// output be composed via pipes then flushed at once.
+//// Raw ANSI escape codes scattered across command handlers are
+//// hard to read and easy to get wrong (missing resets leave
+//// the whole terminal colored). These helpers wrap the codes
+//// so callers just pick a semantic level like success or
+//// error, and the Output builder lets multi-line output be
+//// composed via pipes then flushed at once.
 
 import gleam/io
 import gleam/list
@@ -14,8 +14,8 @@ import gleam/list
 
 /// Buffering lines before printing lets callers build complex
 /// output via pipes without interleaving with other console
-/// writes. Flushing all at once keeps related lines grouped
-/// in the terminal.
+/// writes. Flushing all at once keeps related lines grouped in
+/// the terminal.
 ///
 pub type Output {
   Output(lines: List(String))
@@ -99,8 +99,8 @@ pub fn info(output: String) -> String {
 
 /// Starting with an empty Output lets callers build up lines
 /// incrementally via pipes. This is cleaner than calling
-/// io.println multiple times because the output is buffered
-/// and flushed together.
+/// io.println multiple times because the output is buffered and
+/// flushed together.
 ///
 /// *Example*
 ///
@@ -168,9 +168,9 @@ pub fn line_success(output: Output, message: String) -> Output {
   line(output, success(message))
 }
 
-/// Shorthand that avoids nesting error() inside line() at
-/// every call site. Red-colored errors stand out immediately
-/// in terminal output.
+/// Shorthand that avoids nesting error() inside line() at every
+/// call site. Red-colored errors stand out immediately in
+/// terminal output.
 ///
 /// *Example*
 ///
@@ -200,9 +200,9 @@ pub fn line_warning(output: Output, message: String) -> Output {
   line(output, warning(message))
 }
 
-/// Shorthand that avoids nesting info() inside line() at
-/// every call site. Blue info lines distinguish progress
-/// messages from results.
+/// Shorthand that avoids nesting info() inside line() at every
+/// call site. Blue info lines distinguish progress messages
+/// from results.
 ///
 /// *Example*
 ///
@@ -216,9 +216,9 @@ pub fn line_info(output: Output, message: String) -> Output {
   line(output, info(message))
 }
 
-/// Flushing all buffered lines at once keeps the output
-/// grouped in the terminal. This is the terminal step of the
-/// Output builder chain.
+/// Flushing all buffered lines at once keeps the output grouped
+/// in the terminal. This is the terminal step of the Output
+/// builder chain.
 ///
 /// *Example*
 ///
@@ -232,8 +232,8 @@ pub fn print(output: Output) -> Nil {
   do_print(output.lines)
 }
 
-/// Immediately terminates the BEAM process with the given exit 
-/// code. Use this to signal success (0) or failure (non-zero) 
+/// Immediately terminates the BEAM process with the given exit
+/// code. Use this to signal success (0) or failure (non-zero)
 /// to the calling shell or parent process.
 ///
 pub fn halt(code: Int) -> Nil {
@@ -260,8 +260,8 @@ fn do_print(lines: List(String)) -> Nil {
 
 // ------------------------------------------------------------- FFI Bindings
 
-/// FFI binding to Erlang's halt/1 which forces an immediate 
-/// shutdown of the runtime. Bypasses normal cleanup so it 
+/// FFI binding to Erlang's halt/1 which forces an immediate
+/// shutdown of the runtime. Bypasses normal cleanup so it
 /// should only be used for final exits.
 ///
 @external(erlang, "erlang", "halt")

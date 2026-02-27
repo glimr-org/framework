@@ -1,7 +1,7 @@
 import glimr/config/database
 import glimr/console/command.{type Args, type Command, Argument, Flag}
 import glimr/console/console
-import glimr/db/db
+import glimr/db/driver
 import glimr/internal/actions/run_setup_db
 
 /// The console command description.
@@ -31,7 +31,7 @@ fn run(args: Args) -> Nil {
   let connections = database.load()
 
   // Validate that the connection exists in config
-  case db.get_connection_safe(connections, name) {
+  case driver.get_connection_safe(connections, name) {
     Error(_) -> {
       console.output()
       |> console.line_error(

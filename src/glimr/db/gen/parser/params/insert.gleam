@@ -1,8 +1,8 @@
 //// INSERT Parameter Extraction
 ////
 //// Functions for extracting parameter-to-column mappings from
-//// INSERT statements. Handles the VALUES clause to match column
-//// positions with parameter positions.
+//// INSERT statements. Handles the VALUES clause to match
+//// column positions with parameter positions.
 
 import gleam/list
 import gleam/option

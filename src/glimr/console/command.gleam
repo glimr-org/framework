@@ -22,8 +22,8 @@ import glimr/cache/file as cache_file
 import glimr/config/cache as cache_config
 import glimr/config/database
 import glimr/console/console
+import glimr/db/db.{type Config, type DbPool}
 import glimr/db/driver
-import glimr/db/pool_connection.{type Config, type DbPool}
 import glimr/glimr
 import glimr/internal/config
 
@@ -445,7 +445,7 @@ fn with_cache_pool(args: Args, user_handler: fn(Args, CachePool) -> Nil) -> Nil 
         Ok(db_pool) -> {
           let pool = cache_database.start_with_table(db_pool, table)
           user_handler(args, pool)
-          pool_connection.stop_pool(db_pool)
+          db.stop_pool(db_pool)
         }
         Error(msg) -> {
           console.output()
@@ -500,7 +500,7 @@ fn with_cache_db_pool(
       case dynamic_start_pool(module, config) {
         Ok(pool) -> {
           user_handler(updated_args, pool, table)
-          pool_connection.stop_pool(pool)
+          db.stop_pool(pool)
         }
         Error(msg) -> {
           console.output()

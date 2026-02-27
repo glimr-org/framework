@@ -1,12 +1,12 @@
 //// Method Override Middleware
 ////
-//// HTML forms only support GET and POST, but RESTful
-//// routing needs PUT, PATCH, and DELETE. Without method
-//// override, every destructive action would need a
-//// JavaScript fetch call or a POST route with an action
-//// parameter — neither is acceptable for progressive
-//// enhancement. This middleware lets forms submit any HTTP
-//// method via a hidden _method field.
+//// HTML forms only support GET and POST, but RESTful routing
+//// needs PUT, PATCH, and DELETE. Without method override,
+//// every destructive action would need a JavaScript fetch call
+//// or a POST route with an action parameter — neither is
+//// acceptable for progressive enhancement. This middleware
+//// lets forms submit any HTTP method via a hidden _method
+//// field.
 ////
 
 import glimr/http/kernel.{type Next}

@@ -16,8 +16,8 @@ import simplifile
 // ------------------------------------------------------------- Public Types
 
 /// Snapshot of all table schemas, stored as JSON between runs.
-/// Used to detect what has changed since the last migration
-/// by comparing against the current schema definitions.
+/// Used to detect what has changed since the last migration by
+/// comparing against the current schema definitions.
 ///
 pub type Snapshot {
   Snapshot(tables: Dict(String, TableSnapshot))
@@ -56,9 +56,9 @@ pub fn load(path: String) -> Snapshot {
   }
 }
 
-/// Save a snapshot to a JSON file. Serializes the snapshot
-/// to formatted JSON for readability and writes to the
-/// specified path.
+/// Save a snapshot to a JSON file. Serializes the snapshot to
+/// formatted JSON for readability and writes to the specified
+/// path.
 ///
 pub fn save(path: String, snapshot: Snapshot) -> Result(Nil, Nil) {
   let content = to_json(snapshot)
@@ -69,8 +69,8 @@ pub fn save(path: String, snapshot: Snapshot) -> Result(Nil, Nil) {
 }
 
 /// Build a new snapshot from a list of parsed Table schemas.
-/// Converts each table's columns to ColumnSnapshot format
-/// for JSON serialization.
+/// Converts each table's columns to ColumnSnapshot format for
+/// JSON serialization.
 ///
 pub fn build(tables: List(Table)) -> Snapshot {
   let table_dict =
@@ -128,8 +128,8 @@ pub fn column_type_to_string(col_type: ColumnType) -> String {
 // ------------------------------------------------------------- Private Functions
 
 /// Parse JSON content into a Snapshot. Returns an empty
-/// snapshot on parse failure to allow migration generation
-/// from scratch.
+/// snapshot on parse failure to allow migration generation from
+/// scratch.
 ///
 fn parse(content: String) -> Snapshot {
   case json.parse(content, using: decoder()) {

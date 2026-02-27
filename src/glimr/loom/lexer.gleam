@@ -36,10 +36,10 @@ pub type Token {
   PropsDirective(props: List(#(String, String)), line: Int)
 }
 
-/// Component and element tags support several attribute
-/// flavors that need different code generation strategies.
-/// Separating them here lets the generator handle each
-/// without re-parsing attribute strings.
+/// Component and element tags support several attribute flavors
+/// that need different code generation strategies. Separating
+/// them here lets the generator handle each without re-parsing
+/// attribute strings.
 ///
 pub type ComponentAttr {
   StringAttr(name: String, value: String)
@@ -64,9 +64,9 @@ pub type ComponentAttr {
   LmShow(condition: String, line: Int)
 }
 
-/// Surfacing specific error variants allows the compiler
-/// to produce actionable messages with position info,
-/// so users can quickly locate malformed template syntax.
+/// Surfacing specific error variants allows the compiler to
+/// produce actionable messages with position info, so users can
+/// quickly locate malformed template syntax.
 ///
 pub type LexerError {
   UnterminatedExpression(position: Int)
@@ -99,10 +99,10 @@ pub fn tokenize(input: String) -> Result(List(Token), LexerError) {
 // ------------------------------------------------------------- Private Functions
 
 /// Recursive dispatch loop. Order of pattern matches matters
-/// because longer prefixes (e.g. "{{{") must be checked
-/// before shorter ones ("{{") to avoid mis-tokenizing.
-/// tag_stack tracks open HTML tags so closing tags can
-/// determine whether to emit ElementEnd or plain text.
+/// because longer prefixes (e.g. "{{{") must be checked before
+/// shorter ones ("{{") to avoid mis-tokenizing. tag_stack
+/// tracks open HTML tags so closing tags can determine whether
+/// to emit ElementEnd or plain text.
 ///
 fn do_tokenize(
   input: String,
@@ -207,8 +207,8 @@ fn do_tokenize(
 }
 
 /// Adjacent text characters should form a single Text token
-/// rather than many small ones, both for parser simplicity
-/// and output correctness. This coalesces them in O(1).
+/// rather than many small ones, both for parser simplicity and
+/// output correctness. This coalesces them in O(1).
 ///
 fn append_text(tokens: List(Token), text: String) -> List(Token) {
   case tokens {
@@ -218,8 +218,8 @@ fn append_text(tokens: List(Token), text: String) -> List(Token) {
 }
 
 /// Both {{ }} and {{{ }}} follow the same parsing logic,
-/// differing only in delimiters and token type. Sharing
-/// one implementation prevents the two paths from diverging.
+/// differing only in delimiters and token type. Sharing one
+/// implementation prevents the two paths from diverging.
 ///
 fn parse_variable(
   rest: String,
@@ -293,8 +293,8 @@ fn parse_comment(
 }
 
 /// Line tracking must stay accurate across multi-line
-/// constructs so error messages point to the right line.
-/// Called after consuming each token to advance the count.
+/// constructs so error messages point to the right line. Called
+/// after consuming each token to advance the count.
 ///
 fn count_newlines(string: String) -> Int {
   string
@@ -303,9 +303,9 @@ fn count_newlines(string: String) -> Int {
   |> list.length
 }
 
-/// Components use the <x-name> convention to distinguish
-/// them from plain HTML. This extracts the full tag so
-/// the generator can resolve the component module.
+/// Components use the <x-name> convention to distinguish them
+/// from plain HTML. This extracts the full tag so the generator
+/// can resolve the component module.
 ///
 fn parse_component(
   input: String,
@@ -333,9 +333,9 @@ fn parse_component(
   )
 }
 
-/// Closing component tags must be paired with their opener
-/// so the generator knows where component content ends.
-/// The name is extracted to validate matching pairs later.
+/// Closing component tags must be paired with their opener so
+/// the generator knows where component content ends. The name
+/// is extracted to validate matching pairs later.
 ///
 fn parse_component_end(
   input: String,
@@ -430,9 +430,9 @@ fn try_parse_element(
   }
 }
 
-/// Closing tags must consult the tag_stack to determine
-/// whether the matching opener was dynamic or plain HTML,
-/// because each requires a different token in the output.
+/// Closing tags must consult the tag_stack to determine whether
+/// the matching opener was dynamic or plain HTML, because each
+/// requires a different token in the output.
 ///
 fn parse_element_end(
   input: String,
@@ -488,9 +488,9 @@ fn parse_element_end(
   }
 }
 
-/// HTML in templates can be malformed (e.g. unclosed tags),
-/// so we search the stack rather than just popping the top.
-/// This mirrors browser leniency and avoids false errors.
+/// HTML in templates can be malformed (e.g. unclosed tags), so
+/// we search the stack rather than just popping the top. This
+/// mirrors browser leniency and avoids false errors.
 ///
 fn pop_matching_tag(
   stack: List(#(String, Bool)),
@@ -518,9 +518,9 @@ fn has_dynamic_attrs(attrs: List(ComponentAttr)) -> Bool {
   })
 }
 
-/// Shared between element and component paths to extract
-/// tag structure. Returns enough info for the caller to
-/// decide how to tokenize the element.
+/// Shared between element and component paths to extract tag
+/// structure. Returns enough info for the caller to decide how
+/// to tokenize the element.
 ///
 fn parse_element_tag(
   input: String,
@@ -544,8 +544,8 @@ fn parse_element_tag(
 }
 
 /// Element attributes are parsed recursively because l-*
-/// directives need special handling distinct from regular
-/// HTML attributes. Each prefix dispatches to a sub-parser.
+/// directives need special handling distinct from regular HTML
+/// attributes. Each prefix dispatches to a sub-parser.
 ///
 fn parse_element_attrs(
   input: String,
@@ -638,8 +638,8 @@ fn parse_element_attrs(
 }
 
 /// l-for needs to extract multiple pieces (items, collection,
-/// optional loop var) from a single attribute value, so it
-/// has its own parser separate from other attributes.
+/// optional loop var) from a single attribute value, so it has
+/// its own parser separate from other attributes.
 ///
 fn parse_lm_for_attr(
   input: String,
@@ -650,9 +650,9 @@ fn parse_lm_for_attr(
   Ok(#(collection, items, loop_var, remaining))
 }
 
-/// The " in " keyword separates the binding pattern from
-/// the collection, following a familiar syntax convention.
-/// An optional comma suffix provides access to loop metadata.
+/// The " in " keyword separates the binding pattern from the
+/// collection, following a familiar syntax convention. An
+/// optional comma suffix provides access to loop metadata.
 ///
 fn parse_lm_for_syntax(
   value: String,
@@ -669,9 +669,9 @@ fn parse_lm_for_syntax(
   Ok(#(collection, items, loop_var))
 }
 
-/// Supports both single bindings and tuple destructuring
-/// so users can iterate over key-value pairs or plain
-/// lists with a unified l-for syntax.
+/// Supports both single bindings and tuple destructuring so
+/// users can iterate over key-value pairs or plain lists with a
+/// unified l-for syntax.
 ///
 fn parse_item_pattern(pattern: String) -> List(String) {
   case string.starts_with(pattern, "(") {
@@ -685,9 +685,9 @@ fn parse_item_pattern(pattern: String) -> List(String) {
   }
 }
 
-/// The optional loop variable after the comma gives
-/// templates access to index/count metadata without
-/// requiring a separate directive.
+/// The optional loop variable after the comma gives templates
+/// access to index/count metadata without requiring a separate
+/// directive.
 ///
 fn parse_collection_and_loop(input: String) -> #(String, Option(String)) {
   case string.split_once(input, ",") {
@@ -699,9 +699,9 @@ fn parse_collection_and_loop(input: String) -> #(String, Option(String)) {
   }
 }
 
-/// Event handlers need the event name, modifiers, and
-/// handler expression separated so the generator can
-/// produce the correct LiveView event wiring code.
+/// Event handlers need the event name, modifiers, and handler
+/// expression separated so the generator can produce the
+/// correct LiveView event wiring code.
 ///
 fn parse_lm_on_attr(
   input: String,
@@ -721,9 +721,9 @@ fn parse_lm_on_attr(
   }
 }
 
-/// l-model provides two-way binding sugar so the generator
-/// can emit both the value attribute and the corresponding
-/// event handler from a single directive.
+/// l-model provides two-way binding sugar so the generator can
+/// emit both the value attribute and the corresponding event
+/// handler from a single directive.
 ///
 fn parse_lm_model_attr(
   input: String,
@@ -736,8 +736,8 @@ fn parse_lm_model_attr(
 }
 
 /// Attribute names in HTML end at = or whitespace, so we
-/// consume until one of those delimiters to isolate the
-/// name from its value.
+/// consume until one of those delimiters to isolate the name
+/// from its value.
 ///
 fn take_until_equals_or_space(input: String, acc: String) -> #(String, String) {
   case string.pop_grapheme(input) {
@@ -751,9 +751,9 @@ fn take_until_equals_or_space(input: String, acc: String) -> #(String, String) {
   }
 }
 
-/// Dots separate the event name from modifiers, following
-/// a convention similar to Vue. Splitting here lets the
-/// generator apply modifiers independently.
+/// Dots separate the event name from modifiers, following a
+/// convention similar to Vue. Splitting here lets the generator
+/// apply modifiers independently.
 ///
 fn parse_event_and_modifiers(input: String) -> #(String, List(String)) {
   case string.split(input, ".") {
@@ -762,11 +762,11 @@ fn parse_event_and_modifiers(input: String) -> #(String, List(String)) {
   }
 }
 
-/// Attribute values may use either quote style so users
-/// can pick whichever avoids escaping in their Gleam
-/// expressions. Both must be supported uniformly.
-/// Single quotes in the value are normalized to double
-/// quotes for valid Gleam string literals.
+/// Attribute values may use either quote style so users can
+/// pick whichever avoids escaping in their Gleam expressions.
+/// Both must be supported uniformly. Single quotes in the value
+/// are normalized to double quotes for valid Gleam string
+/// literals.
 ///
 fn parse_quoted_value(input: String) -> Result(#(String, String), Nil) {
   case input {
@@ -831,9 +831,9 @@ fn parse_component_tag(
   }
 }
 
-/// Tag names end at whitespace, >, or / — the same
-/// boundary rules as HTML. Isolating the name here
-/// keeps the tag parser focused on attributes.
+/// Tag names end at whitespace, >, or / — the same boundary
+/// rules as HTML. Isolating the name here keeps the tag parser
+/// focused on attributes.
 ///
 fn take_component_name(input: String, acc: String) -> #(String, String) {
   case string.pop_grapheme(input) {
@@ -847,9 +847,9 @@ fn take_component_name(input: String, acc: String) -> #(String, String) {
   }
 }
 
-/// Component attributes follow the same dispatch pattern
-/// as element attributes. Keeping them separate allows
-/// future divergence without breaking either path.
+/// Component attributes follow the same dispatch pattern as
+/// element attributes. Keeping them separate allows future
+/// divergence without breaking either path.
 ///
 fn parse_component_attrs(
   input: String,
@@ -937,10 +937,10 @@ fn parse_component_attrs(
   }
 }
 
-/// Expression attributes (prefixed with :) contain Gleam
-/// code rather than string literals. :class and :style
-/// get dedicated variants because the generator handles
-/// them differently from generic expression bindings.
+/// Expression attributes (prefixed with :) contain Gleam code
+/// rather than string literals. :class and :style get dedicated
+/// variants because the generator handles them differently from
+/// generic expression bindings.
 ///
 fn parse_expr_attr(input: String) -> Result(#(ComponentAttr, String), Nil) {
   let #(name, rest) = take_attr_name(input, "")
@@ -965,8 +965,8 @@ fn parse_expr_attr(input: String) -> Result(#(ComponentAttr, String), Nil) {
 }
 
 /// Users write single quotes inside double-quoted attribute
-/// values (e.g. :class="[#('x', True)]"). Normalizing to
-/// double quotes produces valid Gleam string literals.
+/// values (e.g. :class="[#('x', True)]"). Normalizing to double
+/// quotes produces valid Gleam string literals.
 ///
 fn make_expr_attr(name: String, value: String) -> ComponentAttr {
   let normalized_value = normalize_quotes(value)
@@ -986,9 +986,9 @@ fn normalize_quotes(value: String) -> String {
   |> string.replace("'", "\"")
 }
 
-/// HTML supports both value attributes (name="val") and
-/// boolean attributes (disabled). Distinguishing them
-/// lets the generator emit the correct HTML output.
+/// HTML supports both value attributes (name="val") and boolean
+/// attributes (disabled). Distinguishing them lets the
+/// generator emit the correct HTML output.
 ///
 fn parse_string_or_bool_attr(
   input: String,
@@ -1015,8 +1015,8 @@ fn parse_string_or_bool_attr(
 }
 
 /// Attribute names end at the same delimiters as tag names,
-/// plus the equals sign. Isolating the name allows the
-/// caller to determine the attribute flavour from context.
+/// plus the equals sign. Isolating the name allows the caller
+/// to determine the attribute flavour from context.
 ///
 fn take_attr_name(input: String, acc: String) -> #(String, String) {
   case string.pop_grapheme(input) {
@@ -1030,9 +1030,9 @@ fn take_attr_name(input: String, acc: String) -> #(String, String) {
   }
 }
 
-/// Whitespace between attributes and around tag content
-/// is insignificant. Skipping it here keeps individual
-/// parsers from duplicating whitespace handling.
+/// Whitespace between attributes and around tag content is
+/// insignificant. Skipping it here keeps individual parsers
+/// from duplicating whitespace handling.
 ///
 fn skip_whitespace(input: String) -> String {
   case input {
@@ -1044,9 +1044,9 @@ fn skip_whitespace(input: String) -> String {
   }
 }
 
-/// Argument-less directives like @attributes could be a
-/// prefix of a longer word (e.g. @attributesSomething).
-/// The alphanumeric check prevents false matches.
+/// Argument-less directives like @attributes could be a prefix
+/// of a longer word (e.g. @attributesSomething). The
+/// alphanumeric check prevents false matches.
 ///
 fn parse_simple_directive(
   rest: String,
@@ -1078,8 +1078,8 @@ fn parse_simple_directive(
   }
 }
 
-/// @import directives can contain nested parentheses in
-/// type signatures (e.g. List(String)), so we use
+/// @import directives can contain nested parentheses in type
+/// signatures (e.g. List(String)), so we use
 /// find_matching_paren instead of a simple split.
 ///
 fn parse_import_directive(
@@ -1113,8 +1113,8 @@ fn parse_import_directive(
 }
 
 /// @props also uses nested parentheses for types like
-/// List(#(String, Int)), requiring the same balanced
-/// paren extraction as @import.
+/// List(#(String, Int)), requiring the same balanced paren
+/// extraction as @import.
 ///
 fn parse_props_directive(
   input: String,
@@ -1165,9 +1165,9 @@ fn find_matching_paren(
   }
 }
 
-/// Props content like "name: String, items: List(#(String, Int))"
-/// contains commas inside nested types, so it can't be split
-/// naively — it needs depth-aware comma splitting.
+/// Props content like "name: String, items: List(#(String,
+/// Int))" contains commas inside nested types, so it can't be
+/// split naively — it needs depth-aware comma splitting.
 ///
 fn parse_props_content(
   content: String,
@@ -1183,16 +1183,16 @@ fn parse_props_content(
 }
 
 /// Only commas at paren depth 0 are true prop separators.
-/// Commas inside type expressions like #(String, Int)
-/// must be preserved as part of the type string.
+/// Commas inside type expressions like #(String, Int) must be
+/// preserved as part of the type string.
 ///
 fn split_props_at_commas(input: String) -> List(String) {
   split_props_helper(input, 0, "", [])
 }
 
-/// Recursive loop for split_props_at_commas. Tracks paren
-/// depth so commas inside nested types are not treated
-/// as prop separators.
+/// Recursive loop for split_props_at_commas. Tracks paren depth
+/// so commas inside nested types are not treated as prop
+/// separators.
 ///
 fn split_props_helper(
   input: String,
@@ -1218,9 +1218,9 @@ fn split_props_helper(
   }
 }
 
-/// After splitting on commas, each part must be validated
-/// as a well-formed "name: Type" pair. Errors here give
-/// users specific messages about malformed props.
+/// After splitting on commas, each part must be validated as a
+/// well-formed "name: Type" pair. Errors here give users
+/// specific messages about malformed props.
 ///
 fn parse_prop_parts(
   parts: List(String),
@@ -1237,9 +1237,9 @@ fn parse_prop_parts(
   }
 }
 
-/// Validates a single prop has both a name and type with
-/// a colon separator. Specific error messages help users
-/// fix common mistakes like missing types or names.
+/// Validates a single prop has both a name and type with a
+/// colon separator. Specific error messages help users fix
+/// common mistakes like missing types or names.
 ///
 fn parse_single_prop(part: String) -> Result(#(String, String), String) {
   case string.split_once(part, ":") {
@@ -1258,8 +1258,8 @@ fn parse_single_prop(part: String) -> Result(#(String, String), String) {
 }
 
 /// Slots can be either insertion points (self-closing) or
-/// default content definitions (opening). The parser needs
-/// to distinguish these to handle component composition.
+/// default content definitions (opening). The parser needs to
+/// distinguish these to handle component composition.
 ///
 fn parse_slot_element(
   input: String,
@@ -1296,9 +1296,9 @@ fn parse_slot_element(
   }
 }
 
-/// Named slots require attribute parsing to extract the
-/// name value. Self-closing vs opening determines whether
-/// this is a slot reference (Slot) or definition (SlotDef).
+/// Named slots require attribute parsing to extract the name
+/// value. Self-closing vs opening determines whether this is a
+/// slot reference (Slot) or definition (SlotDef).
 ///
 fn parse_slot_with_attrs(
   input: String,
@@ -1328,17 +1328,17 @@ fn parse_slot_with_attrs(
   do_tokenize(rest, position + len, line, [token, ..tokens], tag_stack)
 }
 
-/// Slot tags don't use the full component attribute grammar,
-/// so a simpler scan for /> or > suffices to delimit the
-/// attribute content.
+/// Slot tags don't use the full component attribute grammar, so
+/// a simpler scan for /> or > suffices to delimit the attribute
+/// content.
 ///
 fn find_slot_tag_end(input: String) -> Result(#(String, Bool, String), Nil) {
   find_slot_tag_end_loop(input, "")
 }
 
-/// Recursive loop for find_slot_tag_end. Pattern matches
-/// on /> and > first so multi-char sequences are checked
-/// before consuming individual characters.
+/// Recursive loop for find_slot_tag_end. Pattern matches on />
+/// and > first so multi-char sequences are checked before
+/// consuming individual characters.
 ///
 fn find_slot_tag_end_loop(
   input: String,
@@ -1358,8 +1358,8 @@ fn find_slot_tag_end_loop(
 }
 
 /// Named slots use a name attribute to target specific
-/// insertion points. Both quote styles are supported
-/// for consistency with other attribute parsing.
+/// insertion points. Both quote styles are supported for
+/// consistency with other attribute parsing.
 ///
 fn extract_slot_name(attrs: String) -> Option(String) {
   // Look for name="value" pattern
@@ -1385,9 +1385,9 @@ fn extract_slot_name(attrs: String) -> Option(String) {
   }
 }
 
-/// Everything that isn't a recognized template construct
-/// should pass through as plain text. This fallback path
-/// coalesces characters until the next special sequence.
+/// Everything that isn't a recognized template construct should
+/// pass through as plain text. This fallback path coalesces
+/// characters until the next special sequence.
 ///
 fn consume_text(
   input: String,
@@ -1426,8 +1426,8 @@ fn consume_text(
 }
 
 /// Batch-scans text to avoid calling do_tokenize for every
-/// plain character. Stops at any prefix that do_tokenize
-/// would handle, keeping the two in sync.
+/// plain character. Stops at any prefix that do_tokenize would
+/// handle, keeping the two in sync.
 ///
 fn take_until_special(input: String, accumulated: String) -> #(String, String) {
   case input {
@@ -1466,9 +1466,9 @@ fn take_until_special(input: String, accumulated: String) -> #(String, String) {
   }
 }
 
-/// A bare "<" in template expressions (e.g. x < 10) must
-/// not be mistaken for a tag. Checking for a following
-/// letter disambiguates tags from comparison operators.
+/// A bare "<" in template expressions (e.g. x < 10) must not be
+/// mistaken for a tag. Checking for a following letter
+/// disambiguates tags from comparison operators.
 ///
 fn is_potential_element_start(input: String) -> Bool {
   case string.drop_start(input, 1) |> string.first {

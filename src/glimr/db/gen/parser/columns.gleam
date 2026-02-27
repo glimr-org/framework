@@ -10,8 +10,8 @@ import gleam/string
 // ------------------------------------------------------------- Public Types
 
 /// A column selected in a SELECT or RETURNING clause. Tracks
-/// the optional table alias, column name or expression, and
-/// any AS alias.
+/// the optional table alias, column name or expression, and any
+/// AS alias.
 ///
 pub type SelectedColumn {
   SelectedColumn(table: Option(String), name: String, alias: Option(String))
@@ -20,8 +20,8 @@ pub type SelectedColumn {
 // ------------------------------------------------------------- Public Functions
 
 /// Extract selected columns from SELECT or RETURNING clauses.
-/// Handles CTEs by finding the main SELECT at parenthesis
-/// depth zero.
+/// Handles CTEs by finding the main SELECT at parenthesis depth
+/// zero.
 ///
 pub fn extract(sql: String) -> List(SelectedColumn) {
   let upper = string.uppercase(sql)
@@ -59,8 +59,8 @@ fn find_keyword_at_depth_zero(
   do_find_keyword_at_depth_zero(s, trigger_char, keyword, 0, 0)
 }
 
-/// Recursively Find a SQL keyword that appears at parenthesis 
-/// depth zero. Used to find the main SELECT/FROM in queries 
+/// Recursively Find a SQL keyword that appears at parenthesis
+/// depth zero. Used to find the main SELECT/FROM in queries
 /// with CTEs or subqueries.
 ///
 fn do_find_keyword_at_depth_zero(
@@ -132,8 +132,8 @@ fn extract_returning_columns(sql: String, upper: String) -> List(SelectedColumn)
 }
 
 /// Parse a comma-separated list of column expressions into
-/// SelectedColumn structs. Handles special case of star (*)
-/// for all columns.
+/// SelectedColumn structs. Handles special case of star (*) for
+/// all columns.
 ///
 fn parse_column_list(columns_str: String) -> List(SelectedColumn) {
   let parts = split_respecting_parens(columns_str)

@@ -18,11 +18,11 @@ import glimr/utils/string as string_utils
 
 // ------------------------------------------------------------- Public Types
 
-/// Code generation needs a single entry point that carries
-/// all the information extracted from a template file —
-/// imports, props, content nodes, and liveness — so it can
-/// emit a complete module without re-parsing or requiring
-/// multiple passes over the token stream.
+/// Code generation needs a single entry point that carries all
+/// the information extracted from a template file — imports,
+/// props, content nodes, and liveness — so it can emit a
+/// complete module without re-parsing or requiring multiple
+/// passes over the token stream.
 ///
 pub type Template {
   Template(
@@ -33,29 +33,32 @@ pub type Template {
     /// Content nodes
     nodes: List(Node),
     /// Whether this template contains l-on:* or l-model attributes
-    /// and should be treated as a "live" template with WebSocket connection
+    /// and should be treated as a "live" template with WebSocket
+    /// connection
     is_live: Bool,
   )
 }
 
-/// Different template constructs need distinct code
-/// generation strategies — text is emitted verbatim,
-/// variables require escaping or lookups, control flow
-/// needs branching logic, and components trigger recursive
-/// rendering. A sum type lets the code generator pattern
-/// match exhaustively on every construct.
+/// Different template constructs need distinct code generation
+/// strategies — text is emitted verbatim, variables require
+/// escaping or lookups, control flow needs branching logic, and
+/// components trigger recursive rendering. A sum type lets the
+/// code generator pattern match exhaustively on every
+/// construct.
 ///
 pub type Node {
   TextNode(String)
   VariableNode(name: String, line: Int)
   RawVariableNode(name: String, line: Int)
-  /// SlotNode outputs slot content with optional fallback.
-  /// Used in component templates: <slot />, <slot>fallback</slot>
+  /// SlotNode outputs slot content with optional fallback. Used
+  /// in component templates: <slot />, <slot>fallback</slot>
   SlotNode(name: Option(String), fallback: List(Node))
-  /// SlotDefNode defines content to pass to a slot when using a component.
-  /// Used inside <x-component>: <slot name="header">content</slot>
+  /// SlotDefNode defines content to pass to a slot when using a
+  /// component. Used inside <x-component>: <slot
+  /// name="header">content</slot>
   SlotDefNode(name: Option(String), children: List(Node))
-  /// AttributesNode holds optional base attributes that will be merged with props.attributes
+  /// AttributesNode holds optional base attributes that will be
+  /// merged with props.attributes
   AttributesNode(base_attributes: List(ComponentAttr))
   IfNode(branches: List(#(Option(String), Int, List(Node))))
   EachNode(
@@ -79,9 +82,9 @@ pub type Node {
 
 /// Template authors need actionable error messages when their
 /// markup is malformed. Structured error variants let the
-/// compiler surface the specific problem — a mismatched
-/// closing tag, a dangling else branch, or a directive in
-/// the wrong position — rather than a generic parse failure.
+/// compiler surface the specific problem — a mismatched closing
+/// tag, a dangling else branch, or a directive in the wrong
+/// position — rather than a generic parse failure.
 ///
 pub type ParserError {
   UnexpectedLmElse
@@ -103,12 +106,12 @@ pub type ParserError {
 
 // ------------------------------------------------------------- Private Types
 
-/// Conditional chains (l-if / l-else-if / l-else) span
-/// multiple sibling elements, but the parser processes
-/// tokens one at a time. This accumulator collects branches
-/// as they appear so the chain can be emitted as a single
-/// IfNode once a non-conditional sibling or end-of-context
-/// signals the chain is complete.
+/// Conditional chains (l-if / l-else-if / l-else) span multiple
+/// sibling elements, but the parser processes tokens one at a
+/// time. This accumulator collects branches as they appear so
+/// the chain can be emitted as a single IfNode once a
+/// non-conditional sibling or end-of-context signals the chain
+/// is complete.
 ///
 type PendingIf {
   PendingIf(
@@ -134,11 +137,11 @@ type BodyContext {
 
 // ------------------------------------------------------------- Public Functions
 
-/// Entry point for the parser. Directives are extracted
-/// first because they affect how the generated module is
-/// structured (imports, function signatures) and must not
-/// appear mixed with content. The remaining tokens are then
-/// parsed into the node tree that drives code generation.
+/// Entry point for the parser. Directives are extracted first
+/// because they affect how the generated module is structured
+/// (imports, function signatures) and must not appear mixed
+/// with content. The remaining tokens are then parsed into the
+/// node tree that drives code generation.
 ///
 pub fn parse(tokens: List(Token)) -> Result(Template, ParserError) {
   // First extract @import and @props directives from the beginning
@@ -162,8 +165,8 @@ pub fn parse(tokens: List(Token)) -> Result(Template, ParserError) {
 /// Directives control module-level concerns (what to import,
 /// what props the template accepts) so they must be resolved
 /// before content parsing begins. Enforcing a "directives
-/// first" rule keeps template structure predictable and
-/// avoids ambiguity about directive scope.
+/// first" rule keeps template structure predictable and avoids
+/// ambiguity about directive scope.
 ///
 fn extract_directives(
   tokens: List(Token),
@@ -199,18 +202,18 @@ fn extract_directives(
 }
 
 /// Whitespace-only text nodes between directives should be
-/// ignored so that newlines and indentation between @import
-/// and @props lines don't prematurely end the directive
-/// extraction phase.
+/// ignored so that newlines and indentation between @import and
+/// @props lines don't prematurely end the directive extraction
+/// phase.
 ///
 fn is_whitespace_only(string: String) -> Bool {
   string |> string.to_graphemes |> list.all(string_utils.is_whitespace)
 }
 
 /// The recursive backbone of the parser. Each token is
-/// dispatched to the appropriate node constructor while a 
-/// pending conditional accumulator tracks l-if chains across 
-/// siblings — necessary because conditional branches are 
+/// dispatched to the appropriate node constructor while a
+/// pending conditional accumulator tracks l-if chains across
+/// siblings — necessary because conditional branches are
 /// separate tokens that must coalesce into one IfNode.
 ///
 fn parse_nodes(
@@ -335,10 +338,10 @@ fn parse_nodes(
   }
 }
 
-/// A conditional chain only becomes a complete IfNode once a 
-/// non-conditional sibling or end-of-context appears. This 
-/// function materializes the accumulated branches at that 
-/// boundary, ensuring the IfNode lands in the correct position 
+/// A conditional chain only becomes a complete IfNode once a
+/// non-conditional sibling or end-of-context appears. This
+/// function materializes the accumulated branches at that
+/// boundary, ensuring the IfNode lands in the correct position
 /// relative to surrounding nodes.
 ///
 fn flush_pending_if(
@@ -359,8 +362,8 @@ fn flush_pending_if(
 
 /// Components can carry l-* directives that wrap them in
 /// conditional or loop structures. This function separates
-/// those directives from the component's own attributes so the 
-/// generated AST nests correctly — the component node lives 
+/// those directives from the component's own attributes so the
+/// generated AST nests correctly — the component node lives
 /// inside the control flow node, not alongside it.
 ///
 fn parse_component_with_attrs(
@@ -406,11 +409,11 @@ fn parse_component_with_attrs(
   )
 }
 
-/// Elements with both l-for and l-if need special nesting order: 
-/// l-if goes inside the loop so loop variables are in scope for 
-/// the condition. This function also unwraps <template> 
-/// elements into their children to avoid emitting unnecessary 
-/// wrapper nodes in the output.
+/// Elements with both l-for and l-if need special nesting
+/// order: l-if goes inside the loop so loop variables are in
+/// scope for the condition. This function also unwraps
+/// <template> elements into their children to avoid emitting
+/// unnecessary wrapper nodes in the output.
 ///
 fn parse_element_with_attrs(
   tag: String,
@@ -481,10 +484,10 @@ fn parse_element_with_attrs(
   }
 }
 
-/// Both components and elements can participate in conditional 
-/// chains, so this shared function avoids duplicating the chain 
-/// state machine. It validates ordering constraints (no else-if 
-/// after else, no orphaned else) and returns the updated 
+/// Both components and elements can participate in conditional
+/// chains, so this shared function avoids duplicating the chain
+/// state machine. It validates ordering constraints (no else-if
+/// after else, no orphaned else) and returns the updated
 /// pending state.
 ///
 fn handle_conditional_chain(
@@ -581,8 +584,8 @@ fn handle_conditional_chain(
 }
 
 /// l-if attributes are mixed in with regular HTML attributes by
-/// the lexer. Extracting them separately lets the parser treat 
-/// them as control flow directives rather than as attributes to 
+/// the lexer. Extracting them separately lets the parser treat
+/// them as control flow directives rather than as attributes to
 /// pass through to the rendered output.
 ///
 fn find_lm_if(attrs: List(ComponentAttr)) -> Option(#(String, Int)) {
@@ -595,10 +598,10 @@ fn find_lm_if(attrs: List(ComponentAttr)) -> Option(#(String, Int)) {
   |> option.from_result
 }
 
-/// l-else-if must be extracted separately from l-if because it 
-/// continues an existing conditional chain rather than starting '
-/// a new one, requiring different state machine transitions in 
-/// the parser.
+/// l-else-if must be extracted separately from l-if because it
+/// continues an existing conditional chain rather than starting
+/// ' a new one, requiring different state machine transitions
+/// in the parser.
 ///
 fn find_lm_else_if(attrs: List(ComponentAttr)) -> Option(#(String, Int)) {
   list.find_map(attrs, fn(attr) {
@@ -611,9 +614,9 @@ fn find_lm_else_if(attrs: List(ComponentAttr)) -> Option(#(String, Int)) {
 }
 
 /// Unlike l-if and l-else-if which carry condition strings,
-/// l-else is a boolean presence check — it has no value. A 
-/// simple Bool return suffices because the parser only needs to 
-/// know whether the else branch exists, not extract any 
+/// l-else is a boolean presence check — it has no value. A
+/// simple Bool return suffices because the parser only needs to
+/// know whether the else branch exists, not extract any
 /// associated data.
 ///
 fn has_lm_else(attrs: List(ComponentAttr)) -> Bool {
@@ -625,10 +628,10 @@ fn has_lm_else(attrs: List(ComponentAttr)) -> Bool {
   })
 }
 
-/// l-for carries structured data (collection, destructured 
+/// l-for carries structured data (collection, destructured
 /// items, optional loop variable) that the parser needs to
-/// build an EachNode. Extracting it here keeps the main parsing 
-/// functions focused on nesting logic rather than attribute 
+/// build an EachNode. Extracting it here keeps the main parsing
+/// functions focused on nesting logic rather than attribute
 /// inspection.
 ///
 fn find_lm_for(
@@ -644,9 +647,9 @@ fn find_lm_for(
   |> option.from_result
 }
 
-/// Directive attributes control parsing structure but must not 
-/// appear in the rendered output. Stripping them here ensures 
-/// that generated HTML elements and component invocations only 
+/// Directive attributes control parsing structure but must not
+/// appear in the rendered output. Stripping them here ensures
+/// that generated HTML elements and component invocations only
 /// carry the attributes that belong in the final markup.
 ///
 fn filter_lm_attrs(attrs: List(ComponentAttr)) -> List(ComponentAttr) {
@@ -662,10 +665,10 @@ fn filter_lm_attrs(attrs: List(ComponentAttr)) -> List(ComponentAttr) {
 }
 
 /// Child parsing is shared across components, elements, and
-/// slots because they all consume tokens the same way — only 
-/// the termination condition and slot semantics differ. 
-/// Centralizing this avoids three near-identical recursive 
-/// functions and ensures consistent conditional chain handling 
+/// slots because they all consume tokens the same way — only
+/// the termination condition and slot semantics differ.
+/// Centralizing this avoids three near-identical recursive
+/// functions and ensures consistent conditional chain handling
 /// at every nesting level.
 ///
 fn parse_body(
@@ -831,9 +834,9 @@ fn parse_body(
 }
 
 /// Templates with event handlers or model bindings need a
-/// WebSocket connection for interactivity. Detecting this at 
-/// parse time lets the framework decide upfront whether to wire 
-/// up live infrastructure, avoiding unnecessary overhead for 
+/// WebSocket connection for interactivity. Detecting this at
+/// parse time lets the framework decide upfront whether to wire
+/// up live infrastructure, avoiding unnecessary overhead for
 /// purely static templates.
 ///
 fn has_live_attributes(nodes: List(Node)) -> Bool {
@@ -857,8 +860,8 @@ fn has_live_attributes(nodes: List(Node)) -> Bool {
 }
 
 /// Leaf-level check for the recursive has_live_attributes
-/// traversal. Separated out so the tree walker only needs to 
-/// concern itself with node structure, not with how individual 
+/// traversal. Separated out so the tree walker only needs to
+/// concern itself with node structure, not with how individual
 /// attributes are classified as "live".
 ///
 fn attrs_have_live(attrs: List(ComponentAttr)) -> Bool {

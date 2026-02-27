@@ -1,11 +1,11 @@
 //// App Configuration
 ////
-//// Framework-level settings like the static file directory
-//// are needed on every request by middleware, but re-parsing
-//// TOML each time would add unnecessary latency. Loading once
-//// from config/app.toml and caching in persistent_term gives
-//// every process fast, lock-free access without threading the
-//// config through function arguments.
+//// Framework-level settings like the static file directory are
+//// needed on every request by middleware, but re-parsing TOML
+//// each time would add unnecessary latency. Loading once from
+//// config/app.toml and caching in persistent_term gives every
+//// process fast, lock-free access without threading the config
+//// through function arguments.
 ////
 
 import gleam/dict
@@ -29,8 +29,9 @@ pub type AppConfig {
 /// Static file middleware calls this on every request to check
 /// the URL prefix, so it must be fast. The persistent_term
 /// cache makes repeated calls effectively free after the first
-/// load. Falling back to sensible defaults on missing or invalid
-/// config lets apps start without requiring an app.toml file.
+/// load. Falling back to sensible defaults on missing or
+/// invalid config lets apps start without requiring an app.toml
+/// file.
 ///
 pub fn load() -> AppConfig {
   case get_cached() {
@@ -59,8 +60,8 @@ fn load_from_file() -> AppConfig {
 
 /// The TOML file may contain other sections beyond [static].
 /// Extracting the static table first and falling back to
-/// defaults if it's missing lets the config file evolve
-/// without breaking app loading.
+/// defaults if it's missing lets the config file evolve without
+/// breaking app loading.
 ///
 fn parse(content: String) -> AppConfig {
   case tom.parse(content) {
@@ -84,8 +85,8 @@ fn parse_static(toml: tom.Toml) -> AppConfig {
 
 /// Centralizing defaults here ensures every fallback path
 /// (missing file, parse error, missing section) produces
-/// identical config so behavior is predictable regardless
-/// of which error path was taken.
+/// identical config so behavior is predictable regardless of
+/// which error path was taken.
 ///
 fn default_config() -> AppConfig {
   AppConfig(static_directory: "/static")
@@ -100,10 +101,9 @@ fn default_config() -> AppConfig {
 @external(erlang, "glimr_kernel_ffi", "cache_app_config")
 fn cache(config: AppConfig) -> Nil
 
-/// Returns the cached config if it exists, or Error(Nil) on
-/// the first call before cache() has been called. load() uses
-/// this to skip file I/O on every request after the initial
-/// load.
+/// Returns the cached config if it exists, or Error(Nil) on the
+/// first call before cache() has been called. load() uses this
+/// to skip file I/O on every request after the initial load.
 ///
 @external(erlang, "glimr_kernel_ffi", "get_cached_app_config")
 fn get_cached() -> Result(AppConfig, Nil)

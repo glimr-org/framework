@@ -4,11 +4,11 @@
 //// to inconsistent error messages and duplicated checks. This
 //// module provides a declarative rule system so validators are
 //// defined once per form, collected into a list, and executed
-//// together — producing a uniform error structure that templates
-//// can render without special-casing each field. The ctx type
-//// parameter lets custom rules reach into app state for checks
-//// like uniqueness without coupling the validator to a specific
-//// database or config.
+//// together — producing a uniform error structure that
+//// templates can render without special-casing each field. The
+//// ctx type parameter lets custom rules reach into app state
+//// for checks like uniqueness without coupling the validator
+//// to a specific database or config.
 
 import gleam/int
 import gleam/json
@@ -115,19 +115,18 @@ pub type FormData {
 
 /// A type alias keeps the Custom variant readable — without it
 /// the full fn signature would clutter the StringRule enum.
-/// Accepting FormData lets custom rules access other fields
-/// for cross-field validation (e.g., comparing two dates),
-/// and ctx lets them do database lookups like uniqueness
-/// checks without hardcoding a connection type into the
-/// validator module.
+/// Accepting FormData lets custom rules access other fields for
+/// cross-field validation (e.g., comparing two dates), and ctx
+/// lets them do database lookups like uniqueness checks without
+/// hardcoding a connection type into the validator module.
 ///
 type CustomValidation(ctx) =
   fn(String, String, FormData, ctx) -> Result(Nil, String)
 
-/// Mirrors CustomValidation but for file uploads — the input
-/// is an UploadedFile instead of a String because file rules
-/// need access to path, size, and filename metadata that a
-/// string value can't represent.
+/// Mirrors CustomValidation but for file uploads — the input is
+/// an UploadedFile instead of a String because file rules need
+/// access to path, size, and filename metadata that a string
+/// value can't represent.
 ///
 type CustomFileValidation(ctx) =
   fn(String, UploadedFile, FormData, ctx) -> Result(Nil, String)
@@ -141,12 +140,13 @@ type CustomFileValidation(ctx) =
 /// generated automatically based on the response format:
 ///
 /// - HTML: flashes the first error per field into the session
-///   as "errors.<field>" and redirects back to the form.
+/// as "errors.<field>" and redirects back to the form.
 /// - JSON: returns a 422 response with structured errors.
 ///
 /// *Example:*
 ///
-/// In your validator module (e.g., `app/http/validators/contact.gleam`):
+/// In your validator module (e.g.,
+/// `app/http/validators/contact.gleam`):
 ///
 /// ```gleam
 /// pub type Data {
@@ -232,8 +232,8 @@ pub fn run(
 /// Separated from run() so callers that need custom error
 /// handling can execute validation without the automatic 422
 /// response. Collecting all errors before returning ensures
-/// users see every failure at once rather than fixing them
-/// one by one across multiple submissions.
+/// users see every failure at once rather than fixing them one
+/// by one across multiple submissions.
 ///
 pub fn start(
   pending: List(Rule(ctx)),
@@ -267,10 +267,10 @@ pub fn form_data(wisp_form_data: WispFormData) -> FormData {
   )
 }
 
-/// Binding a field name to its rules in a single call keeps
-/// the validator definition readable — without this, callers
-/// would need to construct FieldRule variants directly and
-/// the opaque type would need to be exposed.
+/// Binding a field name to its rules in a single call keeps the
+/// validator definition readable — without this, callers would
+/// need to construct FieldRule variants directly and the opaque
+/// type would need to be exposed.
 ///
 /// *Example:*
 ///
@@ -316,8 +316,8 @@ pub fn response(
 /// Dispatches between text field and file field validation so
 /// start() doesn't need to know which variant it's dealing
 /// with. Extracting the value from form data here rather than
-/// in each rule keeps individual rules pure — they only see
-/// the value and data, not the full form.
+/// in each rule keeps individual rules pure — they only see the
+/// value and data, not the full form.
 ///
 fn execute(
   pending: Rule(ctx),
@@ -408,8 +408,8 @@ fn apply_rule(
 
 /// Trimming before checking prevents whitespace-only values
 /// from passing as "present" — a form field filled with spaces
-/// is effectively empty and should fail the required check
-/// just like a blank field would.
+/// is effectively empty and should fail the required check just
+/// like a blank field would.
 ///
 fn validate_required(field: String, value: String) -> Result(Nil, String) {
   case string.trim(value) {
@@ -419,9 +419,9 @@ fn validate_required(field: String, value: String) -> Result(Nil, String) {
 }
 
 /// Validates email format using a regex that checks for a
-/// non-empty local part, an @ symbol, a non-empty domain,
-/// and at least one dot in the domain. Full email validation
-/// is best done by sending a confirmation link anyway.
+/// non-empty local part, an @ symbol, a non-empty domain, and
+/// at least one dot in the domain. Full email validation is
+/// best done by sending a confirmation link anyway.
 ///
 fn validate_email(field: String, value: String) -> Result(Nil, String) {
   case value {
@@ -438,9 +438,9 @@ fn validate_email(field: String, value: String) -> Result(Nil, String) {
 }
 
 /// Enforces minimum length for fields like passwords or
-/// usernames where very short values are meaningless. The
-/// error message includes the threshold so users know exactly
-/// how many characters are needed.
+/// usernames where very short values are meaningless. The error
+/// message includes the threshold so users know exactly how
+/// many characters are needed.
 ///
 fn validate_min_length(
   field: String,
@@ -459,10 +459,10 @@ fn validate_min_length(
   }
 }
 
-/// Catches overly long input before it hits the database,
-/// where a column length violation would produce a cryptic
-/// error. Validating early gives users a clear message about
-/// the limit.
+/// Catches overly long input before it hits the database, where
+/// a column length violation would produce a cryptic error.
+/// Validating early gives users a clear message about the
+/// limit.
 ///
 fn validate_max_length(
   field: String,
@@ -482,10 +482,10 @@ fn validate_max_length(
 }
 
 /// Range checks on numeric fields like age or quantity prevent
-/// nonsensical values from reaching business logic. Parsing
-/// the string to int first means a non-numeric value gets a
-/// clear "must be a number" error instead of a confusing
-/// range message.
+/// nonsensical values from reaching business logic. Parsing the
+/// string to int first means a non-numeric value gets a clear
+/// "must be a number" error instead of a confusing range
+/// message.
 ///
 fn validate_min(field: String, value: String, min: Int) -> Result(Nil, String) {
   case int.parse(value) {
@@ -496,9 +496,9 @@ fn validate_min(field: String, value: String, min: Int) -> Result(Nil, String) {
 }
 
 /// Upper-bound checks prevent values that would overflow
-/// database columns or break business rules like maximum
-/// order quantities. Same parse-first strategy as validate_min
-/// so the error message matches the actual problem.
+/// database columns or break business rules like maximum order
+/// quantities. Same parse-first strategy as validate_min so the
+/// error message matches the actual problem.
 ///
 fn validate_max(field: String, value: String, max: Int) -> Result(Nil, String) {
   case int.parse(value) {
@@ -527,10 +527,10 @@ fn validate_numeric(field: String, value: String) -> Result(Nil, String) {
   }
 }
 
-/// Validates URL format using a regex that requires an http
-/// or https scheme followed by a domain with at least one
-/// dot. Catches missing schemes and bare domain entries
-/// without a full URL parser.
+/// Validates URL format using a regex that requires an http or
+/// https scheme followed by a domain with at least one dot.
+/// Catches missing schemes and bare domain entries without a
+/// full URL parser.
 ///
 fn validate_url(field: String, value: String) -> Result(Nil, String) {
   case value {
@@ -587,9 +587,9 @@ fn validate_min_digits(
 }
 
 /// Caps digit count for fields like zip codes or short numeric
-/// identifiers where too many digits indicate bad input. Uses
-/// a regex to allow 1 to N digits, correctly preserving
-/// leading zeros.
+/// identifiers where too many digits indicate bad input. Uses a
+/// regex to allow 1 to N digits, correctly preserving leading
+/// zeros.
 ///
 fn validate_max_digits(
   field: String,
@@ -681,10 +681,10 @@ fn validate_required_if(
   }
 }
 
-/// The inverse of RequiredIf — the field is required by
-/// default but becomes optional when a specific condition is
-/// met. Useful for forms where selecting one option makes
-/// another field irrelevant.
+/// The inverse of RequiredIf — the field is required by default
+/// but becomes optional when a specific condition is met.
+/// Useful for forms where selecting one option makes another
+/// field irrelevant.
 ///
 fn validate_required_unless(
   field: String,
@@ -733,10 +733,10 @@ fn validate_in(
   }
 }
 
-/// Some fields accept free-form input but need to block a
-/// small set of reserved or offensive values — like usernames
-/// that conflict with URL routes. Easier than enumerating
-/// every valid option with In.
+/// Some fields accept free-form input but need to block a small
+/// set of reserved or offensive values — like usernames that
+/// conflict with URL routes. Easier than enumerating every
+/// valid option with In.
 ///
 fn validate_not_in(
   field: String,
@@ -776,8 +776,8 @@ fn validate_alpha(field: String, value: String) -> Result(Nil, String) {
 
 /// Usernames and slugs often need to be alphanumeric to avoid
 /// issues with URL routing, database queries, or display
-/// formatting. A dedicated rule avoids repeating the same
-/// regex pattern across multiple validators.
+/// formatting. A dedicated rule avoids repeating the same regex
+/// pattern across multiple validators.
 ///
 fn validate_alpha_numeric(field: String, value: String) -> Result(Nil, String) {
   case value {
@@ -793,9 +793,8 @@ fn validate_alpha_numeric(field: String, value: String) -> Result(Nil, String) {
 }
 
 /// Fields like phone numbers with country codes or URLs with
-/// required schemes need a specific prefix to be valid.
-/// Skips empty values so Required handles presence
-/// independently.
+/// required schemes need a specific prefix to be valid. Skips
+/// empty values so Required handles presence independently.
 ///
 fn validate_starts_with(
   field: String,
@@ -812,9 +811,9 @@ fn validate_starts_with(
   }
 }
 
-/// Fields like email domains or file paths that must end with
-/// a specific suffix — for example requiring "@company.com"
-/// for corporate email fields. Skips empty values so Required
+/// Fields like email domains or file paths that must end with a
+/// specific suffix — for example requiring "@company.com" for
+/// corporate email fields. Skips empty values so Required
 /// handles presence independently.
 ///
 fn validate_ends_with(
@@ -937,10 +936,10 @@ fn validate_ip(field: String, value: String) -> Result(Nil, String) {
   }
 }
 
-/// Delegates to the user-provided function, passing the
-/// current field value, form data for cross-field access,
-/// and the app context. This thin wrapper exists so
-/// apply_rule can dispatch uniformly via pattern matching.
+/// Delegates to the user-provided function, passing the current
+/// field value, form data for cross-field access, and the app
+/// context. This thin wrapper exists so apply_rule can dispatch
+/// uniformly via pattern matching.
 ///
 fn validate_custom(
   custom_validation: CustomValidation(ctx),
@@ -954,8 +953,8 @@ fn validate_custom(
 
 /// Mirrors apply_rule but for file uploads — pattern matching
 /// on FileRule dispatches to the correct file validation
-/// function. Keeping file and string dispatch separate avoids
-/// a tangled match expression that mixes unrelated rule types.
+/// function. Keeping file and string dispatch separate avoids a
+/// tangled match expression that mixes unrelated rule types.
 ///
 fn apply_file_rule(
   field: String,
@@ -997,8 +996,8 @@ fn validate_file_required(
 
 /// Minimum size catches corrupt or truncated uploads that are
 /// technically present but too small to be valid — like a
-/// 0-byte image. Returning Ok when no file is present lets
-/// this rule compose with FileRequired independently.
+/// 0-byte image. Returning Ok when no file is present lets this
+/// rule compose with FileRequired independently.
 ///
 fn validate_file_min_size(
   field: String,
@@ -1062,8 +1061,8 @@ fn validate_file_max_size(
 }
 
 /// Restricting extensions prevents users from uploading
-/// unexpected file types that the app can't process — like
-/// a .exe on an image upload form. Lowercasing the extracted
+/// unexpected file types that the app can't process — like a
+/// .exe on an image upload form. Lowercasing the extracted
 /// extension ensures ".JPG" matches "jpg" in the allow list.
 ///
 fn validate_file_extension(
@@ -1094,9 +1093,9 @@ fn validate_file_extension(
   }
 }
 
-/// Delegates to the user-provided function only when a file
-/// is present — skipping absent files lets custom rules focus
-/// on validating content without null-checking. FileRequired
+/// Delegates to the user-provided function only when a file is
+/// present — skipping absent files lets custom rules focus on
+/// validating content without null-checking. FileRequired
 /// handles the "must be present" concern separately.
 ///
 fn validate_file_custom(

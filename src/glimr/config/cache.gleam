@@ -18,8 +18,8 @@ import tom
 
 // ------------------------------------------------------------- Public Functions
 
-/// Called by start functions and console commands that need
-/// the store list, so it must be fast on repeated calls. The
+/// Called by start functions and console commands that need the
+/// store list, so it must be fast on repeated calls. The
 /// persistent_term cache makes subsequent calls near-zero-cost.
 /// Returning an empty list on missing or invalid config lets
 /// apps start without a cache.toml file — caching is optional.
@@ -108,10 +108,10 @@ fn parse_store(name: String, toml: tom.Toml) -> CacheStore {
 @external(erlang, "glimr_kernel_ffi", "cache_cache_config")
 fn cache(stores: List(CacheStore)) -> Nil
 
-/// Returns the cached store list if it exists, or Error(Nil)
-/// on the first call before cache() has been called. load()
-/// uses this to skip file I/O on every request after the
-/// initial load.
+/// Returns the cached store list if it exists, or Error(Nil) on
+/// the first call before cache() has been called. load() uses
+/// this to skip file I/O on every request after the initial
+/// load.
 ///
 @external(erlang, "glimr_kernel_ffi", "get_cached_cache_config")
 fn get_cached() -> Result(List(CacheStore), Nil)

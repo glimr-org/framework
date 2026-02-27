@@ -68,8 +68,8 @@ fn merge_param_columns(
 }
 
 /// Recursively parse WHERE clause conditions to extract
-/// parameter-to-column mappings from comparisons like
-/// column = $1 or $1 = column.
+/// parameter-to-column mappings from comparisons like column =
+/// $1 or $1 = column.
 ///
 fn parse_conditions(
   clause: String,
@@ -120,9 +120,9 @@ fn find_column_for_param(
   }
 }
 
-/// Look for a column name before the parameter in patterns
-/// like "column = $1". Strips trailing operators and filters
-/// out SQL keywords to find the actual column name.
+/// Look for a column name before the parameter in patterns like
+/// "column = $1". Strips trailing operators and filters out SQL
+/// keywords to find the actual column name.
 ///
 fn find_column_before_param(s: String) -> Option(String) {
   let trimmed = string.trim_end(s)
@@ -144,8 +144,8 @@ fn find_column_before_param(s: String) -> Option(String) {
 }
 
 /// Recursively remove trailing comparison operators from a
-/// string. Handles both keyword operators (LIKE, IN) and
-/// symbol operators (=, !, >, <).
+/// string. Handles both keyword operators (LIKE, IN) and symbol
+/// operators (=, !, >, <).
 ///
 fn remove_trailing_operator(s: String) -> String {
   let trimmed = string.trim_end(s)
@@ -181,8 +181,8 @@ fn try_remove_keyword_operator(
   |> option.from_result()
 }
 
-/// Try to remove a symbol operator (=, !, >, <) from the end
-/// of a string. Returns the shortened string if a matching
+/// Try to remove a symbol operator (=, !, >, <) from the end of
+/// a string. Returns the shortened string if a matching
 /// operator character is found.
 ///
 fn try_remove_symbol_operator(
@@ -198,9 +198,9 @@ fn try_remove_symbol_operator(
   |> option.from_result()
 }
 
-/// Look for a column name after the parameter in patterns
-/// like "$1 = column". Returns the column name and remaining
-/// string for continued parsing.
+/// Look for a column name after the parameter in patterns like
+/// "$1 = column". Returns the column name and remaining string
+/// for continued parsing.
 ///
 fn find_column_after_param(s: String) -> Option(#(String, String)) {
   let trimmed = string.trim_start(s)

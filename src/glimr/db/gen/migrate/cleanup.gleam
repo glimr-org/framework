@@ -118,8 +118,8 @@ fn remove_rename_from_from_line(line: String) -> String {
   result
 }
 
-/// Remove the rename_from pattern and handle spacing. Finds
-/// the closing paren and joins the before/after parts with
+/// Remove the rename_from pattern and handle spacing. Finds the
+/// closing paren and joins the before/after parts with
 /// appropriate whitespace.
 ///
 fn remove_rename_pattern(before: String, after: String) -> String {
@@ -140,8 +140,8 @@ fn remove_rename_pattern(before: String, after: String) -> String {
 }
 
 /// Find everything after the closing paren of rename_from(...).
-/// Returns the remaining string content after the function
-/// call for rejoining with the prefix.
+/// Returns the remaining string content after the function call
+/// for rejoining with the prefix.
 ///
 fn find_closing_paren(s: String) -> Result(String, Nil) {
   case string.split_once(s, ")") {

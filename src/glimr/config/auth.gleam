@@ -88,8 +88,8 @@ fn parse_auth(toml: tom.Toml) -> AuthConfig {
 
 /// Centralizing defaults here ensures every fallback path
 /// (missing file, parse error, missing section) produces
-/// identical config so behavior is predictable regardless
-/// of which error path was taken.
+/// identical config so behavior is predictable regardless of
+/// which error path was taken.
 ///
 fn default_config() -> AuthConfig {
   AuthConfig(session_key: "_auth_user_id")
@@ -104,10 +104,9 @@ fn default_config() -> AuthConfig {
 @external(erlang, "glimr_kernel_ffi", "cache_auth_config")
 fn cache(config: AuthConfig) -> Nil
 
-/// Returns the cached config if it exists, or Error(Nil) on
-/// the first call before cache() has been called. load() uses
-/// this to skip file I/O on every request after the initial
-/// load.
+/// Returns the cached config if it exists, or Error(Nil) on the
+/// first call before cache() has been called. load() uses this
+/// to skip file I/O on every request after the initial load.
 ///
 @external(erlang, "glimr_kernel_ffi", "get_cached_auth_config")
 fn get_cached() -> Result(AuthConfig, Nil)

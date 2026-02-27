@@ -1,10 +1,10 @@
 //// Database Code Generator
 ////
 //// Querying a database in Gleam requires writing types,
-//// decoders, and wrapper functions for every model — all of 
-//// which must stay in sync with the schema and SQL files. This 
-//// module automates that by scanning model directories, 
-//// parsing schemas and .sql files, and emitting fully-typed 
+//// decoders, and wrapper functions for every model — all of
+//// which must stay in sync with the schema and SQL files. This
+//// module automates that by scanning model directories,
+//// parsing schemas and .sql files, and emitting fully-typed
 //// repository modules so schema changes only require re-
 //// running the generator.
 
@@ -23,8 +23,8 @@ import simplifile
 // ------------------------------------------------------------- Public Functions
 
 /// Single entry point so console commands just pass a
-/// connection name without knowing the folder structure. The 
-/// optional model filter lets developers regenerate a subset of 
+/// connection name without knowing the folder structure. The
+/// optional model filter lets developers regenerate a subset of
 /// models without touching the rest.
 ///
 pub fn run(name: String, model_filter: Option(List(String))) {
@@ -42,10 +42,10 @@ pub fn run(name: String, model_filter: Option(List(String))) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Separated from run to keep path construction out of the
-/// main logic. Reads the models directory, applies the
-/// optional filter, then processes each model independently so 
-/// a parse failure in one model doesn't block the rest.
+/// Separated from run to keep path construction out of the main
+/// logic. Reads the models directory, applies the optional
+/// filter, then processes each model independently so a parse
+/// failure in one model doesn't block the rest.
 ///
 fn generate_models(models_path: String, model_filter: Option(List(String))) {
   case simplifile.read_directory(models_path) {
@@ -83,11 +83,11 @@ fn generate_models(models_path: String, model_filter: Option(List(String))) {
   }
 }
 
-/// Each model is self-contained: its schema and queries live
-/// in the same directory. Processing one at a time means a
-/// broken schema or unparseable SQL file produces a clear
-/// error for that model without affecting others. The output
-/// is auto-formatted so generated code matches project style.
+/// Each model is self-contained: its schema and queries live in
+/// the same directory. Processing one at a time means a broken
+/// schema or unparseable SQL file produces a clear error for
+/// that model without affecting others. The output is
+/// auto-formatted so generated code matches project style.
 ///
 fn process_model(models_path: String, model_name: String) -> Nil {
   let model_path = models_path <> "/" <> model_name

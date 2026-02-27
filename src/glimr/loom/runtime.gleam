@@ -1,12 +1,12 @@
 //// Template Runtime
 ////
 //// Generated Loom templates compile down to string
-//// concatenation expressions, but they need a shared set of 
-//// helpers for escaping, conditional rendering, loop iteration, 
-//// and attribute management. This module provides those 
-//// building blocks so generated code stays minimal and focused 
-//// on template structure while the runtime handles the messy 
-//// details of safe HTML output.
+//// concatenation expressions, but they need a shared set of
+//// helpers for escaping, conditional rendering, loop
+//// iteration, and attribute management. This module provides
+//// those building blocks so generated code stays minimal and
+//// focused on template structure while the runtime handles the
+//// messy details of safe HTML output.
 ////
 
 import dot_env/env
@@ -24,9 +24,9 @@ import houdini
 // ------------------------------------------------------------- Public Types
 
 /// HTML has two fundamentally different attribute types:
-/// standard name="value" pairs and boolean attributes (like 
-/// disabled, checked) that render only their name when true and 
-/// are omitted entirely when false. A sum type lets 
+/// standard name="value" pairs and boolean attributes (like
+/// disabled, checked) that render only their name when true and
+/// are omitted entirely when false. A sum type lets
 /// render_attributes handle both correctly.
 ///
 pub type Attribute {
@@ -35,9 +35,9 @@ pub type Attribute {
 }
 
 /// Template authors frequently need to style the first/last
-/// items differently, apply zebra striping, or display counts. 
-/// Pre-computing all loop metadata into a record lets templates 
-/// access these values without manual index arithmetic or 
+/// items differently, apply zebra striping, or display counts.
+/// Pre-computing all loop metadata into a record lets templates
+/// access these values without manual index arithmetic or
 /// length checks in the template itself.
 ///
 pub type Loop {
@@ -56,8 +56,8 @@ pub type Loop {
 // ------------------------------------------------------------- Public Functions
 
 /// Generated templates build HTML via a chain of pipe
-/// operations. This function provides a named entry point for 
-/// string concatenation that integrates cleanly with Gleam's 
+/// operations. This function provides a named entry point for
+/// string concatenation that integrates cleanly with Gleam's
 /// pipe syntax, keeping generated code readable and consistent.
 ///
 pub fn append(acc: String, value: String) -> String {
@@ -65,9 +65,9 @@ pub fn append(acc: String, value: String) -> String {
 }
 
 /// l-if directives generate conditional blocks that either
-/// render content or skip it entirely. Using a callback for the 
-/// true branch lets generated code defer rendering — the 
-/// template body only executes when the condition holds, 
+/// render content or skip it entirely. Using a callback for the
+/// true branch lets generated code defer rendering — the
+/// template body only executes when the condition holds,
 /// avoiding unnecessary work.
 ///
 pub fn append_if(
@@ -81,10 +81,10 @@ pub fn append_if(
   }
 }
 
-/// l-for loops need to render the same template body for each 
-/// item while threading the accumulator through. A fold-based 
-/// approach builds the output in a single pass without 
-/// allocating intermediate string lists that would need joining 
+/// l-for loops need to render the same template body for each
+/// item while threading the accumulator through. A fold-based
+/// approach builds the output in a single pass without
+/// allocating intermediate string lists that would need joining
 /// afterward.
 ///
 pub fn append_each(
@@ -96,9 +96,9 @@ pub fn append_each(
 }
 
 /// When a template uses `loop` in its l-for body, it needs
-/// metadata like index and first/last flags. Computing the Loop 
-/// record once per iteration and passing it to the render 
-/// callback avoids repeated list.length calls and keeps the 
+/// metadata like index and first/last flags. Computing the Loop
+/// record once per iteration and passing it to the render
+/// callback avoids repeated list.length calls and keeps the
 /// metadata fresh per item.
 ///
 pub fn append_each_with_loop(
@@ -123,20 +123,20 @@ pub fn append_each_with_loop(
   })
 }
 
-/// User-provided data rendered into HTML can contain characters 
-/// that would be interpreted as markup, enabling XSS attacks. 
-/// Escaping through houdini neutralizes these characters so 
-/// template output is safe by default without author 
+/// User-provided data rendered into HTML can contain characters
+/// that would be interpreted as markup, enabling XSS attacks.
+/// Escaping through houdini neutralizes these characters so
+/// template output is safe by default without author
 /// intervention.
 ///
 pub fn escape(value: String) -> String {
   houdini.escape(value)
 }
 
-/// Template variables can hold any Gleam type, but HTML output 
-/// requires strings. Using string.inspect() as a universal 
-/// converter means template authors don't need explicit 
-/// conversions for Int, Bool, or custom types — the runtime 
+/// Template variables can hold any Gleam type, but HTML output
+/// requires strings. Using string.inspect() as a universal
+/// converter means template authors don't need explicit
+/// conversions for Int, Bool, or custom types — the runtime
 /// handles it transparently.
 ///
 pub fn to_string(value: a) -> String {
@@ -150,8 +150,8 @@ pub fn to_string(value: a) -> String {
 
 /// The most common template operation: convert a value to a
 /// string and escape it. Combining both steps here means
-/// generated code for {{ variable }} is a single function call, 
-/// keeping the generated output compact while ensuring XSS 
+/// generated code for {{ variable }} is a single function call,
+/// keeping the generated output compact while ensuring XSS
 /// safety by default.
 ///
 pub fn display(value: a) -> String {
@@ -159,9 +159,9 @@ pub fn display(value: a) -> String {
 }
 
 /// Templates often need to toggle CSS classes based on state
-/// (e.g., "active" when selected, "disabled" when locked). A 
-/// list of #(name, Bool) tuples lets authors express this 
-/// declaratively, and this function handles the filtering and 
+/// (e.g., "active" when selected, "disabled" when locked). A
+/// list of #(name, Bool) tuples lets authors express this
+/// declaratively, and this function handles the filtering and
 /// space-joining at render time.
 ///
 pub fn build_classes(items: List(#(String, Bool))) -> String {
@@ -176,9 +176,9 @@ pub fn build_classes(items: List(#(String, Bool))) -> String {
 }
 
 /// :class lists expect uniform #(String, Bool) tuples, but
-/// static classes that are always present shouldn't need a 
+/// static classes that are always present shouldn't need a
 /// redundant True flag. This helper lets authors write
-/// class("btn") instead of #("btn", True), keeping the template 
+/// class("btn") instead of #("btn", True), keeping the template
 /// syntax clean for the common case.
 ///
 pub fn class(value: String) -> #(String, Bool) {
@@ -187,8 +187,8 @@ pub fn class(value: String) -> #(String, Bool) {
 
 /// Same pattern as build_classes but for inline styles.
 /// Templates may need to toggle style rules based on state
-/// (e.g., "display: none" when hidden). Filtering by boolean 
-/// and joining produces a valid style attribute value without 
+/// (e.g., "display: none" when hidden). Filtering by boolean
+/// and joining produces a valid style attribute value without
 /// manual string manipulation.
 ///
 pub fn build_styles(items: List(#(String, Bool))) -> String {
@@ -202,19 +202,19 @@ pub fn build_styles(items: List(#(String, Bool))) -> String {
   |> string.join(" ")
 }
 
-/// Mirrors the class() helper for :style lists. Static styles 
-/// that are always applied can be written as style("color: red") 
-/// instead of #("color: red", True), keeping template syntax 
-/// consistent between :class and :style.
+/// Mirrors the class() helper for :style lists. Static styles
+/// that are always applied can be written as style("color:
+/// red") instead of #("color: red", True), keeping template
+/// syntax consistent between :class and :style.
 ///
 pub fn style(value: String) -> #(String, Bool) {
   #(value, True)
 }
 
-/// Generated code builds attribute lists as runtime values, but 
-/// the final HTML needs a flat string. Rendering them here with 
-/// proper escaping and boolean attribute handling centralizes 
-/// the HTML output rules so generated code doesn't need to know 
+/// Generated code builds attribute lists as runtime values, but
+/// the final HTML needs a flat string. Rendering them here with
+/// proper escaping and boolean attribute handling centralizes
+/// the HTML output rules so generated code doesn't need to know
 /// about escaping or attribute syntax.
 ///
 pub fn render_attributes(attrs: List(Attribute)) -> String {
@@ -231,8 +231,8 @@ pub fn render_attributes(attrs: List(Attribute)) -> String {
 
 /// Parent-provided attributes must combine with a component's
 /// base attributes, but the merge rules differ by attribute
-/// type: classes and styles should concatenate (so both parent 
-/// and component classes apply), while other attributes should 
+/// type: classes and styles should concatenate (so both parent
+/// and component classes apply), while other attributes should
 /// override (parent wins for id, etc.).
 ///
 pub fn merge_attributes(
@@ -250,8 +250,8 @@ pub fn merge_attributes(
 
 /// Dev environments use a proxy (e.g., Vite) that doesn't
 /// forward WebSocket connections properly. Detecting the
-/// DEV_PROXY_PORT env var lets live templates connect directly 
-/// to the app port in dev while using a relative path in 
+/// DEV_PROXY_PORT env var lets live templates connect directly
+/// to the app port in dev while using a relative path in
 /// production that works behind any reverse proxy.
 ///
 pub fn live_ws_url() -> String {
@@ -292,10 +292,10 @@ pub fn live_component_wrapper(
   <> "</div>"
 }
 
-/// Live templates render through layout components that produce 
-/// the <html>/<body> structure. The live container div and 
-/// script tag must be injected inside the body rather than 
-/// wrapping the entire output, otherwise the HTML structure 
+/// Live templates render through layout components that produce
+/// the <html>/<body> structure. The live container div and
+/// script tag must be injected inside the body rather than
+/// wrapping the entire output, otherwise the HTML structure
 /// would be invalid with nested body tags.
 ///
 pub fn inject_live_wrapper(
@@ -541,7 +541,8 @@ fn diff_list_items(
 }
 
 /// Parse a JSON string into a LiveTree for structural diffing.
-/// Uses a simple recursive JSON parser based on string scanning.
+/// Uses a simple recursive JSON parser based on string
+/// scanning.
 ///
 fn parse_tree_json(input: String) -> Result(LiveTree, Nil) {
   case json.parse(input, tree_decoder()) {
@@ -576,7 +577,8 @@ pub fn map_each(items: List(item), render_fn: fn(item) -> LiveTree) -> Dynamic {
   DynList(list.map(items, render_fn))
 }
 
-/// Like append_each_with_loop but returns a DynList for tree mode.
+/// Like append_each_with_loop but returns a DynList for tree
+/// mode.
 ///
 pub fn map_each_with_loop(
   items: List(item),
@@ -603,9 +605,9 @@ pub fn map_each_with_loop(
 
 // ------------------------------------------------------------- Private Functions
 
-/// Classes from both the component and parent should be visible 
-/// in the DOM — dropping either would break styling. Appending 
-/// with a space separator preserves both class lists, letting 
+/// Classes from both the component and parent should be visible
+/// in the DOM — dropping either would break styling. Appending
+/// with a space separator preserves both class lists, letting
 /// CSS specificity determine which styles win.
 ///
 fn merge_class_attribute(
@@ -629,7 +631,7 @@ fn merge_class_attribute(
 /// Like classes, inline styles from both component and parent
 /// should be combined rather than overridden. Ensuring a
 /// semicolon separator between the existing and new styles
-/// prevents CSS parsing errors from concatenated rules like 
+/// prevents CSS parsing errors from concatenated rules like
 /// "color: red" + "display: none" without a delimiter.
 ///
 fn merge_style_attribute(
@@ -651,10 +653,10 @@ fn merge_style_attribute(
   }
 }
 
-/// For non-class/style attributes (id, href, data-*, etc.), the 
-/// parent's value should take precedence since the parent has 
-/// more context about how the component is used. Replacing 
-/// rather than concatenating avoids invalid duplicate values 
+/// For non-class/style attributes (id, href, data-*, etc.), the
+/// parent's value should take precedence since the parent has
+/// more context about how the component is used. Replacing
+/// rather than concatenating avoids invalid duplicate values
 /// like two different ids.
 ///
 fn override_attribute(
@@ -675,9 +677,9 @@ fn override_attribute(
   }
 }
 
-/// Merge operations need to compare attribute names across both 
-/// Attribute and BoolAttribute variants. Extracting the name 
-/// uniformly avoids duplicating the pattern match at every 
+/// Merge operations need to compare attribute names across both
+/// Attribute and BoolAttribute variants. Extracting the name
+/// uniformly avoids duplicating the pattern match at every
 /// comparison site in the merge functions.
 ///
 fn attr_name(attr: Attribute) -> String {
@@ -687,9 +689,9 @@ fn attr_name(attr: Attribute) -> String {
 }
 
 /// Style values may or may not end with a semicolon, but
-/// concatenating two style strings without one between them 
-/// produces invalid CSS. Normalizing the trailing semicolon 
-/// here prevents broken styles when merging component and 
+/// concatenating two style strings without one between them
+/// produces invalid CSS. Normalizing the trailing semicolon
+/// here prevents broken styles when merging component and
 /// parent style attributes.
 ///
 fn ensure_semicolon(value: String) -> String {
@@ -701,10 +703,10 @@ fn ensure_semicolon(value: String) -> String {
 }
 
 /// The <body> tag may carry attributes (class, onload, etc.)
-/// that must be preserved during injection. Splitting on "<body"
-/// first and then on ">" ensures the injected content appears
-/// after the complete opening tag without clobbering any
-/// existing body attributes.
+/// that must be preserved during injection. Splitting on
+/// "<body" first and then on ">" ensures the injected content
+/// appears after the complete opening tag without clobbering
+/// any existing body attributes.
 ///
 fn inject_after_body_open(html: String, content: String) -> String {
   case string.split_once(html, "<body") {

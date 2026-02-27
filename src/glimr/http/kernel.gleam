@@ -21,14 +21,14 @@ pub type Next(context) =
 
 /// A function that intercepts requests before they reach the
 /// handler. Can modify both the request and context, execute
-/// logic, and modify the response. Uses the 'next' callback
-/// to continue the chain with updated request and context.
+/// logic, and modify the response. Uses the 'next' callback to
+/// continue the chain with updated request and context.
 ///
 pub type Middleware(context) =
   fn(Request, context, Next(context)) -> Response
 
-/// Defines the type of middleware stack to apply to routes.
-/// Web routes use HTML error responses and serve static files,
+/// Defines the type of middleware stack to apply to routes. Web
+/// routes use HTML error responses and serve static files,
 /// while Api routes use JSON error responses. Custom groups
 /// allow for application-specific middleware configurations.
 ///

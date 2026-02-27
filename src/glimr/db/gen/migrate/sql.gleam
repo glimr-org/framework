@@ -18,17 +18,18 @@ import glimr/db/gen/schema_parser.{type Column, type ColumnType, type Table}
 // ------------------------------------------------------------- Public Types
 
 /// Database driver for SQL generation. Determines syntax
-/// differences between PostgreSQL and SQLite for things
-/// like types, auto-increment, and functions.
+/// differences between PostgreSQL and SQLite for things like
+/// types, auto-increment, and functions.
 ///
 pub type Driver {
   Postgres
   Sqlite
 }
 
-/// The computed difference between old and new schema snapshots.
-/// Contains a list of changes that need to be migrated,
-/// including table and column additions, drops, and alterations.
+/// The computed difference between old and new schema
+/// snapshots. Contains a list of changes that need to be
+/// migrated, including table and column additions, drops, and
+/// alterations.
 ///
 pub type SchemaDiff {
   SchemaDiff(changes: List(Change))
@@ -153,11 +154,11 @@ fn topological_sort(tables: List(Table), all_names: List(String)) -> List(Table)
   do_topological_sort(tables, get_deps, [])
 }
 
-/// Recursive helper for topological sort using Kahn's algorithm.
-/// Each iteration finds tables whose dependencies are already 
-/// in the sorted list, adds them, and recurses with the 
-/// remainder. If no tables are ready (circular dependency), 
-/// returns remaining tables in original order to avoid infinite 
+/// Recursive helper for topological sort using Kahn's
+/// algorithm. Each iteration finds tables whose dependencies
+/// are already in the sorted list, adds them, and recurses with
+/// the remainder. If no tables are ready (circular dependency),
+/// returns remaining tables in original order to avoid infinite
 /// recursion.
 ///
 fn do_topological_sort(
@@ -202,8 +203,8 @@ pub fn generate_sql(diff: SchemaDiff, driver: Driver) -> String {
 }
 
 /// Human-readable description of a Change for CLI output.
-/// Formats the change type and affected table/column names
-/// into a user-friendly string.
+/// Formats the change type and affected table/column names into
+/// a user-friendly string.
 ///
 pub fn describe_change(change: Change) -> String {
   case change {
@@ -220,8 +221,8 @@ pub fn describe_change(change: Change) -> String {
 // ------------------------------------------------------------- Private Functions
 
 /// Compute column-level changes for a single table. Detects
-/// renames (via rename_from), additions, drops, and
-/// alterations by comparing against the old snapshot.
+/// renames (via rename_from), additions, drops, and alterations
+/// by comparing against the old snapshot.
 ///
 fn compute_table_diff(old: Snapshot, table: Table) -> List(Change) {
   case dict.get(old.tables, table.name) {
@@ -386,8 +387,8 @@ fn compute_table_diff(old: Snapshot, table: Table) -> List(Change) {
 }
 
 /// Convert a single Change to its SQL representation.
-/// Dispatches to specific SQL generators based on the
-/// change type (create, drop, alter, rename).
+/// Dispatches to specific SQL generators based on the change
+/// type (create, drop, alter, rename).
 ///
 fn change_to_sql(change: Change, driver: Driver) -> String {
   case change {
@@ -414,8 +415,8 @@ fn change_to_sql(change: Change, driver: Driver) -> String {
 }
 
 /// Generate CREATE TABLE SQL with all column definitions.
-/// Includes primary keys, constraints, and default values
-/// for each column in the table.
+/// Includes primary keys, constraints, and default values for
+/// each column in the table.
 ///
 fn create_table_sql(table: Table, driver: Driver) -> String {
   let columns_sql =
@@ -450,8 +451,8 @@ fn column_definition(column: Column, driver: Driver) -> String {
 }
 
 /// Map a ColumnType to driver-specific SQL type. Handles
-/// differences between Postgres types (VARCHAR, BOOLEAN)
-/// and SQLite types (TEXT, INTEGER).
+/// differences between Postgres types (VARCHAR, BOOLEAN) and
+/// SQLite types (TEXT, INTEGER).
 ///
 fn column_type_sql(col_type: ColumnType, driver: Driver) -> String {
   case driver {
@@ -490,9 +491,9 @@ fn column_type_sql(col_type: ColumnType, driver: Driver) -> String {
   }
 }
 
-/// Generate PRIMARY KEY clause for Id columns. Postgres
-/// uses SERIAL with PRIMARY KEY, SQLite uses INTEGER with
-/// PRIMARY KEY AUTOINCREMENT.
+/// Generate PRIMARY KEY clause for Id columns. Postgres uses
+/// SERIAL with PRIMARY KEY, SQLite uses INTEGER with PRIMARY
+/// KEY AUTOINCREMENT.
 ///
 fn primary_key_sql(driver: Driver) -> String {
   case driver {
@@ -501,9 +502,9 @@ fn primary_key_sql(driver: Driver) -> String {
   }
 }
 
-/// Convert a DefaultValue to its SQL representation.
-/// Handles booleans, strings, numbers, timestamps, and
-/// auto-generated UUIDs with driver-specific syntax.
+/// Convert a DefaultValue to its SQL representation. Handles
+/// booleans, strings, numbers, timestamps, and auto-generated
+/// UUIDs with driver-specific syntax.
 ///
 fn default_to_sql(
   default_value: schema_parser.DefaultValue,
@@ -539,17 +540,17 @@ fn default_to_sql(
   }
 }
 
-/// Escape single quotes in SQL string literals. Doubles
-/// any single quote characters to prevent SQL injection
-/// and syntax errors in string defaults.
+/// Escape single quotes in SQL string literals. Doubles any
+/// single quote characters to prevent SQL injection and syntax
+/// errors in string defaults.
 ///
 fn escape_sql_string(s: String) -> String {
   string.replace(s, "'", "''")
 }
 
 /// Generate ALTER COLUMN SQL. Note: SQLite doesn't support
-/// ALTER COLUMN, so a comment is generated instead to
-/// indicate manual table recreation is needed.
+/// ALTER COLUMN, so a comment is generated instead to indicate
+/// manual table recreation is needed.
 ///
 fn alter_column_sql(table: String, column: Column, driver: Driver) -> String {
   case driver {

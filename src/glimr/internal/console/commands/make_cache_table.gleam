@@ -1,5 +1,5 @@
 import glimr/console/command.{type Args, type Command, Flag}
-import glimr/db/pool_connection.{type DbPool}
+import glimr/db/db.{type DbPool}
 import glimr/internal/actions/gen_cache_table
 import glimr/internal/actions/run_migrate
 
@@ -27,7 +27,7 @@ fn run(args: Args, pool: DbPool, table: String) -> Nil {
   let database = command.get_option(args, "database")
   let should_migrate = command.has_flag(args, "migrate")
 
-  gen_cache_table.run(database, table, pool_connection.pool_driver(pool))
+  gen_cache_table.run(database, table, db.pool_driver(pool))
 
   case should_migrate {
     True -> run_migrate.run(pool, database)

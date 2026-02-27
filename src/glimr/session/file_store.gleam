@@ -4,9 +4,9 @@
 //// server has a filesystem. This store persists sessions as
 //// flat files — one per session ID — so apps can use server-
 //// side sessions without any infrastructure beyond disk. The
-//// expiry timestamp is stored inline as the first line of
-//// each file so GC can check expiration without parsing the
-//// full payload.
+//// expiry timestamp is stored inline as the first line of each
+//// file so GC can check expiration without parsing the full
+//// payload.
 ////
 
 import gleam/dict
@@ -23,12 +23,12 @@ import simplifile
 
 // ------------------------------------------------------------- Internal Public Functions
 
-/// Wiring the store callbacks here keeps filesystem details
-/// out of the session middleware. Reusing the file cache
-/// pool's directory groups all file-based storage under one
+/// Wiring the store callbacks here keeps filesystem details out
+/// of the session middleware. Reusing the file cache pool's
+/// directory groups all file-based storage under one
 /// configurable path. The cookie_value callback returns just
-/// the session ID since the actual data lives on disk, not
-/// in the cookie.
+/// the session ID since the actual data lives on disk, not in
+/// the cookie.
 ///
 @internal
 pub fn create(pool: Pool) -> SessionStore {
@@ -79,11 +79,11 @@ fn load(
   result.unwrap(decoded, empty)
 }
 
-/// The expiry timestamp is written as the first line so GC
-/// can check it without parsing the JSON payload, keeping
-/// the GC scan fast even with many session files. Creating
-/// the directory on every save handles the cold-start case
-/// where the sessions directory doesn't exist yet.
+/// The expiry timestamp is written as the first line so GC can
+/// check it without parsing the JSON payload, keeping the GC
+/// scan fast even with many session files. Creating the
+/// directory on every save handles the cold-start case where
+/// the sessions directory doesn't exist yet.
 ///
 fn save(
   base_path: String,
@@ -103,10 +103,10 @@ fn save(
   Nil
 }
 
-/// Session invalidation must remove the file immediately so
-/// the old session ID can never be reused, even before GC
-/// runs. Ignoring delete errors is safe — the file may
-/// already be gone from a prior GC pass.
+/// Session invalidation must remove the file immediately so the
+/// old session ID can never be reused, even before GC runs.
+/// Ignoring delete errors is safe — the file may already be
+/// gone from a prior GC pass.
 ///
 fn destroy(base_path: String, session_id: String) -> Nil {
   let path = base_path <> "/" <> session_id
@@ -115,10 +115,10 @@ fn destroy(base_path: String, session_id: String) -> Nil {
 }
 
 /// Scans all session files and deletes expired ones. Called
-/// probabilistically by the session middleware so cleanup
-/// cost is amortized across requests. Silently ignoring a
-/// missing directory handles the case where no sessions have
-/// been created yet.
+/// probabilistically by the session middleware so cleanup cost
+/// is amortized across requests. Silently ignoring a missing
+/// directory handles the case where no sessions have been
+/// created yet.
 ///
 fn gc(base_path: String) -> Nil {
   let now = unix_timestamp.now()
@@ -131,9 +131,9 @@ fn gc(base_path: String) -> Nil {
 
 /// Only the first line (the expiry timestamp) needs to be
 /// parsed to decide whether to delete — reading the full
-/// payload would waste I/O on files that might be kept.
-/// Corrupt or unreadable files are left alone rather than
-/// deleted, avoiding data loss from transient I/O errors.
+/// payload would waste I/O on files that might be kept. Corrupt
+/// or unreadable files are left alone rather than deleted,
+/// avoiding data loss from transient I/O errors.
 ///
 fn gc_file(base_path: String, now: Int, file: String) -> Nil {
   let path = base_path <> "/" <> file

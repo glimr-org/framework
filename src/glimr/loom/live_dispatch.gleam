@@ -1,10 +1,10 @@
 //// Loom Live Dispatch
 ////
-//// Generated template modules are determined at runtime by the 
-//// client's init message, so the live_socket actor can't call 
-//// them directly — Gleam requires compile-time module 
-//// references. This module uses Erlang's apply/3 via FFI to 
-//// bridge that gap, letting the runtime invoke handle_json and 
+//// Generated template modules are determined at runtime by the
+//// client's init message, so the live_socket actor can't call
+//// them directly — Gleam requires compile-time module
+//// references. This module uses Erlang's apply/3 via FFI to
+//// bridge that gap, letting the runtime invoke handle_json and
 //// render_json on any generated module by name.
 ////
 
@@ -17,8 +17,8 @@ import gleam/string
 // ------------------------------------------------------------- Public Functions
 
 /// Erlang's apply/3 expects module names as atoms, but Gleam
-/// uses forward-slash paths (compiled/loom/counter). The BEAM 
-/// convention replaces slashes with @ for module atoms, so this 
+/// uses forward-slash paths (compiled/loom/counter). The BEAM
+/// convention replaces slashes with @ for module atoms, so this
 /// conversion is needed before every dynamic call.
 ///
 pub fn module_to_atom(module: String) -> Atom {
@@ -28,9 +28,9 @@ pub fn module_to_atom(module: String) -> Atom {
 }
 
 /// The live_socket actor needs to invoke the generated
-/// handle_json function to process events, but the module is 
-/// only known at runtime. This wrapper marshals the handler ID, 
-/// current props, and special variables into dynamic args for 
+/// handle_json function to process events, but the module is
+/// only known at runtime. This wrapper marshals the handler ID,
+/// current props, and special variables into dynamic args for
 /// the FFI call.
 ///
 pub fn call_handle_json(
@@ -50,9 +50,9 @@ pub fn call_handle_json(
   ])
 }
 
-/// After handle_json updates the props, the actor needs fresh 
-/// HTML to send as a patch. Calling render_json dynamically 
-/// lets the runtime re-render any template module without 
+/// After handle_json updates the props, the actor needs fresh
+/// HTML to send as a patch. Calling render_json dynamically
+/// lets the runtime re-render any template module without
 /// compile-time coupling to it.
 ///
 pub fn call_render_json(
@@ -75,10 +75,10 @@ pub fn call_render_tree_json(
 }
 
 /// The registry needs to distinguish live modules from static
-/// ones at startup. Probing for the is_live export via apply 
-/// avoids maintaining a separate manifest — the generated 
-/// module itself declares its liveness through the presence 
-/// (or absence) of this function.
+/// ones at startup. Probing for the is_live export via apply
+/// avoids maintaining a separate manifest — the generated
+/// module itself declares its liveness through the presence (or
+/// absence) of this function.
 ///
 pub fn is_live_module(module: String) -> Bool {
   let module_atom = module_to_atom(module)
@@ -90,10 +90,10 @@ pub fn is_live_module(module: String) -> Bool {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Shared wrapper for all dynamic module calls. Converts the 
-/// module path to an atom, invokes the function via FFI, and 
-/// decodes the result as a string. Centralizing the error 
-/// handling here keeps the public call_* functions focused on 
+/// Shared wrapper for all dynamic module calls. Converts the
+/// module path to an atom, invokes the function via FFI, and
+/// decodes the result as a string. Centralizing the error
+/// handling here keeps the public call_* functions focused on
 /// argument marshaling.
 ///
 fn call_module_fn(

@@ -4,9 +4,9 @@
 //// persists across multiple reads and writes within a single
 //// request handler. An OTP actor per request provides that
 //// mutability safely — each operation is a message, so
-//// concurrent access is serialized. The middleware reads the 
-//// actor's final state after the handler returns to persist 
-//// only what actually changed, avoiding unnecessary store 
+//// concurrent access is serialized. The middleware reads the
+//// actor's final state after the handler returns to persist
+//// only what actually changed, avoiding unnecessary store
 //// writes.
 ////
 
@@ -31,9 +31,9 @@ import wisp.{type Request, type Response}
 /// Context requires a Session field at construction time, but
 /// the actor can't start until a request arrives with cookie
 /// data. The Empty variant satisfies the type system during
-/// boot without allocating an actor, while Live wraps the real 
-/// per-request actor subject. Making the type opaque prevents 
-/// callers from pattern matching on the variant and coupling to 
+/// boot without allocating an actor, while Live wraps the real
+/// per-request actor subject. Making the type opaque prevents
+/// callers from pattern matching on the variant and coupling to
 /// the internal representation.
 ///
 pub opaque type Session {
@@ -43,15 +43,15 @@ pub opaque type Session {
 
 // ------------------------------------------------------------- Internal Public Types
 
-/// The middleware needs to inspect the actor's final state to 
-/// decide what to persist. Tracking dirty and invalidated flags 
+/// The middleware needs to inspect the actor's final state to
+/// decide what to persist. Tracking dirty and invalidated flags
 /// avoids unnecessary store writes when nothing changed.
 ///
 /// Flash is split into two dicts because flash messages have
 /// one-shot semantics: loaded_flash holds values from the
-/// previous request (readable via get_flash), while flash holds 
-/// new values set during this request (persisted for the next 
-/// one). This separation prevents a flash set and read within 
+/// previous request (readable via get_flash), while flash holds
+/// new values set during this request (persisted for the next
+/// one). This separation prevents a flash set and read within
 /// the same request from interfering.
 ///
 @internal
@@ -71,7 +71,7 @@ pub type SessionState {
 /// Each public session function maps to exactly one message
 /// variant, keeping the actor protocol a direct mirror of the
 /// public API. Reads carry a reply subject for synchronous
-/// responses; writes are fire-and-forget. This separation lets 
+/// responses; writes are fire-and-forget. This separation lets
 /// the actor handle both patterns without extra state.
 ///
 type SessionMessage {
@@ -101,9 +101,9 @@ pub fn empty() -> Session {
   Empty
 }
 
-/// Reads go through actor.call (synchronous) because the caller 
-/// needs the value immediately to make decisions in the handler. 
-/// Returns Error(Nil) for missing keys so callers can 
+/// Reads go through actor.call (synchronous) because the caller
+/// needs the value immediately to make decisions in the
+/// handler. Returns Error(Nil) for missing keys so callers can
 /// distinguish absence from an empty string.
 ///
 pub fn get(session: Session, key: String) -> Result(String, Nil) {
@@ -113,9 +113,9 @@ pub fn get(session: Session, key: String) -> Result(String, Nil) {
   }
 }
 
-/// Writes use process.send (fire-and-forget) because the caller 
-/// doesn't need confirmation — the actor serializes all 
-/// mutations and the middleware reads the final state after the 
+/// Writes use process.send (fire-and-forget) because the caller
+/// doesn't need confirmation — the actor serializes all
+/// mutations and the middleware reads the final state after the
 /// handler returns.
 ///
 pub fn put(session: Session, key: String, value: String) -> Nil {
@@ -126,7 +126,7 @@ pub fn put(session: Session, key: String, value: String) -> Nil {
 }
 
 /// Removing a key marks the session dirty so the middleware
-/// persists the deletion. Fire-and-forget like put since the 
+/// persists the deletion. Fire-and-forget like put since the
 /// caller doesn't need to wait for confirmation.
 ///
 pub fn forget(session: Session, key: String) -> Nil {
@@ -136,8 +136,8 @@ pub fn forget(session: Session, key: String) -> Nil {
   }
 }
 
-/// Existence checks are synchronous (actor.call) because the 
-/// caller typically branches on the result immediately, e.g. to 
+/// Existence checks are synchronous (actor.call) because the
+/// caller typically branches on the result immediately, e.g. to
 /// decide whether to redirect an unauthenticated user.
 ///
 pub fn has(session: Session, key: String) -> Bool {
@@ -149,7 +149,7 @@ pub fn has(session: Session, key: String) -> Bool {
 
 /// Bulk reads are needed for serialization (e.g. the cookie
 /// store encoding the full session into a signed cookie) and
-/// for debugging. Returns a snapshot — further mutations after 
+/// for debugging. Returns a snapshot — further mutations after
 /// this call won't be reflected in the returned dict.
 ///
 pub fn all(session: Session) -> Dict(String, String) {
@@ -159,9 +159,9 @@ pub fn all(session: Session) -> Dict(String, String) {
   }
 }
 
-/// The session ID is needed by the store to look up or persist 
-/// the session data. Exposing it lets middleware and store 
-/// implementations access it without reaching into the actor's 
+/// The session ID is needed by the store to look up or persist
+/// the session data. Exposing it lets middleware and store
+/// implementations access it without reaching into the actor's
 /// internal state directly.
 ///
 pub fn id(session: Session) -> String {
@@ -174,7 +174,7 @@ pub fn id(session: Session) -> String {
 /// Flash messages provide one-shot feedback across redirects
 /// (e.g. "Item saved successfully"). Storing them separately
 /// from regular session data and clearing them after one read
-/// ensures they appear exactly once without the handler needing 
+/// ensures they appear exactly once without the handler needing
 /// to manage cleanup.
 ///
 pub fn flash(session: Session, key: String, value: String) -> Nil {
@@ -184,9 +184,9 @@ pub fn flash(session: Session, key: String, value: String) -> Nil {
   }
 }
 
-/// Most flash reads happen in templates where an empty string 
-/// is the natural "no flash" value. Returning "" instead of a 
-/// Result avoids wrapping every template interpolation in a 
+/// Most flash reads happen in templates where an empty string
+/// is the natural "no flash" value. Returning "" instead of a
+/// Result avoids wrapping every template interpolation in a
 /// case expression.
 ///
 pub fn get_flash(session: Session, key: String) -> String {
@@ -196,9 +196,9 @@ pub fn get_flash(session: Session, key: String) -> String {
   }
 }
 
-/// When the handler needs to distinguish between "no flash was 
+/// When the handler needs to distinguish between "no flash was
 /// set" and "flash was set to an empty string", this Result-
-/// returning variant provides that distinction. get_flash 
+/// returning variant provides that distinction. get_flash
 /// delegates here and unwraps for the common case.
 ///
 pub fn get_flash_or(session: Session, key: String) -> Result(String, Nil) {
@@ -208,9 +208,9 @@ pub fn get_flash_or(session: Session, key: String) -> Result(String, Nil) {
   }
 }
 
-/// Templates often need to conditionally render a flash banner 
-/// only when a message exists. A Bool check is cleaner than 
-/// matching on a Result when the value itself isn't needed for 
+/// Templates often need to conditionally render a flash banner
+/// only when a message exists. A Bool check is cleaner than
+/// matching on a Result when the value itself isn't needed for
 /// the conditional.
 ///
 pub fn has_flash(session: Session, key: String) -> Bool {
@@ -221,9 +221,10 @@ pub fn has_flash(session: Session, key: String) -> Bool {
 }
 
 /// Logout and account deletion need to destroy all session
-/// state and issue a new ID so the old session cookie can never 
-/// be reused. The invalidated flag tells middleware to delete 
-/// the old entry from the store rather than just overwriting it.
+/// state and issue a new ID so the old session cookie can never
+/// be reused. The invalidated flag tells middleware to delete
+/// the old entry from the store rather than just overwriting
+/// it.
 ///
 pub fn invalidate(session: Session) -> Nil {
   case session {
@@ -232,10 +233,10 @@ pub fn invalidate(session: Session) -> Nil {
   }
 }
 
-/// After login, the session ID must change to prevent session 
-/// fixation attacks — an attacker who planted a known session 
-/// ID before authentication can't hijack the post-login session 
-/// if the ID rotates. Data is preserved so the user doesn't 
+/// After login, the session ID must change to prevent session
+/// fixation attacks — an attacker who planted a known session
+/// ID before authentication can't hijack the post-login session
+/// if the ID rotates. Data is preserved so the user doesn't
 /// lose pre-login state.
 ///
 pub fn regenerate(session: Session) -> Nil {
@@ -245,11 +246,11 @@ pub fn regenerate(session: Session) -> Nil {
   }
 }
 
-/// Cookie-based sessions avoid server-side storage entirely
-/// — the signed cookie is the store. This is ideal for small
+/// Cookie-based sessions avoid server-side storage entirely —
+/// the signed cookie is the store. This is ideal for small
 /// payloads under ~4KB where the simplicity of zero
-/// infrastructure outweighs the per-request bandwidth cost. The 
-/// store is cached in persistent_term so middleware can access 
+/// infrastructure outweighs the per-request bandwidth cost. The
+/// store is cached in persistent_term so middleware can access
 /// it without passing it through every function.
 ///
 pub fn start_cookie() -> Session {
@@ -260,8 +261,8 @@ pub fn start_cookie() -> Session {
 }
 
 /// Starts a session for the current request. Reads the session
-/// cookie, loads data from the configured store, and provides
-/// a live session to the next handler. After the handler returns,
+/// cookie, loads data from the configured store, and provides a
+/// live session to the next handler. After the handler returns,
 /// persists changes and sets the cookie on the response.
 ///
 /// Usage in kernel middleware:
@@ -366,8 +367,8 @@ pub fn start(
 }
 
 /// The actor must be stopped after the middleware persists
-/// changes, otherwise it would leak — one orphaned process per 
-/// request. Stopping via a message rather than killing the 
+/// changes, otherwise it would leak — one orphaned process per
+/// request. Stopping via a message rather than killing the
 /// process lets the actor shut down cleanly.
 ///
 @internal
@@ -381,8 +382,8 @@ pub fn stop(session: Session) -> Nil {
 /// The middleware needs the full state — data, flash, dirty
 /// flag, invalidated flag — to decide what to persist and
 /// whether to delete the old session. Exposing the entire
-/// SessionState avoids adding separate accessors for each
-/// field the middleware needs.
+/// SessionState avoids adding separate accessors for each field
+/// the middleware needs.
 ///
 @internal
 pub fn get_state(session: Session) -> Result(SessionState, Nil) {
@@ -392,7 +393,7 @@ pub fn get_state(session: Session) -> Result(SessionState, Nil) {
   }
 }
 
-/// Session IDs must be unguessable to prevent hijacking. 32 
+/// Session IDs must be unguessable to prevent hijacking. 32
 /// bytes of cryptographic randomness (256 bits) provides
 /// sufficient entropy that brute-force guessing is infeasible.
 /// Hex encoding produces a URL-safe 64-character string
@@ -496,10 +497,10 @@ fn handle_message(
   }
 }
 
-/// Sets the session cookie on the response. When expire_on_close
-/// is true, omits max_age so the cookie becomes a session
-/// cookie that the browser deletes when closed. When false,
-/// sets max_age to the configured lifetime.
+/// Sets the session cookie on the response. When
+/// expire_on_close is true, omits max_age so the cookie becomes
+/// a session cookie that the browser deletes when closed. When
+/// false, sets max_age to the configured lifetime.
 ///
 fn set_session_cookie(
   resp: Response,
@@ -530,11 +531,10 @@ fn set_session_cookie(
 }
 
 /// Expired sessions accumulate in the store over time but
-/// running GC on every request would add unnecessary latency.
-/// A 2% probability spreads the cleanup cost across requests
-/// so no single request pays the full price, while still
-/// ensuring stale entries are purged within a reasonable
-/// window.
+/// running GC on every request would add unnecessary latency. A
+/// 2% probability spreads the cleanup cost across requests so
+/// no single request pays the full price, while still ensuring
+/// stale entries are purged within a reasonable window.
 ///
 fn maybe_gc() -> Nil {
   case rand_uniform(100) {
@@ -546,9 +546,9 @@ fn maybe_gc() -> Nil {
 // ------------------------------------------------------------- FFI Helpers
 
 /// Gleam has no built-in CSPRNG, so this wraps Erlang's
-/// crypto:strong_rand_bytes/1 via FFI. Using the crypto
-/// module guarantees OS-level entropy rather than a
-/// pseudo-random generator.
+/// crypto:strong_rand_bytes/1 via FFI. Using the crypto module
+/// guarantees OS-level entropy rather than a pseudo-random
+/// generator.
 ///
 @external(erlang, "crypto", "strong_rand_bytes")
 fn crypto_strong_random_bytes(n: Int) -> BitArray

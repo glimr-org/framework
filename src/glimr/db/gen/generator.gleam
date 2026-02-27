@@ -91,7 +91,7 @@ fn generate_imports(table: Table) -> String {
     False -> ""
   }
 
-  let db_import = "\nimport glimr/db/pool_connection as db"
+  let db_import = "\nimport glimr/db/db"
 
   base_imports <> option_import <> glimr_decode_import <> db_import
 }
@@ -769,7 +769,7 @@ fn generate_query_function(
   let main_fn =
     "pub fn "
     <> fn_name
-    <> "(pool pool: db.Pool"
+    <> "(pool pool: db.DbPool"
     <> param_list
     <> ") -> "
     <> result_type
@@ -801,7 +801,7 @@ fn generate_query_function(
   let or_fail_fn =
     "pub fn "
     <> fn_name
-    <> "_or_fail(pool pool: db.Pool"
+    <> "_or_fail(pool pool: db.DbPool"
     <> param_list
     <> ") -> "
     <> or_fail_type
@@ -975,7 +975,7 @@ fn generate_execute_function(
   let main_fn =
     "pub fn "
     <> fn_name
-    <> "(pool pool: db.Pool"
+    <> "(pool pool: db.DbPool"
     <> param_list
     <> ") -> Result(Int, db.DbError) {\n"
     <> "  use connection <- db.get_connection(pool)\n"
@@ -1003,7 +1003,7 @@ fn generate_execute_function(
   let or_fail_fn =
     "pub fn "
     <> fn_name
-    <> "_or_fail(pool pool: db.Pool"
+    <> "_or_fail(pool pool: db.DbPool"
     <> param_list
     <> ") -> Int {\n"
     <> "  use connection <- db.get_connection(pool)\n"

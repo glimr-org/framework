@@ -1,7 +1,7 @@
 //// Schema DSL
 ////
-//// A fluent builder for defining database table schemas in 
-//// Gleam. Schemas serve as the source of truth for code 
+//// A fluent builder for defining database table schemas in
+//// Gleam. Schemas serve as the source of truth for code
 //// generation, migration generation, and type inference.
 
 import gleam/list
@@ -31,18 +31,18 @@ pub type Column {
   )
 }
 
-/// Wrapper for column definitions that allows single columns
-/// or multiple columns (like timestamps) to be used in the
-/// same list.
+/// Wrapper for column definitions that allows single columns or
+/// multiple columns (like timestamps) to be used in the same
+/// list.
 ///
 pub type ColumnDef {
   Single(Column)
   Multiple(List(Column))
 }
 
-/// Defines the available column types that map to both 
-/// PostgreSQL and SQLite data types. The codegen tool uses 
-/// these to generate appropriate Gleam types and SQL DDL 
+/// Defines the available column types that map to both
+/// PostgreSQL and SQLite data types. The codegen tool uses
+/// these to generate appropriate Gleam types and SQL DDL
 /// statements.
 ///
 pub type ColumnType {
@@ -74,9 +74,9 @@ pub type ColumnType {
   Foreign(table: String)
 }
 
-/// Defines default values that can be assigned to columns.
-/// Used in migration generation to produce appropriate SQL
-/// DEFAULT clauses.
+/// Defines default values that can be assigned to columns. Used
+/// in migration generation to produce appropriate SQL DEFAULT
+/// clauses.
 ///
 pub type Default {
   DefaultString(String)
@@ -123,7 +123,7 @@ pub fn table(name: String, column_defs: List(ColumnDef)) -> Table {
   Table(name: name, columns: cols)
 }
 
-/// Creates an auto-incrementing integer primary key column 
+/// Creates an auto-incrementing integer primary key column
 /// named "id". This is typically the first column in a table.
 ///
 /// Maps to:
@@ -257,8 +257,9 @@ pub fn uuid(name: String) -> ColumnDef {
   Single(Column(name, Uuid, False, None, None))
 }
 
-/// Creates an integer column that references another table's id.
-/// The column name should follow the convention `{table}_id`.
+/// Creates an integer column that references another table's
+/// id. The column name should follow the convention
+/// `{table}_id`.
 ///
 /// Maps to:
 /// - PostgreSQL: `name INTEGER REFERENCES table(id)`
@@ -278,9 +279,9 @@ pub fn foreign(name: String, references: String) -> ColumnDef {
   Single(Column(name, Foreign(references), False, None, None))
 }
 
-/// Creates both `created_at` and `updated_at` timestamp columns.
-/// This is a convenience function for the common pattern of
-/// tracking record creation and modification times.
+/// Creates both `created_at` and `updated_at` timestamp
+/// columns. This is a convenience function for the common
+/// pattern of tracking record creation and modification times.
 ///
 pub fn timestamps() -> ColumnDef {
   Multiple([
@@ -301,8 +302,8 @@ pub fn unix_timestamps() -> ColumnDef {
   ])
 }
 
-/// Marks the column as nullable (allows NULL).
-/// By default, columns are NOT NULL.
+/// Marks the column as nullable (allows NULL). By default,
+/// columns are NOT NULL.
 ///
 /// *Example:*
 ///
@@ -398,8 +399,8 @@ pub fn default_now(def: ColumnDef) -> ColumnDef {
   set_default(def, DefaultNow)
 }
 
-/// Sets the default value to the current Unix timestamp (seconds
-/// since epoch). Use with `unix_timestamp` columns.
+/// Sets the default value to the current Unix timestamp
+/// (seconds since epoch). Use with `unix_timestamp` columns.
 ///
 /// *Example:*
 ///
@@ -434,9 +435,9 @@ pub fn auto_uuid(def: ColumnDef) -> ColumnDef {
   set_default(def, DefaultAutoUuid)
 }
 
-/// Sets the default value to NULL. Use with nullable columns
-/// to explicitly set NULL as the default rather than having
-/// no default value specified.
+/// Sets the default value to NULL. Use with nullable columns to
+/// explicitly set NULL as the default rather than having no
+/// default value specified.
 ///
 pub fn default_null(def: ColumnDef) -> ColumnDef {
   set_default(def, DefaultNull)
@@ -463,9 +464,9 @@ pub fn rename_from(def: ColumnDef, old_name: String) -> ColumnDef {
   }
 }
 
-/// Returns the table's columns in definition order. Useful
-/// for iterating over columns when generating code or
-/// performing schema introspection.
+/// Returns the table's columns in definition order. Useful for
+/// iterating over columns when generating code or performing
+/// schema introspection.
 ///
 pub fn columns(t: Table) -> List(Column) {
   t.columns

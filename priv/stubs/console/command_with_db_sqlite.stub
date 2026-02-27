@@ -22,7 +22,7 @@ fn run(_args: Args) -> Nil {
   // Your command logic here
   todo
 
-  pool_connection.stop_pool(pool)
+  db.stop_pool(pool)
 }
 
 /// Console command's entry point

@@ -1,12 +1,12 @@
 //// Route Groups Configuration
 ////
-//// A single monolithic route file becomes unwieldy as apps grow
-//// and different URL prefixes often need different middleware —
-//// API routes skip CSRF while web routes skip JSON parsing.
-//// Route groups let the compiler split routes by prefix into
-//// separate files, each wired to its own middleware stack at
-//// compile time so there's zero runtime dispatch overhead for
-//// picking the right middleware.
+//// A single monolithic route file becomes unwieldy as apps
+//// grow and different URL prefixes often need different
+//// middleware — API routes skip CSRF while web routes skip
+//// JSON parsing. Route groups let the compiler split routes by
+//// prefix into separate files, each wired to its own
+//// middleware stack at compile time so there's zero runtime
+//// dispatch overhead for picking the right middleware.
 ////
 
 import gleam/dict
@@ -49,8 +49,8 @@ pub fn load() -> List(RouteGroupConfig) {
 
 /// Separating file I/O from caching lets load() decide whether
 /// to read the file or use the cache. Returning an empty list
-/// on read failure avoids crashing when route_group.toml doesn't
-/// exist — most apps won't need groups at all.
+/// on read failure avoids crashing when route_group.toml
+/// doesn't exist — most apps won't need groups at all.
 ///
 fn load_from_file() -> List(RouteGroupConfig) {
   case simplifile.read("config/route_group.toml") {
@@ -63,8 +63,8 @@ fn load_from_file() -> List(RouteGroupConfig) {
 
 /// The [groups.*] nesting lets users define multiple named
 /// groups (e.g., web, api, admin) each with its own prefix and
-/// middleware stack. Iterating dict.to_list preserves all entries
-/// so no group definition is silently dropped.
+/// middleware stack. Iterating dict.to_list preserves all
+/// entries so no group definition is silently dropped.
 ///
 fn parse(content: String) -> List(RouteGroupConfig) {
   case tom.parse(content) {
@@ -114,10 +114,9 @@ fn parse_group(name: String, toml: tom.Toml) -> RouteGroupConfig {
 @external(erlang, "glimr_kernel_ffi", "cache_route_groups")
 fn cache(groups: List(RouteGroupConfig)) -> Nil
 
-/// Returns the cached group list if it exists, or Error(Nil)
-/// on the first call before cache() has been called. load()
-/// uses this to skip file I/O on every call after the initial
-/// load.
+/// Returns the cached group list if it exists, or Error(Nil) on
+/// the first call before cache() has been called. load() uses
+/// this to skip file I/O on every call after the initial load.
 ///
 @external(erlang, "glimr_kernel_ffi", "get_cached_route_groups")
 fn get_cached() -> Result(List(RouteGroupConfig), Nil)

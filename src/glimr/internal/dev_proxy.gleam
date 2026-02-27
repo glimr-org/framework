@@ -23,8 +23,8 @@ import mist.{type Connection, type ResponseData}
 // ------------------------------------------------------------- Public Functions
 
 /// Starts the development proxy server. Listens on the given
-/// port and forwards all requests to the target port where
-/// the application server runs.
+/// port and forwards all requests to the target port where the
+/// application server runs.
 ///
 pub fn start(listen_port: Int, target_port: Int) -> Nil {
   console.output()
@@ -49,8 +49,8 @@ pub fn start(listen_port: Int, target_port: Int) -> Nil {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Handles an incoming proxy request. Reads the body, builds
-/// a forwarded request to the target server, and returns the
+/// Handles an incoming proxy request. Reads the body, builds a
+/// forwarded request to the target server, and returns the
 /// response or a 502 error if connection fails.
 ///
 fn handle_request(
@@ -104,8 +104,8 @@ fn forward_with_retry(
 }
 
 /// Reads the request body from a mist connection. Limits body
-/// size to 10MB and returns an empty string if reading fails
-/// or the body cannot be decoded as UTF-8.
+/// size to 10MB and returns an empty string if reading fails or
+/// the body cannot be decoded as UTF-8.
 ///
 fn read_body(req: Request(Connection)) -> String {
   case mist.read_body(req, 10_000_000) {
@@ -118,8 +118,8 @@ fn read_body(req: Request(Connection)) -> String {
 }
 
 /// Copies headers from the original request to the forwarded
-/// request. Excludes host, content-length, and transfer-encoding
-/// headers which are set by the HTTP client.
+/// request. Excludes host, content-length, and
+/// transfer-encoding headers which are set by the HTTP client.
 ///
 fn copy_headers(
   req: Request(String),
@@ -136,8 +136,8 @@ fn copy_headers(
 }
 
 /// Converts an httpc response to a mist response. Transforms
-/// the string body to bytes and copies headers for sending
-/// back to the client.
+/// the string body to bytes and copies headers for sending back
+/// to the client.
 ///
 fn to_mist_response(resp: Response(String)) -> Response(ResponseData) {
   let body = mist.Bytes(bytes_tree.from_string(resp.body))

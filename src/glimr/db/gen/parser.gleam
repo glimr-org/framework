@@ -1,7 +1,7 @@
 //// SQL Parser
 ////
-//// Parses SQL query files to extract table names, columns,
-//// and parameter references.
+//// Parses SQL query files to extract table names, columns, and
+//// parameter references.
 ////
 //// This module provides the main entry point for SQL parsing.
 //// The parsing logic is split across sub-modules:

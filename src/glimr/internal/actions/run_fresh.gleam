@@ -12,7 +12,7 @@ import gleam/dynamic/decode
 import gleam/list
 import gleam/string
 import glimr/console/console
-import glimr/db/pool_connection.{type Connection, type DbPool}
+import glimr/db/db.{type Connection, type DbPool}
 import glimr/internal/actions/run_migrate
 
 // ------------------------------------------------------------- Public Functions
@@ -24,7 +24,7 @@ import glimr/internal/actions/run_migrate
 ///
 pub fn run(pool: DbPool, database: String) -> Nil {
   let drop_result = {
-    use conn <- pool_connection.get_connection(pool)
+    use conn <- db.get_connection(pool)
     drop_all_tables(conn)
   }
 
@@ -53,28 +53,28 @@ pub fn run(pool: DbPool, database: String) -> Nil {
 /// different system tables. CASCADE is only appended for
 /// Postgres because SQLite doesn't support it and would error.
 ///
-fn drop_all_tables(conn: Connection) -> Result(Nil, pool_connection.DbError) {
+fn drop_all_tables(conn: Connection) -> Result(Nil, db.DbError) {
   let decoder = {
     use name <- decode.field(0, decode.string)
     decode.success(name)
   }
 
-  let #(list_sql, drop_suffix) = case pool_connection.connection_driver(conn) {
-    pool_connection.Postgres -> #(
+  let #(list_sql, drop_suffix) = case db.connection_driver(conn) {
+    db.Postgres -> #(
       "SELECT tablename FROM pg_tables WHERE schemaname = 'public'",
       " CASCADE",
     )
-    pool_connection.Sqlite -> #(
+    db.Sqlite -> #(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
       "",
     )
   }
 
-  case pool_connection.query_with(conn, list_sql, [], decoder) {
-    Ok(pool_connection.QueryResult(_, tables)) -> {
+  case db.query_with(conn, list_sql, [], decoder) {
+    Ok(db.QueryResult(_, tables)) -> {
       list.each(tables, fn(table) {
         let _ =
-          pool_connection.exec_with(
+          db.exec_with(
             conn,
             "DROP TABLE IF EXISTS \"" <> table <> "\"" <> drop_suffix,
             [],

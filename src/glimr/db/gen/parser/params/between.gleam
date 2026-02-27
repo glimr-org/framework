@@ -1,8 +1,8 @@
 //// BETWEEN Parameter Extraction
 ////
 //// Functions for extracting parameter-to-column mappings from
-//// BETWEEN ... AND ... patterns. Names parameters as start_<col>
-//// and end_<col> for clarity.
+//// BETWEEN ... AND ... patterns. Names parameters as
+//// start_<col> and end_<col> for clarity.
 
 import gleam/list
 import gleam/option
@@ -12,8 +12,8 @@ import glimr/db/gen/parser/util
 
 // ------------------------------------------------------------- Public Functions
 
-/// Extract params from BETWEEN ... AND ... patterns. Names
-/// the parameters as start_<column> and end_<column> for range
+/// Extract params from BETWEEN ... AND ... patterns. Names the
+/// parameters as start_<column> and end_<column> for range
 /// queries on date/time and numeric columns.
 ///
 pub fn extract(clause: String) -> List(#(Int, String)) {
@@ -23,8 +23,8 @@ pub fn extract(clause: String) -> List(#(Int, String)) {
 // ------------------------------------------------------------- Private Functions
 
 /// Recursive helper that finds BETWEEN patterns and extracts
-/// the associated parameters. Uses start_/end_ naming for
-/// the lower and upper bounds.
+/// the associated parameters. Uses start_/end_ naming for the
+/// lower and upper bounds.
 ///
 fn do_extract(
   upper: String,
@@ -89,9 +89,9 @@ fn extract_first_param(s: String) -> Result(#(Int, String), Nil) {
   Ok(#(param, rest))
 }
 
-/// Extract the second parameter ($M) after AND keyword.
-/// Returns just the parameter number since this completes
-/// the BETWEEN pattern extraction.
+/// Extract the second parameter ($M) after AND keyword. Returns
+/// just the parameter number since this completes the BETWEEN
+/// pattern extraction.
 ///
 fn extract_second_param(rest: String) -> Result(Int, Nil) {
   use #(_, after_and) <- result.try(string.split_once(

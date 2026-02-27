@@ -2,17 +2,19 @@
 ////
 //// Custom decoders that handle differences between PostgreSQL
 //// and SQLite. SQLite lacks native boolean support and stores
-//// booleans as integers (0/1), while PostgreSQL has true booleans.
+//// booleans as integers (0/1), while PostgreSQL has true
+//// booleans.
 ////
-//// These decoders abstract over driver differences so application
-//// code can work with Gleam types regardless of the backend.
+//// These decoders abstract over driver differences so
+//// application code can work with Gleam types regardless of
+//// the backend.
 
 import gleam/dynamic/decode
 
 // ------------------------------------------------------------- Public Functions
 
-/// Decodes a boolean value from either a native boolean 
-/// (PostgreSQL) or an integer 0/1 (SQLite). Returns `True` for 
+/// Decodes a boolean value from either a native boolean
+/// (PostgreSQL) or an integer 0/1 (SQLite). Returns `True` for
 /// any non-zero integer, `False` for zero.
 ///
 /// *Example:*
