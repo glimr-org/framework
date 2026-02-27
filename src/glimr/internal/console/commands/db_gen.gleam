@@ -5,7 +5,7 @@ import glimr/console/command.{type Args, type Command, Flag, Option as CmdOption
 import glimr/console/console
 import glimr/db/gen as db_gen
 import glimr/db/gen/migrate as gen_migrate
-import glimr/db/pool_connection.{type Pool}
+import glimr/db/pool_connection.{type DbPool}
 import glimr/internal/actions/run_migrate
 import simplifile
 
@@ -34,7 +34,7 @@ pub fn command() -> Command {
 
 /// Executes the gen command.
 ///
-fn run(args: Args, pool: Pool) -> Nil {
+fn run(args: Args, pool: DbPool) -> Nil {
   let database = command.get_option(args, "database")
   let model_option = command.get_option(args, "model")
   let should_migrate = command.has_flag(args, "migrate")

@@ -62,8 +62,8 @@ pub type Config {
 /// — coercing through Dynamic is safe on the BEAM where types
 /// are erased at runtime.
 ///
-pub opaque type Pool {
-  Pool(
+pub opaque type DbPool {
+  DbPool(
     driver: Driver,
     query_fn: Dynamic,
     exec_fn: Dynamic,
@@ -225,8 +225,8 @@ pub fn new_pool(
   exec_fn exec_fn: Dynamic,
   checkout checkout: fn() -> Result(#(Dynamic, fn() -> Nil), String),
   stop stop: fn() -> Nil,
-) -> Pool {
-  Pool(
+) -> DbPool {
+  DbPool(
     driver: driver,
     query_fn: query_fn,
     exec_fn: exec_fn,
@@ -242,7 +242,7 @@ pub fn new_pool(
 /// within minutes, causing every subsequent request to hang
 /// waiting for a checkout that never comes.
 ///
-pub fn get_connection(pool: Pool, f: fn(Connection) -> a) -> a {
+pub fn get_connection(pool: DbPool, f: fn(Connection) -> a) -> a {
   case pool.checkout() {
     Ok(#(handle, release)) -> {
       let conn =
@@ -268,7 +268,7 @@ pub fn get_connection(pool: Pool, f: fn(Connection) -> a) -> a {
 /// regardless of the actual driver.
 ///
 pub fn query(
-  pool: Pool,
+  pool: DbPool,
   sql: String,
   params: List(Value),
   decoder: Decoder(a),
@@ -301,7 +301,7 @@ pub fn query_with(
 /// releases the connection automatically.
 ///
 pub fn exec(
-  pool: Pool,
+  pool: DbPool,
   sql: String,
   params: List(Value),
 ) -> Result(Int, DbError) {
@@ -335,7 +335,7 @@ pub fn exec_with(
 /// give other transactions time to release their locks.
 ///
 pub fn transaction(
-  pool: Pool,
+  pool: DbPool,
   retries: Int,
   callback: fn(Connection) -> Result(a, DbError),
 ) -> Result(a, DbError) {
@@ -351,7 +351,7 @@ pub fn transaction(
 /// call this after finishing their work so the process can exit
 /// cleanly.
 ///
-pub fn stop_pool(pool: Pool) -> Nil {
+pub fn stop_pool(pool: DbPool) -> Nil {
   pool.stop()
 }
 
@@ -360,7 +360,7 @@ pub fn stop_pool(pool: Pool) -> Nil {
 /// accessing the opaque Pool internals. The cache module uses
 /// this to pick BIGINT vs INTEGER for the expiration column.
 ///
-pub fn pool_driver(pool: Pool) -> Driver {
+pub fn pool_driver(pool: DbPool) -> Driver {
   pool.driver
 }
 
@@ -483,7 +483,7 @@ pub fn convert_placeholders(sql: String, driver: Driver) -> String {
 /// with confusing errors about aborted transactions.
 ///
 fn do_transaction(
-  pool: Pool,
+  pool: DbPool,
   retries_remaining: Int,
   callback: fn(Connection) -> Result(a, DbError),
 ) -> Result(a, DbError) {
@@ -524,7 +524,7 @@ fn do_transaction(
 /// time to release their locks.
 ///
 fn maybe_retry(
-  pool: Pool,
+  pool: DbPool,
   retries_remaining: Int,
   callback: fn(Connection) -> Result(a, DbError),
   error: DbError,

@@ -13,7 +13,7 @@ import gleam/result
 import gleam/string
 import glimr/console/console
 import glimr/db/migrate
-import glimr/db/pool_connection.{type Pool}
+import glimr/db/pool_connection.{type DbPool}
 
 // ------------------------------------------------------------- Public Functions
 
@@ -22,7 +22,7 @@ import glimr/db/pool_connection.{type Pool}
 /// with a descriptive error rather than cascading into
 /// confusing downstream failures.
 ///
-pub fn run(pool: Pool, database: String) -> Nil {
+pub fn run(pool: DbPool, database: String) -> Nil {
   use conn <- pool_connection.get_connection(pool)
 
   let setup = {
@@ -62,7 +62,7 @@ pub fn run(pool: Pool, database: String) -> Nil {
 /// especially in CI where you want to assert "no pending
 /// migrations" as a gate.
 ///
-pub fn show_status(pool: Pool, database: String) -> Nil {
+pub fn show_status(pool: DbPool, database: String) -> Nil {
   use conn <- pool_connection.get_connection(pool)
 
   {

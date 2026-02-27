@@ -17,7 +17,7 @@ import glimr/cache/cache.{
 }
 import glimr/cache/driver.{type CacheStore, DatabaseStore}
 import glimr/config/cache as cache_config
-import glimr/db/pool_connection.{type Pool as DbPool}
+import glimr/db/pool_connection.{type DbPool}
 import glimr/utils/unix_timestamp
 
 // ------------------------------------------------------------- Public Functions
