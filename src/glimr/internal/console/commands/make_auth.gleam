@@ -1,6 +1,6 @@
 import gleam/option.{Some}
 import gleam/string
-import glimr/console/command.{type Args, type Command, Argument, Flag}
+import glimr/console/command.{type Args, type Command, Argument, Flag, Option}
 import glimr/db/gen as db_gen
 import glimr/db/gen/migrate as gen_migrate
 import glimr/db/pool_connection.{type Pool}
@@ -22,6 +22,11 @@ pub fn command() -> Command {
       short: "m",
       description: "Run migrations after generating",
     ),
+    Option(
+      name: "ctx-db-name",
+      description: "Context field name for the database pool",
+      default: "db",
+    ),
   ])
   |> command.db_handler(run)
 }
@@ -31,6 +36,7 @@ pub fn command() -> Command {
 fn run(args: Args, pool: Pool) -> Nil {
   let model_name = command.get_arg(args, "name") |> string.lowercase()
   let connection = command.get_option(args, "database")
+  let ctx_db_name = command.get_option(args, "ctx-db-name")
   let should_migrate = command.has_flag(args, "migrate")
 
   // 1. Generate model files (schema + queries)
@@ -43,7 +49,7 @@ fn run(args: Args, pool: Pool) -> Nil {
   db_gen.run(connection, Some([model_name]))
 
   // 4. Generate load middleware (queries DB for full model)
-  make_auth_service.create_load_middleware(model_name, connection)
+  make_auth_service.create_load_middleware(model_name, connection, ctx_db_name)
 
   // 5. Generate auth guard middleware
   make_auth_service.create_auth_middleware(model_name)

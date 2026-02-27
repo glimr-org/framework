@@ -80,7 +80,11 @@ pub fn create_model(model_name: String, connection: String) -> Nil {
 /// user from the session and loads the full model from the
 /// database. Written to src/app/http/middleware/load_{model}.gleam.
 ///
-pub fn create_load_middleware(model_name: String, connection: String) -> Nil {
+pub fn create_load_middleware(
+  model_name: String,
+  connection: String,
+  ctx_db_name: String,
+) -> Nil {
   let file_path = "src/app/http/middleware/load_" <> model_name <> ".gleam"
   let session_key = "_auth_" <> model_name <> "_id"
 
@@ -88,6 +92,7 @@ pub fn create_load_middleware(model_name: String, connection: String) -> Nil {
     #("model", model_name),
     #("session_key", session_key),
     #("connection", connection),
+    #("ctx_db_name", ctx_db_name),
   ])
 }
 
