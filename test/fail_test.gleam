@@ -1,5 +1,5 @@
 import gleeunit/should
-import glimr/fail
+import glimr/http/fail
 
 @external(erlang, "erlang", "is_list")
 fn is_list(value: a) -> Bool

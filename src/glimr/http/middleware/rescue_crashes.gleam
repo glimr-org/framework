@@ -9,7 +9,7 @@
 //// of a stack trace.
 ////
 
-import glimr/fail
+import glimr/http/fail
 import glimr/http/kernel.{type Next}
 import wisp.{type Request, type Response}
 

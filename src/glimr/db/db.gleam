@@ -17,7 +17,7 @@ import gleam/int
 import gleam/option.{type Option}
 import gleam/result
 import gleam/string
-import glimr/fail
+import glimr/http/fail
 
 // ------------------------------------------------------------- Public Types
 
