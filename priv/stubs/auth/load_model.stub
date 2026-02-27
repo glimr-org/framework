@@ -13,9 +13,7 @@ pub fn run(req: Request, ctx: Context, next: Next(Context)) -> Response {
   let @{{ model }} =
     auth.id(ctx.session, session_key)
     |> result.try(int.parse)
-    |> result.try(fn(id) {
-      @{{ model }}.find(pool: ctx.db.@{{ connection }}, id: id) |> result.replace_error(Nil)
-    })
+    |> result.try(fn(id) { @{{ model }}.find(ctx.@{{ ctx_db_name }}, id) |> result.replace_error(Nil) })
     |> option.from_result
 
   let ctx = ctx.Context(..ctx, @{{ model }}: @{{ model }})
