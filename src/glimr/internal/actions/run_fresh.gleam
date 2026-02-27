@@ -12,7 +12,7 @@ import gleam/dynamic/decode
 import gleam/list
 import gleam/string
 import glimr/console/console
-import glimr/db/pool_connection.{type Connection, type Pool}
+import glimr/db/pool_connection.{type Connection, type DbPool}
 import glimr/internal/actions/run_migrate
 
 // ------------------------------------------------------------- Public Functions
@@ -22,7 +22,7 @@ import glimr/internal/actions/run_migrate
 /// delegating to run_migrate means we reuse the existing apply
 /// logic without duplicating it.
 ///
-pub fn run(pool: Pool, database: String) -> Nil {
+pub fn run(pool: DbPool, database: String) -> Nil {
   let drop_result = {
     use conn <- pool_connection.get_connection(pool)
     drop_all_tables(conn)

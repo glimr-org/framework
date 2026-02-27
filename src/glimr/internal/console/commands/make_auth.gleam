@@ -3,7 +3,7 @@ import gleam/string
 import glimr/console/command.{type Args, type Command, Argument, Flag, Option}
 import glimr/db/gen as db_gen
 import glimr/db/gen/migrate as gen_migrate
-import glimr/db/pool_connection.{type Pool}
+import glimr/db/pool_connection.{type DbPool}
 import glimr/internal/actions/run_migrate
 import glimr/internal/services/make_auth_service
 
@@ -33,7 +33,7 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-fn run(args: Args, pool: Pool) -> Nil {
+fn run(args: Args, pool: DbPool) -> Nil {
   let model_name = command.get_arg(args, "name") |> string.lowercase()
   let connection = command.get_option(args, "database")
   let ctx_db_name = command.get_option(args, "ctx-db-name")

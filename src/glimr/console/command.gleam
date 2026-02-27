@@ -23,7 +23,7 @@ import glimr/config/cache as cache_config
 import glimr/config/database
 import glimr/console/console
 import glimr/db/driver
-import glimr/db/pool_connection.{type Config, type Pool}
+import glimr/db/pool_connection.{type Config, type DbPool}
 import glimr/glimr
 import glimr/internal/config
 
@@ -147,7 +147,10 @@ pub fn cache_option() -> CommandArg {
 /// option (e.g. `--db-postgres=main`) to generate a stub with
 /// the correct imports and lifecycle code.
 ///
-pub fn db_handler(cmd: Command, user_handler: fn(Args, Pool) -> Nil) -> Command {
+pub fn db_handler(
+  cmd: Command,
+  user_handler: fn(Args, DbPool) -> Nil,
+) -> Command {
   let new_args = list.append(cmd.args, [db_option()])
   Command(..cmd, args: new_args, handler: fn(args) {
     with_db_pool(args, user_handler)
@@ -187,7 +190,7 @@ pub fn cache_handler(
 ///
 pub fn cache_db_handler(
   cmd: Command,
-  user_handler: fn(Args, Pool, String) -> Nil,
+  user_handler: fn(Args, DbPool, String) -> Nil,
 ) -> Command {
   let new_args = list.append(cmd.args, [cache_option()])
   Command(..cmd, args: new_args, handler: fn(args) {
@@ -357,7 +360,7 @@ fn resolve_or_error(result: Result(Args, String), next: fn(Args) -> Nil) -> Nil 
 /// to the adapter module lets this function work for both
 /// PostgreSQL and SQLite without importing either.
 ///
-fn with_db_pool(args: Args, user_handler: fn(Args, Pool) -> Nil) -> Nil {
+fn with_db_pool(args: Args, user_handler: fn(Args, DbPool) -> Nil) -> Nil {
   let db_name = get_option(args, "database")
   let connections = database.load()
 
@@ -465,7 +468,7 @@ fn with_cache_pool(args: Args, user_handler: fn(Args, CachePool) -> Nil) -> Nil 
 ///
 fn with_cache_db_pool(
   args: Args,
-  user_handler: fn(Args, Pool, String) -> Nil,
+  user_handler: fn(Args, DbPool, String) -> Nil,
 ) -> Nil {
   let cache_name = get_option(args, "cache")
   let stores = cache_config.load()
@@ -916,7 +919,7 @@ fn erlang_get_args() -> List(charlist.Charlist)
 /// at runtime based on the configured driver type.
 ///
 @external(erlang, "glimr_command_ffi", "dynamic_start_pool")
-fn dynamic_start_pool(module: String, config: Config) -> Result(Pool, String)
+fn dynamic_start_pool(module: String, config: Config) -> Result(DbPool, String)
 
 /// The framework can't import the Redis adapter directly
 /// without creating a circular dependency, same as the database

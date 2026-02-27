@@ -1,5 +1,5 @@
 import glimr/console/command.{type Args, type Command, Flag}
-import glimr/db/pool_connection.{type Pool}
+import glimr/db/pool_connection.{type DbPool}
 import glimr/internal/actions/run_fresh
 import glimr/internal/actions/run_migrate
 
@@ -28,7 +28,7 @@ pub fn command() -> Command {
 
 /// Executes the migrate command.
 ///
-fn run(args: Args, pool: Pool) -> Nil {
+fn run(args: Args, pool: DbPool) -> Nil {
   let database = command.get_option(args, "database")
   let fresh = command.has_flag(args, "fresh")
   let status = command.has_flag(args, "status")

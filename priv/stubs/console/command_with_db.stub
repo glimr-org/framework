@@ -1,5 +1,5 @@
 import glimr/console/command.{type Command, type Args}
-import glimr/db/pool_connection.{type Pool}
+import glimr/db/pool_connection.{type DbPool}
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#console-commands
 
@@ -16,7 +16,7 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-fn run(args: Args, pool: Pool) -> Nil {
+fn run(args: Args, pool: DbPool) -> Nil {
   todo
 }
 

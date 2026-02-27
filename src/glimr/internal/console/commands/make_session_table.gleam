@@ -1,6 +1,6 @@
 import glimr/config/session as session_config
 import glimr/console/command.{type Args, type Command, Flag}
-import glimr/db/pool_connection.{type Pool}
+import glimr/db/pool_connection.{type DbPool}
 import glimr/internal/actions/gen_session_table
 import glimr/internal/actions/run_migrate
 
@@ -24,7 +24,7 @@ pub fn command() -> Command {
 
 /// Execute the console command.
 ///
-fn run(args: Args, pool: Pool) -> Nil {
+fn run(args: Args, pool: DbPool) -> Nil {
   let database = command.get_option(args, "database")
   let should_migrate = command.has_flag(args, "migrate")
   let config = session_config.load()
