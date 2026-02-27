@@ -136,10 +136,16 @@ pub fn cache_option() -> CommandArg {
   Option("cache", "Cache store to use", "_default")
 }
 
-/// Database commands must start a pool, run their logic, and
-/// stop the pool — repeating that at every call site is error-
-/// prone. This wrapper captures the lifecycle in the handler
-/// closure so the command author just receives a live Pool.
+/// Wraps a handler with automatic database pool lifecycle
+/// management using dynamic driver dispatch. Intended for
+/// framework and third-party package commands that must work
+/// with any database driver — the `--database` option lets the
+/// user select which connection to use at runtime.
+///
+/// User commands that target a specific driver should start the
+/// pool explicitly instead. Use `make_command` with a driver
+/// option (e.g. `--db-postgres=main`) to generate a stub with
+/// the correct imports and lifecycle code.
 ///
 pub fn db_handler(cmd: Command, user_handler: fn(Args, Pool) -> Nil) -> Command {
   let new_args = list.append(cmd.args, [db_option()])
@@ -148,10 +154,16 @@ pub fn db_handler(cmd: Command, user_handler: fn(Args, Pool) -> Nil) -> Command 
   })
 }
 
-/// Cache commands need a CachePool for the selected store. This
-/// wrapper adds --cache, resolves the store, starts the pool,
-/// runs the handler, and stops the pool — matching the pattern
-/// of db_handler but for cache stores.
+/// Wraps a handler with automatic cache pool lifecycle
+/// management using dynamic driver dispatch. Intended for
+/// framework and third-party package commands that must work
+/// with any cache driver — the `--cache` option lets the user
+/// select which store to use at runtime.
+///
+/// User commands that target a specific driver should start the
+/// pool explicitly instead. Use `make_command` with a driver
+/// option (e.g. `--cache-redis=main`) to generate a stub with
+/// the correct imports and lifecycle code.
 ///
 pub fn cache_handler(
   cmd: Command,
@@ -163,12 +175,15 @@ pub fn cache_handler(
   })
 }
 
-/// Commands like cache table migrations need the raw database
-/// pool behind a DatabaseStore — not the CachePool abstraction,
-/// but the actual SQL connection — because they're creating or
-/// altering the cache table itself. This gives them both the
-/// pool and the table name from the store config, following the
-/// same lifecycle pattern as db_handler and cache_handler.
+/// Wraps a handler with the raw database pool behind a
+/// DatabaseStore cache — not the CachePool abstraction, but the
+/// actual SQL connection — for commands that create or alter
+/// the cache table itself. Intended for framework and third-
+/// party package commands that must work with any driver.
+///
+/// User commands that target a specific driver should start the
+/// pool explicitly instead. Use `make_command` with a driver
+/// option (e.g. `--cache-postgres=main`) to generate a stub.
 ///
 pub fn cache_db_handler(
   cmd: Command,

@@ -2,9 +2,7 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/string
 import gleeunit/should
-import glimr/cache/cache.{
-  type CachePool, NotFound, SerializationError,
-}
+import glimr/cache/cache.{type CachePool, NotFound, SerializationError}
 import glimr/cache/file
 import glimr/cache/file/cache as file_cache
 import glimr/cache/file/pool
