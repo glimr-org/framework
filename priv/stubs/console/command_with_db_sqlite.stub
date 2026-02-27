@@ -1,0 +1,32 @@
+import glimr/console/command.{type Command, type Args}
+import glimr_sqlite/sqlite
+
+// docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#console-commands
+
+/// The console command description.
+const description = "Command description"
+
+/// Define the console command and its properties.
+///
+pub fn command() -> Command {
+  command.new()
+  |> command.description(description)
+  |> command.handler(run)
+}
+
+/// Execute the console command.
+///
+fn run(_args: Args) -> Nil {
+  let pool = sqlite.start("@{{connection_name}}")
+
+  // Your command logic here
+  todo
+
+  pool_connection.stop_pool(pool)
+}
+
+/// Console command's entry point
+///
+pub fn main() {
+  command.run(command())
+}
