@@ -160,6 +160,8 @@ pub fn column_type_to_string(col_type: ColumnType) -> String {
     schema_parser.Json -> "Json"
     schema_parser.Uuid -> "Uuid"
     schema_parser.Foreign(ref) -> "Foreign(" <> ref <> ")"
+    schema_parser.Array(inner) ->
+      "Array(" <> column_type_to_string(inner) <> ")"
   }
 }
 

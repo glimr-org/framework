@@ -10,7 +10,7 @@
 
 import gleam/list
 import gleam/string
-import glimr/db/gen/schema_parser.{type Table}
+import glimr/db/gen/schema_parser.{type ColumnType, type Table}
 
 // ------------------------------------------------------------- Public Functions
 
@@ -81,7 +81,69 @@ pub fn validate_indexes(tables: List(Table)) -> Nil {
   })
 }
 
+/// An `Array(Id)` would mean an auto-incrementing primary key
+/// that's also a list — which no database supports.
+/// `Array(Foreign("users"))` would imply FK constraints on each
+/// element, but Postgres arrays can't enforce that. Both would
+/// generate invalid SQL, so we catch them here with a message
+/// that explains why instead of letting the database reject the
+/// migration cryptically.
+///
+pub fn validate_array_types(tables: List(Table)) -> Nil {
+  list.each(tables, fn(table) {
+    list.each(table.columns, fn(col) {
+      validate_array_inner(table.name, col.name, col.column_type)
+    })
+  })
+}
+
 // ------------------------------------------------------------- Private Functions
+
+/// `Array(Array(Int))` is fine — it's just nested lists. But
+/// `Array(Array(Foreign("users")))` still has a FK at the leaf,
+/// which is invalid no matter how deeply nested. This peels off
+/// Array layers until it reaches the leaf type, then checks
+/// whether that leaf is Id or Foreign.
+///
+fn validate_array_inner(
+  table_name: String,
+  col_name: String,
+  col_type: ColumnType,
+) -> Nil {
+  case col_type {
+    schema_parser.Array(schema_parser.Id) -> {
+      let red = "\u{001b}[31m"
+      let reset = "\u{001b}[0m"
+      let error_msg =
+        red
+        <> "Error: Array(Id) is not allowed in table '"
+        <> table_name
+        <> "', column '"
+        <> col_name
+        <> "'. Auto-incrementing arrays are not supported."
+        <> reset
+      panic as error_msg
+    }
+    schema_parser.Array(schema_parser.Foreign(ref)) -> {
+      let red = "\u{001b}[31m"
+      let reset = "\u{001b}[0m"
+      let error_msg =
+        red
+        <> "Error: Array(Foreign("
+        <> ref
+        <> ")) is not allowed in table '"
+        <> table_name
+        <> "', column '"
+        <> col_name
+        <> "'. Foreign key constraints cannot apply to array elements."
+        <> reset
+      panic as error_msg
+    }
+    schema_parser.Array(inner) ->
+      validate_array_inner(table_name, col_name, inner)
+    _ -> Nil
+  }
+}
 
 /// Walks the index list tracking what we've seen so far. Two
 /// indexes are duplicates if they cover the same columns with

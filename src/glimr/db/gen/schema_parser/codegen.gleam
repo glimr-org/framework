@@ -9,8 +9,8 @@
 //// decisions, so every generated model stays consistent.
 
 import glimr/db/gen/schema_parser.{
-  type ColumnType, BigInt, Boolean, Date, Float, Foreign, Id, Int, Json, String,
-  Text, Timestamp, UnixTimestamp, Uuid,
+  type ColumnType, Array, BigInt, Boolean, Date, Float, Foreign, Id, Int, Json,
+  String, Text, Timestamp, UnixTimestamp, Uuid,
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -37,6 +37,7 @@ pub fn gleam_type(col_type: ColumnType) -> String {
     Json -> "String"
     Uuid -> "String"
     Foreign(_) -> "Int"
+    Array(inner) -> "List(" <> gleam_type(inner) <> ")"
   }
 }
 
@@ -63,6 +64,7 @@ pub fn decoder_fn(col_type: ColumnType) -> String {
     Json -> "decode.string"
     Uuid -> "decode.string"
     Foreign(_) -> "decode.int"
+    Array(inner) -> "glimr_decode.list_of(" <> decoder_fn(inner) <> ")"
   }
 }
 
@@ -88,5 +90,52 @@ pub fn json_encoder_fn(col_type: ColumnType) -> String {
     Json -> "json.string"
     Uuid -> "json.string"
     Foreign(_) -> "json.int"
+    Array(_) -> panic as "Use generate_encoder_expr for Array types"
+  }
+}
+
+/// Scalars and arrays encode completely differently —
+/// `json.int(model.age)` vs `json.array(model.tags,
+/// json.string)`. The argument order flips and arrays need a
+/// mapping function instead of a direct call. This builds the
+/// right expression for either case, and for nested arrays it
+/// recurses to produce the right nesting of `json.array` calls.
+///
+pub fn json_encoder_expr(col_type: ColumnType, accessor: String) -> String {
+  case col_type {
+    Array(inner) -> {
+      let inner_fn = json_array_item_encoder(inner)
+      "json.array(" <> accessor <> ", " <> inner_fn <> ")"
+    }
+    _ -> json_encoder_fn(col_type) <> "(" <> accessor <> ")"
+  }
+}
+
+/// `json.array` takes a function that encodes each element. For
+/// `List(String)` that's just `json.string`, but for
+/// `List(List(String))` we need `fn(v) { json.array(v,
+/// json.string) }` — a closure that itself calls `json.array`.
+/// This recursion handles arbitrary nesting depth.
+///
+fn json_array_item_encoder(col_type: ColumnType) -> String {
+  case col_type {
+    Array(inner) -> {
+      let inner_fn = json_array_item_encoder(inner)
+      "fn(v) { json.array(v, " <> inner_fn <> ") }"
+    }
+    _ -> json_encoder_fn(col_type)
+  }
+}
+
+/// Array columns need different codegen paths — different
+/// import (`glimr_decode`), different encoder expression
+/// (`json.array` instead of `json.int`), different decoder
+/// (`glimr_decode.list_of` instead of `decode.int`). The
+/// generator checks this to decide which path to take.
+///
+pub fn is_array(col_type: ColumnType) -> Bool {
+  case col_type {
+    Array(_) -> True
+    _ -> False
   }
 }

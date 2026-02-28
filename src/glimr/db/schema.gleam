@@ -83,6 +83,9 @@ pub type ColumnType {
   Uuid
   /// Foreign key reference to another table
   Foreign(table: String)
+  /// Array of another column type (PostgreSQL native arrays, JSON
+  /// in SQLite)
+  Array(ColumnType)
 }
 
 /// Defines default values that can be assigned to columns. Used
@@ -98,6 +101,7 @@ pub type Default {
   DefaultUnixNow
   DefaultAutoUuid
   DefaultNull
+  DefaultEmptyArray
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -452,6 +456,34 @@ pub fn auto_uuid(def: ColumnDef) -> ColumnDef {
 ///
 pub fn default_null(def: ColumnDef) -> ColumnDef {
   set_default(def, DefaultNull)
+}
+
+/// Sometimes you need a column that holds multiple values —
+/// tags, scores, email addresses. This wraps any column type in
+/// an Array so `string("tags") |> array()` becomes
+/// `List(String)` in Gleam, `TEXT[]` in Postgres, and JSON text
+/// in SQLite. Chaining `|> array() |> array()` gives you nested
+/// arrays for matrix-style data.
+///
+pub fn array(def: ColumnDef) -> ColumnDef {
+  case def {
+    Single(col) -> Single(Column(..col, column_type: Array(col.column_type)))
+    Multiple(cols) ->
+      Multiple(
+        list.map(cols, fn(col) {
+          Column(..col, column_type: Array(col.column_type))
+        }),
+      )
+  }
+}
+
+/// Without a default, inserting a row without specifying the
+/// array column would violate NOT NULL. This sets the default
+/// to an empty array (`'{}'` in Postgres, `'[]'` in SQLite) so
+/// new rows get a valid empty list instead of failing.
+///
+pub fn default_empty_array(def: ColumnDef) -> ColumnDef {
+  set_default(def, DefaultEmptyArray)
 }
 
 /// Indicates that this column was renamed from a previous name.

@@ -1,9 +1,10 @@
 import gleam/option.{None, Some}
 import gleeunit/should
 import glimr/db/gen/schema_parser.{
-  BigInt, Boolean, Column, Date, DefaultAutoUuid, DefaultBool, DefaultFloat,
-  DefaultInt, DefaultNow, DefaultNull, DefaultString, DefaultUnixNow, Float,
-  Foreign, Id, Index, Int, Json, String, Text, Timestamp, UnixTimestamp, Uuid,
+  Array, BigInt, Boolean, Column, Date, DefaultAutoUuid, DefaultBool,
+  DefaultEmptyArray, DefaultFloat, DefaultInt, DefaultNow, DefaultNull,
+  DefaultString, DefaultUnixNow, Float, Foreign, Id, Index, Int, Json, String,
+  Text, Timestamp, UnixTimestamp, Uuid,
 }
 
 // ------------------------------------------------------------- Basic Parsing
@@ -723,4 +724,229 @@ pub fn parse_multiple_indexes_test() {
       name: Some("idx_users_full_name"),
     ),
   ])
+}
+
+// ------------------------------------------------------------- Array Modifier
+
+pub fn parse_string_array_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [string(\"tags\") |> array()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.name |> should.equal("tags")
+  col.column_type |> should.equal(Array(String))
+  col.nullable |> should.be_false()
+}
+
+pub fn parse_int_array_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [int(\"scores\") |> array()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.name |> should.equal("scores")
+  col.column_type |> should.equal(Array(Int))
+}
+
+pub fn parse_float_array_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [float(\"weights\") |> array()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.column_type |> should.equal(Array(Float))
+}
+
+pub fn parse_boolean_array_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [boolean(\"flags\") |> array()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.column_type |> should.equal(Array(Boolean))
+}
+
+pub fn parse_nested_array_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [int(\"matrix\") |> array() |> array()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.name |> should.equal("matrix")
+  col.column_type |> should.equal(Array(Array(Int)))
+}
+
+pub fn parse_triple_nested_array_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [int(\"cube\") |> array() |> array() |> array()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.column_type |> should.equal(Array(Array(Array(Int))))
+}
+
+pub fn parse_nullable_array_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [string(\"tags\") |> array() |> nullable()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.column_type |> should.equal(Array(String))
+  col.nullable |> should.be_true()
+}
+
+pub fn parse_array_with_default_empty_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [string(\"tags\") |> array() |> default_empty_array()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.column_type |> should.equal(Array(String))
+  col.default |> should.equal(Some(DefaultEmptyArray))
+}
+
+pub fn parse_nullable_array_with_default_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [string(\"tags\") |> array() |> nullable() |> default_empty_array()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.column_type |> should.equal(Array(String))
+  col.nullable |> should.be_true()
+  col.default |> should.equal(Some(DefaultEmptyArray))
+}
+
+pub fn parse_array_among_other_columns_test() {
+  let content =
+    "
+    pub const name = \"posts\"
+    pub fn define() {
+      table(name, [
+        id(),
+        string(\"title\"),
+        string(\"tags\") |> array(),
+        int(\"scores\") |> array() |> array(),
+        boolean(\"is_published\") |> default_bool(False),
+        timestamps(),
+      ])
+    }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+
+  table.columns
+  |> should.equal([
+    Column(
+      name: "id",
+      column_type: Id,
+      nullable: False,
+      default: None,
+      renamed_from: None,
+    ),
+    Column(
+      name: "title",
+      column_type: String,
+      nullable: False,
+      default: None,
+      renamed_from: None,
+    ),
+    Column(
+      name: "tags",
+      column_type: Array(String),
+      nullable: False,
+      default: None,
+      renamed_from: None,
+    ),
+    Column(
+      name: "scores",
+      column_type: Array(Array(Int)),
+      nullable: False,
+      default: None,
+      renamed_from: None,
+    ),
+    Column(
+      name: "is_published",
+      column_type: Boolean,
+      nullable: False,
+      default: Some(DefaultBool(False)),
+      renamed_from: None,
+    ),
+    Column(
+      name: "created_at",
+      column_type: Timestamp,
+      nullable: False,
+      default: None,
+      renamed_from: None,
+    ),
+    Column(
+      name: "updated_at",
+      column_type: Timestamp,
+      nullable: False,
+      default: None,
+      renamed_from: None,
+    ),
+  ])
+}
+
+pub fn parse_uuid_array_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [uuid(\"ref_ids\") |> array()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.column_type |> should.equal(Array(Uuid))
+}
+
+pub fn parse_text_array_test() {
+  let content =
+    "
+    pub const name = \"test\"
+    pub fn define() { table(name, [text(\"paragraphs\") |> array()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+  let assert [col] = table.columns
+
+  col.column_type |> should.equal(Array(Text))
 }

@@ -78,6 +78,8 @@ fn generate_imports(table: Table) -> String {
   let has_boolean =
     list.any(columns, fn(col) { col.column_type == schema_parser.Boolean })
   let has_nullable = list.any(columns, fn(col) { col.nullable })
+  let has_array =
+    list.any(columns, fn(col) { codegen.is_array(col.column_type) })
 
   let base_imports = "import gleam/dynamic/decode\nimport gleam/json"
 
@@ -86,7 +88,7 @@ fn generate_imports(table: Table) -> String {
     False -> ""
   }
 
-  let glimr_decode_import = case has_boolean {
+  let glimr_decode_import = case has_boolean || has_array {
     True -> "\nimport glimr/db/decode as glimr_decode"
     False -> ""
   }
@@ -179,25 +181,7 @@ fn generate_model_encoder(model_name: String, table: Table) -> String {
 
   let fields =
     list.map(columns, fn(col) {
-      let encoder = codegen.json_encoder_fn(col.column_type)
-      case col.nullable {
-        True ->
-          "    #(\""
-          <> col.name
-          <> "\", json.nullable(model."
-          <> col.name
-          <> ", "
-          <> encoder
-          <> "))"
-        False ->
-          "    #(\""
-          <> col.name
-          <> "\", "
-          <> encoder
-          <> "(model."
-          <> col.name
-          <> "))"
-      }
+      generate_encoder_field(col.name, col.column_type, col.nullable)
     })
 
   "pub fn encoder() -> fn("
@@ -250,6 +234,55 @@ fn generate_model_json_decoder(model_name: String, table: Table) -> String {
   <> "  decode.success("
   <> constructor_call
   <> ")\n}"
+}
+
+/// Scalar and array columns produce fundamentally different
+/// encoder code — `json.int(model.age)` vs
+/// `json.array(model.tags, json.string)`. Nullable adds another
+/// layer: `json.nullable(model.tags, fn(v) { json.array(v,
+/// json.string) })`. Extracting this into one function prevents
+/// the model encoder and the row encoder from duplicating the
+/// same branching logic.
+///
+fn generate_encoder_field(
+  name: String,
+  col_type: ColumnType,
+  nullable: Bool,
+) -> String {
+  case codegen.is_array(col_type) {
+    True -> {
+      let expr = codegen.json_encoder_expr(col_type, "v")
+      case nullable {
+        True ->
+          "    #(\""
+          <> name
+          <> "\", json.nullable(model."
+          <> name
+          <> ", fn(v) { "
+          <> expr
+          <> " }))"
+        False -> {
+          let expr = codegen.json_encoder_expr(col_type, "model." <> name)
+          "    #(\"" <> name <> "\", " <> expr <> ")"
+        }
+      }
+    }
+    False -> {
+      let encoder = codegen.json_encoder_fn(col_type)
+      case nullable {
+        True ->
+          "    #(\""
+          <> name
+          <> "\", json.nullable(model."
+          <> name
+          <> ", "
+          <> encoder
+          <> "))"
+        False ->
+          "    #(\"" <> name <> "\", " <> encoder <> "(model." <> name <> "))"
+      }
+    }
+  }
 }
 
 /// Each .sql file in the queries directory becomes a typed
@@ -559,19 +592,7 @@ fn generate_row_encoder(
   let fields =
     list.map(columns, fn(col_tuple) {
       let #(name, col_type, nullable) = col_tuple
-      let encoder = codegen.json_encoder_fn(col_type)
-      case nullable {
-        True ->
-          "    #(\""
-          <> name
-          <> "\", json.nullable(model."
-          <> name
-          <> ", "
-          <> encoder
-          <> "))"
-        False ->
-          "    #(\"" <> name <> "\", " <> encoder <> "(model." <> name <> "))"
-      }
+      generate_encoder_field(name, col_type, nullable)
     })
 
   "pub fn "
@@ -1063,6 +1084,7 @@ fn value_wrapper(col_type: ColumnType) -> String {
     schema_parser.Json -> "db.string"
     schema_parser.Uuid -> "db.string"
     schema_parser.Foreign(_) -> "db.int"
+    schema_parser.Array(_) -> "db.string"
   }
 }
 

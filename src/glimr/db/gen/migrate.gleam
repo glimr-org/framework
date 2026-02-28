@@ -105,6 +105,7 @@ fn do_run(
       // Validate schemas
       validation.validate_no_duplicate_columns(tables)
       validation.validate_indexes(tables)
+      validation.validate_array_types(tables)
 
       io.println(
         "  Found " <> int.to_string(list.length(tables)) <> " table(s)",

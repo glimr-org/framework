@@ -549,6 +549,7 @@ fn column_type_sql(col_type: ColumnType, driver: Driver) -> String {
         schema_parser.Json -> "JSONB"
         schema_parser.Uuid -> "UUID"
         schema_parser.Foreign(ref) -> "INTEGER REFERENCES " <> ref <> "(id)"
+        schema_parser.Array(inner) -> column_type_sql(inner, Postgres) <> "[]"
       }
     Sqlite ->
       case col_type {
@@ -565,6 +566,7 @@ fn column_type_sql(col_type: ColumnType, driver: Driver) -> String {
         schema_parser.Json -> "TEXT"
         schema_parser.Uuid -> "TEXT"
         schema_parser.Foreign(_) -> "INTEGER"
+        schema_parser.Array(_) -> "TEXT"
       }
   }
 }
@@ -622,6 +624,11 @@ fn default_to_sql(
           "(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))"
       }
     schema_parser.DefaultNull -> "NULL"
+    schema_parser.DefaultEmptyArray ->
+      case driver {
+        Postgres -> "'{}'"
+        Sqlite -> "'[]'"
+      }
   }
 }
 

@@ -61,6 +61,7 @@ pub type DefaultValue {
   DefaultUnixNow
   DefaultAutoUuid
   DefaultNull
+  DefaultEmptyArray
 }
 
 /// Represents the data type of a column. Maps to appropriate
@@ -81,6 +82,7 @@ pub type ColumnType {
   Json
   Uuid
   Foreign(String)
+  Array(ColumnType)
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -249,20 +251,24 @@ fn parse_column_item(item: String) -> List(Column) {
           Column("updated_at", UnixTimestamp, False, None, None),
         ]
         False -> {
-          // Check if this item has modifiers (|> nullable(), |> default(...), |> rename_from(...))
-          let #(base, is_nullable, default_value, renamed_from) =
+          // Check if this item has modifiers (|> nullable(), |> default(...), |> rename_from(...), |> array())
+          let #(base, is_nullable, default_value, renamed_from, array_depth) =
             extract_modifiers(trimmed)
 
           // Parse the base column function
           case parse_column_function(base) {
-            Some(col) -> [
-              Column(
-                ..col,
-                nullable: is_nullable,
-                default: default_value,
-                renamed_from: renamed_from,
-              ),
-            ]
+            Some(col) -> {
+              let col_type = wrap_array_type(col.column_type, array_depth)
+              [
+                Column(
+                  ..col,
+                  column_type: col_type,
+                  nullable: is_nullable,
+                  default: default_value,
+                  renamed_from: renamed_from,
+                ),
+              ]
+            }
             None -> []
           }
         }
@@ -270,13 +276,27 @@ fn parse_column_item(item: String) -> List(Column) {
   }
 }
 
+/// Developers can chain `|> array() |> array()` for nested
+/// arrays, so the parser counts how many times `array()`
+/// appears and wraps the base type that many levels deep.
+/// `string("matrix") |> array() |> array()` becomes
+/// `Array(Array(String))` which codegen turns into
+/// `List(List(String))`.
+///
+fn wrap_array_type(col_type: ColumnType, depth: Int) -> ColumnType {
+  case depth <= 0 {
+    True -> col_type
+    False -> wrap_array_type(Array(col_type), depth - 1)
+  }
+}
+
 /// Extract modifiers from a column definition. Returns the base
 /// column function, whether it's nullable, any default value,
-/// and any rename_from directive.
+/// any rename_from directive, and the array nesting depth.
 ///
 fn extract_modifiers(
   item: String,
-) -> #(String, Bool, Option(DefaultValue), Option(String)) {
+) -> #(String, Bool, Option(DefaultValue), Option(String), Int) {
   let parts = string.split(item, "|>")
 
   let base = case list.first(parts) {
@@ -286,6 +306,9 @@ fn extract_modifiers(
 
   let is_nullable =
     list.any(parts, fn(p) { string.contains(string.trim(p), "nullable()") })
+
+  // Count array() modifiers
+  let array_depth = list.count(parts, fn(p) { string.trim(p) == "array()" })
 
   // Extract default value
   let default_value =
@@ -303,7 +326,7 @@ fn extract_modifiers(
     })
     |> option.from_result()
 
-  #(base, is_nullable, default_value, renamed_from)
+  #(base, is_nullable, default_value, renamed_from, array_depth)
 }
 
 /// Parse a rename_from modifier and extract the old column
@@ -366,6 +389,7 @@ fn parse_default_value(s: String) -> Result(DefaultValue, Nil) {
     #("default_unix_now(", fn(_) { Ok(DefaultUnixNow) }),
     #("default_null(", fn(_) { Ok(DefaultNull) }),
     #("auto_uuid(", fn(_) { Ok(DefaultAutoUuid) }),
+    #("default_empty_array(", fn(_) { Ok(DefaultEmptyArray) }),
   ]
 
   list.find_map(handlers, fn(handler) {
