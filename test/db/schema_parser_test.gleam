@@ -3,7 +3,7 @@ import gleeunit/should
 import glimr/db/gen/schema_parser.{
   BigInt, Boolean, Column, Date, DefaultAutoUuid, DefaultBool, DefaultFloat,
   DefaultInt, DefaultNow, DefaultNull, DefaultString, DefaultUnixNow, Float,
-  Foreign, Id, Int, Json, String, Text, Timestamp, UnixTimestamp, Uuid,
+  Foreign, Id, Index, Int, Json, String, Text, Timestamp, UnixTimestamp, Uuid,
 }
 
 // ------------------------------------------------------------- Basic Parsing
@@ -598,6 +598,129 @@ pub fn parse_complete_table_test() {
       nullable: False,
       default: None,
       renamed_from: None,
+    ),
+  ])
+}
+
+// ------------------------------------------------------------- Index Parsing
+
+pub fn parse_no_indexes_test() {
+  let content =
+    "
+    pub const name = \"users\"
+    pub fn define() { table(name, [id()]) }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+
+  table.indexes
+  |> should.equal([])
+}
+
+pub fn parse_single_index_test() {
+  let content =
+    "
+    pub const name = \"users\"
+    pub fn definition() {
+      table(name, [
+        id(),
+        string(\"email\"),
+      ])
+      |> indexes([
+        index([\"email\"]),
+      ])
+    }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+
+  table.indexes
+  |> should.equal([
+    Index(columns: ["email"], unique: False, name: None),
+  ])
+}
+
+pub fn parse_unique_index_test() {
+  let content =
+    "
+    pub const name = \"users\"
+    pub fn definition() {
+      table(name, [id(), string(\"email\")])
+      |> indexes([unique([\"email\"])])
+    }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+
+  table.indexes
+  |> should.equal([
+    Index(columns: ["email"], unique: True, name: None),
+  ])
+}
+
+pub fn parse_composite_index_test() {
+  let content =
+    "
+    pub const name = \"users\"
+    pub fn definition() {
+      table(name, [id(), string(\"first_name\"), string(\"last_name\")])
+      |> indexes([index([\"first_name\", \"last_name\"])])
+    }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+
+  table.indexes
+  |> should.equal([
+    Index(columns: ["first_name", "last_name"], unique: False, name: None),
+  ])
+}
+
+pub fn parse_named_index_test() {
+  let content =
+    "
+    pub const name = \"users\"
+    pub fn definition() {
+      table(name, [id(), string(\"email\")])
+      |> indexes([index([\"email\"]) |> named(\"idx_custom\")])
+    }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+
+  table.indexes
+  |> should.equal([
+    Index(columns: ["email"], unique: False, name: Some("idx_custom")),
+  ])
+}
+
+pub fn parse_multiple_indexes_test() {
+  let content =
+    "
+    pub const name = \"users\"
+    pub fn definition() {
+      table(name, [
+        id(),
+        string(\"email\"),
+        string(\"first_name\"),
+        string(\"last_name\"),
+      ])
+      |> indexes([
+        unique([\"email\"]),
+        index([\"first_name\", \"last_name\"]) |> named(\"idx_users_full_name\"),
+      ])
+    }
+  "
+
+  let assert Ok(table) = schema_parser.parse(content)
+
+  table.indexes
+  |> should.equal([
+    Index(columns: ["email"], unique: True, name: None),
+    Index(
+      columns: ["first_name", "last_name"],
+      unique: False,
+      name: Some("idx_users_full_name"),
     ),
   ])
 }

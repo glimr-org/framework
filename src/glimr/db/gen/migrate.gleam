@@ -102,8 +102,9 @@ fn do_run(
   // Scan current schemas (filtered if specified)
   case scan_schemas(models_path, model_filter) {
     Ok(tables) -> {
-      // Validate no duplicate column names
+      // Validate schemas
       validation.validate_no_duplicate_columns(tables)
+      validation.validate_indexes(tables)
 
       io.println(
         "  Found " <> int.to_string(list.length(tables)) <> " table(s)",

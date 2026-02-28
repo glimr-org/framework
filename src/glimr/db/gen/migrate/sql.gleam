@@ -1,8 +1,12 @@
 //// Migration SQL Generation
 ////
-//// Handles schema diffing and SQL generation for migrations.
-//// Compares old and new snapshots to detect changes, then
-//// generates driver-specific SQL statements.
+//// The bridge between "what changed in the schema" and "what
+//// SQL to run." This module diffs old and new snapshots to
+//// discover table/column/index changes, then emits
+//// driver-specific DDL — Postgres and SQLite have enough
+//// syntax differences (SERIAL vs INTEGER PRIMARY KEY
+//// AUTOINCREMENT, BOOLEAN vs INTEGER, JSONB vs TEXT) that a
+//// single SQL template can't cover both.
 
 import gleam/dict
 import gleam/float
@@ -11,33 +15,41 @@ import gleam/list
 import gleam/option
 import gleam/string
 import glimr/db/gen/migrate/snapshot.{
-  type ColumnSnapshot, type Snapshot, column_type_to_string,
+  type ColumnSnapshot, type IndexSnapshot, type Snapshot, column_type_to_string,
 }
 import glimr/db/gen/schema_parser.{type Column, type ColumnType, type Table}
 
 // ------------------------------------------------------------- Public Types
 
-/// Database driver for SQL generation. Determines syntax
-/// differences between PostgreSQL and SQLite for things like
-/// types, auto-increment, and functions.
+/// Every SQL generator function branches on this to pick the
+/// right dialect. Postgres has real BOOLEAN, JSONB, UUID, and
+/// SERIAL types; SQLite folds most of those into TEXT or
+/// INTEGER. Keeping the driver as a simple enum means we can
+/// pattern-match cleanly instead of threading config through
+/// every function.
 ///
 pub type Driver {
   Postgres
   Sqlite
 }
 
-/// The computed difference between old and new schema
-/// snapshots. Contains a list of changes that need to be
-/// migrated, including table and column additions, drops, and
-/// alterations.
+/// The output of comparing two snapshots. This flat list of
+/// changes becomes the input to `generate_sql`, which turns
+/// each one into a DDL statement. Keeping it as a plain list
+/// rather than a nested tree makes it easy to filter, reorder
+/// (topological sort for FK deps), and map over when generating
+/// both the SQL and the CLI summary output.
 ///
 pub type SchemaDiff {
   SchemaDiff(changes: List(Change))
 }
 
-/// A single schema change that needs to be migrated. Variants
-/// cover table creation/deletion and column operations
-/// including add, drop, alter, and rename.
+/// Each variant maps 1:1 to a SQL DDL statement. Having
+/// explicit variants instead of a generic "run this SQL" lets
+/// us topologically sort CreateTable by FK deps, order drops
+/// before creates for indexes, and produce human-readable
+/// descriptions for the CLI — none of which would be possible
+/// with raw SQL strings.
 ///
 pub type Change {
   CreateTable(table: Table)
@@ -46,13 +58,19 @@ pub type Change {
   DropColumn(table: String, column: String)
   AlterColumn(table: String, column: Column, old: ColumnSnapshot)
   RenameColumn(table: String, old_name: String, new_name: String)
+  CreateIndex(table: String, index: schema_parser.Index)
+  DropIndex(table: String, index_name: String)
 }
 
 // ------------------------------------------------------------- Public Functions
 
-/// Compute the diff between old and new snapshots. Detects new
-/// tables, dropped tables, and column changes. When is_filtered
-/// is true, skips drop detection to avoid false positives.
+/// The heart of the migration system. Compares the saved
+/// snapshot against the current schema to figure out what SQL
+/// to generate. The `is_filtered` flag matters when you're
+/// generating migrations for a single model — in that case we
+/// skip drop detection, because a table missing from the filter
+/// doesn't mean it was deleted, it just wasn't included this
+/// run.
 ///
 pub fn compute_diff(
   old: Snapshot,
@@ -63,10 +81,14 @@ pub fn compute_diff(
   let old_names = dict.keys(old.tables)
   let new_names = dict.keys(new.tables)
 
-  // Find new tables
-  let new_tables =
+  // Find new tables (and their indexes)
+  let new_table_list =
     list.filter(tables, fn(t) { !list.contains(old_names, t.name) })
-    |> list.map(CreateTable)
+  let new_tables = list.map(new_table_list, CreateTable)
+  let new_table_indexes =
+    list.flat_map(new_table_list, fn(t) {
+      list.map(t.indexes, fn(idx) { CreateIndex(t.name, idx) })
+    })
 
   // Find dropped tables (skip when filtering by model to avoid false positives)
   let dropped_tables = case is_filtered {
@@ -83,20 +105,35 @@ pub fn compute_diff(
     |> list.flat_map(fn(table) { compute_table_diff(old, table) })
 
   SchemaDiff(
-    changes: list.flatten([new_tables, dropped_tables, column_changes]),
+    changes: list.flatten([
+      new_tables,
+      new_table_indexes,
+      dropped_tables,
+      column_changes,
+    ]),
   )
 }
 
-/// Topologically sort CreateTable changes so tables are created
-/// after their foreign key dependencies. Other changes are
-/// preserved in their original order at the end.
+/// If you create `posts` before `users` and `posts` has a FK to
+/// `users`, the migration blows up. This pulls CreateTable
+/// changes out, topologically sorts them by FK deps, then puts
+/// them back at the front — followed by CreateIndex (which
+/// needs the tables to exist), then everything else (adds,
+/// drops, alters) in original order.
 ///
 fn sort_changes_by_dependency(changes: List(Change)) -> List(Change) {
-  // Separate CreateTable from other changes
-  let #(create_tables, other_changes) =
+  // Separate CreateTable and CreateIndex from other changes
+  let #(create_tables, non_create_tables) =
     list.partition(changes, fn(c) {
       case c {
         CreateTable(_) -> True
+        _ -> False
+      }
+    })
+  let #(create_indexes, other_changes) =
+    list.partition(non_create_tables, fn(c) {
+      case c {
+        CreateIndex(_, _) -> True
         _ -> False
       }
     })
@@ -119,13 +156,14 @@ fn sort_changes_by_dependency(changes: List(Change)) -> List(Change) {
   // Convert back to CreateTable changes
   let sorted_creates = list.map(sorted_tables, CreateTable)
 
-  // CreateTables first (in dependency order), then other changes
-  list.append(sorted_creates, other_changes)
+  // CreateTables first (in dependency order), then CreateIndexes, then other changes
+  list.flatten([sorted_creates, create_indexes, other_changes])
 }
 
-/// Sort tables so that tables with foreign key dependencies
-/// come after the tables they reference. Uses Kahn's algorithm
-/// for dependency resolution.
+/// Kahn's algorithm for dependency ordering. Only counts FK
+/// references to tables being created in this batch —
+/// references to existing tables don't count as deps because
+/// those tables are already in the database.
 ///
 fn topological_sort(tables: List(Table), all_names: List(String)) -> List(Table) {
   // Get dependencies for each table (only count deps on tables being created)
@@ -154,12 +192,12 @@ fn topological_sort(tables: List(Table), all_names: List(String)) -> List(Table)
   do_topological_sort(tables, get_deps, [])
 }
 
-/// Recursive helper for topological sort using Kahn's
-/// algorithm. Each iteration finds tables whose dependencies
-/// are already in the sorted list, adds them, and recurses with
-/// the remainder. If no tables are ready (circular dependency),
-/// returns remaining tables in original order to avoid infinite
-/// recursion.
+/// Each iteration peels off tables whose deps are already
+/// sorted, then recurses on the rest. If nothing is ready
+/// (circular FK references), it dumps the remaining tables in
+/// their original order rather than looping forever — the
+/// migration will still fail at the DB level, but at least we
+/// don't hang.
 ///
 fn do_topological_sort(
   remaining: List(Table),
@@ -191,9 +229,12 @@ fn do_topological_sort(
   }
 }
 
-/// Generate SQL for all changes in a diff. CreateTable changes
-/// are sorted by dependency order so tables referencing other
-/// tables are created after their dependencies.
+/// Turns the diff into runnable SQL. Before emitting anything,
+/// it topologically sorts CreateTable changes so a `posts`
+/// table that references `users` gets created after `users` —
+/// otherwise the FK constraint would reference a table that
+/// doesn't exist yet. Indexes come after their tables for the
+/// same reason.
 ///
 pub fn generate_sql(diff: SchemaDiff, driver: Driver) -> String {
   diff.changes
@@ -202,9 +243,11 @@ pub fn generate_sql(diff: SchemaDiff, driver: Driver) -> String {
   |> string.join("\n\n")
 }
 
-/// Human-readable description of a Change for CLI output.
-/// Formats the change type and affected table/column names into
-/// a user-friendly string.
+/// Produces the summary lines you see in the terminal when a
+/// migration is generated ("Create table: users", "Add column:
+/// posts.slug"). Keeping this separate from the SQL generation
+/// means the CLI can show what will happen before the SQL is
+/// actually written to disk.
 ///
 pub fn describe_change(change: Change) -> String {
   case change {
@@ -215,14 +258,20 @@ pub fn describe_change(change: Change) -> String {
     AlterColumn(table, col, _) -> "Alter column: " <> table <> "." <> col.name
     RenameColumn(table, old_name, new_name) ->
       "Rename column: " <> table <> "." <> old_name <> " -> " <> new_name
+    CreateIndex(table, idx) -> "Create index: " <> index_name(table, idx)
+    DropIndex(_, name) -> "Drop index: " <> name
   }
 }
 
 // ------------------------------------------------------------- Private Functions
 
-/// Compute column-level changes for a single table. Detects
-/// renames (via rename_from), additions, drops, and alterations
-/// by comparing against the old snapshot.
+/// The per-table workhorse. Compares the current table
+/// definition against its snapshot to find what actually
+/// changed — renames first (so a renamed column doesn't show up
+/// as a drop+add), then new columns, dropped columns,
+/// type/nullable alterations, and finally index changes.
+/// Renames are checked first because they affect which columns
+/// count as "new" vs "dropped."
 ///
 fn compute_table_diff(old: Snapshot, table: Table) -> List(Change) {
   case dict.get(old.tables, table.name) {
@@ -380,15 +429,21 @@ fn compute_table_diff(old: Snapshot, table: Table) -> List(Change) {
           }
         })
 
-      list.flatten([renames, added, dropped, altered])
+      // Index changes
+      let index_changes =
+        compute_index_diff(table.name, old_table.indexes, table.indexes)
+
+      list.flatten([renames, added, dropped, altered, index_changes])
     }
     Error(_) -> []
   }
 }
 
-/// Convert a single Change to its SQL representation.
-/// Dispatches to specific SQL generators based on the change
-/// type (create, drop, alter, rename).
+/// This is where the Driver enum earns its keep — a CreateIndex
+/// is the same SQL on both databases, but a CreateTable needs
+/// completely different type mappings, and an AlterColumn is
+/// impossible on SQLite. Each variant decides how much
+/// driver-awareness it needs.
 ///
 fn change_to_sql(change: Change, driver: Driver) -> String {
   case change {
@@ -411,12 +466,31 @@ fn change_to_sql(change: Change, driver: Driver) -> String {
       <> " TO "
       <> new_name
       <> ";"
+    CreateIndex(table, idx) -> {
+      let idx_name = index_name(table, idx)
+      let unique_str = case idx.unique {
+        True -> "UNIQUE "
+        False -> ""
+      }
+      let cols = string.join(idx.columns, ", ")
+      "CREATE "
+      <> unique_str
+      <> "INDEX "
+      <> idx_name
+      <> " ON "
+      <> table
+      <> " ("
+      <> cols
+      <> ");"
+    }
+    DropIndex(_, name) -> "DROP INDEX " <> name <> ";"
   }
 }
 
-/// Generate CREATE TABLE SQL with all column definitions.
-/// Includes primary keys, constraints, and default values for
-/// each column in the table.
+/// Builds a complete CREATE TABLE statement with every column's
+/// type, constraints, and defaults. Each column is indented on
+/// its own line for readability in the generated migration file
+/// — developers often review these before running them.
 ///
 fn create_table_sql(table: Table, driver: Driver) -> String {
   let columns_sql =
@@ -427,9 +501,11 @@ fn create_table_sql(table: Table, driver: Driver) -> String {
   "CREATE TABLE " <> table.name <> " (\n" <> columns_sql <> "\n);"
 }
 
-/// Generate a column definition including type, constraints,
-/// and defaults. Combines name, SQL type, nullability, and
-/// default value into a complete column spec.
+/// Assembles a single column's SQL fragment: name, type,
+/// PRIMARY KEY (for Id columns), NOT NULL, and DEFAULT. The
+/// ordering matters — SQL requires PRIMARY KEY before NOT NULL
+/// and DEFAULT, and getting it wrong produces syntax errors
+/// that are annoying to debug.
 ///
 fn column_definition(column: Column, driver: Driver) -> String {
   let type_sql = column_type_sql(column.column_type, driver)
@@ -450,9 +526,11 @@ fn column_definition(column: Column, driver: Driver) -> String {
   column.name <> " " <> type_sql <> pk_sql <> nullable_sql <> default_sql
 }
 
-/// Map a ColumnType to driver-specific SQL type. Handles
-/// differences between Postgres types (VARCHAR, BOOLEAN) and
-/// SQLite types (TEXT, INTEGER).
+/// The big type mapping table. Postgres has rich types
+/// (VARCHAR, BOOLEAN, JSONB, UUID) while SQLite squashes most
+/// things into TEXT or INTEGER. This is where that impedance
+/// mismatch lives — one ColumnType variant in, the right SQL
+/// type string out.
 ///
 fn column_type_sql(col_type: ColumnType, driver: Driver) -> String {
   case driver {
@@ -491,9 +569,12 @@ fn column_type_sql(col_type: ColumnType, driver: Driver) -> String {
   }
 }
 
-/// Generate PRIMARY KEY clause for Id columns. Postgres uses
-/// SERIAL with PRIMARY KEY, SQLite uses INTEGER with PRIMARY
-/// KEY AUTOINCREMENT.
+/// SQLite requires AUTOINCREMENT alongside PRIMARY KEY to get
+/// auto-incrementing IDs, while Postgres uses SERIAL (which
+/// already implies a sequence). Without this split, SQLite
+/// would create a plain integer PK that doesn't auto-increment,
+/// leading to "NOT NULL constraint failed" on inserts that omit
+/// the id.
 ///
 fn primary_key_sql(driver: Driver) -> String {
   case driver {
@@ -502,9 +583,13 @@ fn primary_key_sql(driver: Driver) -> String {
   }
 }
 
-/// Convert a DefaultValue to its SQL representation. Handles
-/// booleans, strings, numbers, timestamps, and auto-generated
-/// UUIDs with driver-specific syntax.
+/// Default values are where Postgres and SQLite diverge the
+/// most. Booleans are `true`/`false` in Postgres but `1`/`0` in
+/// SQLite. Unix timestamps use `EXTRACT` in Postgres vs
+/// `strftime` in SQLite. Auto-UUIDs use `gen_random_uuid()` in
+/// Postgres but need a gnarly `randomblob` expression in
+/// SQLite. Getting any of these wrong means silent data
+/// corruption.
 ///
 fn default_to_sql(
   default_value: schema_parser.DefaultValue,
@@ -540,17 +625,21 @@ fn default_to_sql(
   }
 }
 
-/// Escape single quotes in SQL string literals. Doubles any
-/// single quote characters to prevent SQL injection and syntax
-/// errors in string defaults.
+/// String defaults go into the migration as SQL literals, so a
+/// value like `it's` would break the SQL syntax if we didn't
+/// double the quote. This is the only escaping needed since
+/// defaults come from the developer's schema code, not user
+/// input.
 ///
 fn escape_sql_string(s: String) -> String {
   string.replace(s, "'", "''")
 }
 
-/// Generate ALTER COLUMN SQL. Note: SQLite doesn't support
-/// ALTER COLUMN, so a comment is generated instead to indicate
-/// manual table recreation is needed.
+/// Postgres supports ALTER COLUMN TYPE directly, but SQLite
+/// famously doesn't — you have to recreate the entire table to
+/// change a column type. Rather than attempting that
+/// automatically (which risks data loss), we emit a SQL comment
+/// telling the developer to handle it manually.
 ///
 fn alter_column_sql(table: String, column: Column, driver: Driver) -> String {
   case driver {
@@ -571,9 +660,12 @@ fn alter_column_sql(table: String, column: Column, driver: Driver) -> String {
   }
 }
 
-/// Check if two column types are compatible for a rename
-/// operation. Allows exact matches and semantically equivalent
-/// types (e.g., String/Text, Int/BigInt).
+/// Renaming a column should preserve data, so changing the type
+/// at the same time is suspicious — it probably means the
+/// developer intended a drop+add, not a rename. But some type
+/// changes are safe: String and Text are both text storage, Int
+/// and BigInt are both integers. We allow those and reject
+/// everything else to prevent accidental data reinterpretation.
 ///
 fn types_compatible_for_rename(old_type: String, new_type: String) -> Bool {
   case old_type == new_type {
@@ -592,4 +684,61 @@ fn types_compatible_for_rename(old_type: String, new_type: String) -> Bool {
       }
     }
   }
+}
+
+/// Index names need to be deterministic so the migration system
+/// can generate matching DROP INDEX statements later. Custom
+/// names take priority — otherwise we build
+/// `idx_{table}_{col1}_{col2}` which is predictable enough that
+/// compute_index_diff can reconstruct it from the snapshot when
+/// generating drops.
+///
+fn index_name(table: String, idx: schema_parser.Index) -> String {
+  case idx.name {
+    option.Some(name) -> name
+    option.None -> "idx_" <> table <> "_" <> string.join(idx.columns, "_")
+  }
+}
+
+/// Compares old snapshot indexes against new schema indexes to
+/// find what was added or removed. Matching is by column list +
+/// unique flag — if you change which columns an index covers,
+/// it shows up as a drop of the old one and a create of the new
+/// one. Drops come before creates in the output so the
+/// migration doesn't fail on duplicate index names.
+///
+fn compute_index_diff(
+  table_name: String,
+  old_indexes: List(IndexSnapshot),
+  new_indexes: List(schema_parser.Index),
+) -> List(Change) {
+  // Convert new indexes to a comparable form
+  let index_matches = fn(old: IndexSnapshot, new: schema_parser.Index) -> Bool {
+    old.columns == new.columns && old.unique == new.unique
+  }
+
+  // Added indexes: in new but not in old
+  let added =
+    new_indexes
+    |> list.filter(fn(new_idx) {
+      !list.any(old_indexes, fn(old_idx) { index_matches(old_idx, new_idx) })
+    })
+    |> list.map(fn(idx) { CreateIndex(table_name, idx) })
+
+  // Dropped indexes: in old but not in new
+  let dropped =
+    old_indexes
+    |> list.filter(fn(old_idx) {
+      !list.any(new_indexes, fn(new_idx) { index_matches(old_idx, new_idx) })
+    })
+    |> list.map(fn(old_idx) {
+      let name = case old_idx.name {
+        option.Some(n) -> n
+        option.None ->
+          "idx_" <> table_name <> "_" <> string.join(old_idx.columns, "_")
+      }
+      DropIndex(table_name, name)
+    })
+
+  list.append(dropped, added)
 }

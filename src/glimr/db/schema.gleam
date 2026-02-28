@@ -14,7 +14,18 @@ import gleam/option.{type Option, None, Some}
 /// generation, migrations, and type inference.
 ///
 pub type Table {
-  Table(name: String, columns: List(Column))
+  Table(name: String, columns: List(Column), indexes: List(IndexDef))
+}
+
+/// Database queries that filter or sort by a column benefit
+/// hugely from an index — without one, the database scans every
+/// row. This type captures what the developer wants indexed,
+/// whether it should enforce uniqueness, and an optional custom
+/// name (otherwise the migration generates
+/// `idx_{table}_{col1}_{col2}` automatically).
+///
+pub type IndexDef {
+  IndexDef(columns: List(String), unique: Bool, name: Option(String))
 }
 
 /// Represents a column definition within a table. Each column
@@ -120,7 +131,7 @@ pub fn table(name: String, column_defs: List(ColumnDef)) -> Table {
         Multiple(cols) -> cols
       }
     })
-  Table(name: name, columns: cols)
+  Table(name: name, columns: cols, indexes: [])
 }
 
 /// Creates an auto-incrementing integer primary key column
@@ -470,6 +481,61 @@ pub fn rename_from(def: ColumnDef, old_name: String) -> ColumnDef {
 ///
 pub fn columns(t: Table) -> List(Column) {
   t.columns
+}
+
+/// Pipes onto `table()` to declare indexes alongside columns.
+/// Keeping indexes in the schema definition means the migration
+/// generator can detect when you add or remove an index and
+/// produce the right CREATE INDEX / DROP INDEX SQL
+/// automatically — no hand-written migrations needed.
+///
+/// *Example:*
+///
+/// ```gleam
+/// table(name, [id(), string("email")])
+/// |> indexes([unique(["email"])])
+/// ```
+///
+pub fn indexes(table: Table, defs: List(IndexDef)) -> Table {
+  Table(..table, indexes: defs)
+}
+
+/// Creates a regular (non-unique) index on the given columns.
+/// Use this when you frequently query by a column but don't
+/// need uniqueness enforced — for example, indexing a `status`
+/// column that your list queries filter on.
+///
+pub fn index(columns: List(String)) -> IndexDef {
+  IndexDef(columns: columns, unique: False, name: None)
+}
+
+/// Creates a unique index — the database will reject any INSERT
+/// or UPDATE that would create a duplicate. This is how you
+/// enforce "one account per email" or "one vote per user per
+/// post" at the database level rather than relying on
+/// application-level checks that can race.
+///
+pub fn unique(columns: List(String)) -> IndexDef {
+  IndexDef(columns: columns, unique: True, name: None)
+}
+
+/// Overrides the auto-generated index name. The default
+/// `idx_{table}_{col1}_{col2}` is fine most of the time, but if
+/// you need a specific name for constraint error handling or
+/// migration compatibility with an existing database, pipe
+/// through this.
+///
+pub fn named(def: IndexDef, name: String) -> IndexDef {
+  IndexDef(..def, name: Some(name))
+}
+
+/// Returns the table's index definitions. The migration
+/// generator and snapshot system use this to detect when
+/// indexes have been added, removed, or changed between schema
+/// versions.
+///
+pub fn table_indexes(t: Table) -> List(IndexDef) {
+  t.indexes
 }
 
 // ------------------------------------------------------------- Private Functions

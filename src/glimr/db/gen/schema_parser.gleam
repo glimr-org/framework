@@ -22,7 +22,16 @@ import gleam/string
 /// and migration diffing.
 ///
 pub type Table {
-  Table(name: String, columns: List(Column))
+  Table(name: String, columns: List(Column), indexes: List(Index))
+}
+
+/// The parsed representation of an `index(["col"])` or
+/// `unique(["col"]) |> named("custom")` call from a schema
+/// file. The migration system compares these against the
+/// previous snapshot to detect added or removed indexes.
+///
+pub type Index {
+  Index(columns: List(String), unique: Bool, name: Option(String))
 }
 
 /// Represents a database column with its name, type,
@@ -92,7 +101,8 @@ pub fn parse(content: String) -> Result(Table, String) {
         Some(list_content) -> {
           // Parse each column item in the list
           let columns = parse_column_list(list_content)
-          Ok(Table(name: table_name, columns: columns))
+          let indexes = extract_indexes(content)
+          Ok(Table(name: table_name, columns: columns, indexes: indexes))
         }
       }
     }
@@ -494,4 +504,111 @@ fn parse_foreign_column(func: String) -> Option(Column) {
 ///
 pub fn columns(table: Table) -> List(Column) {
   table.columns
+}
+
+/// Returns the parsed index definitions from a table. The
+/// migration snapshot builder uses this to capture the current
+/// index state for diffing against future schema changes.
+///
+pub fn indexes(table: Table) -> List(Index) {
+  table.indexes
+}
+
+/// Scans the schema file content for an `indexes([...])` block
+/// and parses each entry inside it. This runs after column
+/// parsing since indexes reference column names. If there's no
+/// indexes block, the table simply has no indexes — it's not an
+/// error because most tables start without them.
+///
+fn extract_indexes(content: String) -> List(Index) {
+  case string.split_once(content, "indexes([") {
+    Ok(#(_, after_indexes)) -> {
+      let list_content = extract_until_balanced_bracket(after_indexes, 1, "")
+      let items = split_by_top_level_comma(list_content)
+      list.filter_map(items, fn(item) {
+        case parse_index_item(string.trim(item)) {
+          Some(idx) -> Ok(idx)
+          None -> Error(Nil)
+        }
+      })
+    }
+    Error(_) -> []
+  }
+}
+
+/// Parses a single index entry like `unique(["email"])` or
+/// `index(["a", "b"]) |> named("custom")`. The pipe chain
+/// handling is important because `named()` is a modifier that
+/// the developer pipes onto the base index call — just like how
+/// column definitions use pipe chains for `nullable()` and
+/// `default()`.
+///
+fn parse_index_item(item: String) -> Option(Index) {
+  let parts = string.split(item, "|>")
+  let base = case list.first(parts) {
+    Ok(b) -> string.trim(b)
+    Error(_) -> item
+  }
+
+  // Parse the base: unique([...]) or index([...])
+  let base_result = case string.starts_with(base, "unique(") {
+    True -> {
+      case extract_index_columns(base) {
+        Some(cols) -> Some(Index(columns: cols, unique: True, name: None))
+        None -> None
+      }
+    }
+    False ->
+      case string.starts_with(base, "index(") {
+        True -> {
+          case extract_index_columns(base) {
+            Some(cols) -> Some(Index(columns: cols, unique: False, name: None))
+            None -> None
+          }
+        }
+        False -> None
+      }
+  }
+
+  // Apply named() modifier if present
+  case base_result {
+    Some(idx) -> {
+      let custom_name =
+        list.find_map(parts, fn(p) {
+          let trimmed = string.trim(p)
+          case string.starts_with(trimmed, "named(") {
+            True -> extract_quoted_string(trimmed)
+            False -> Error(Nil)
+          }
+        })
+        |> option.from_result()
+      Some(Index(..idx, name: custom_name))
+    }
+    None -> None
+  }
+}
+
+/// Extracts the column name list from inside an index function
+/// call like `unique(["email", "password"])`. Uses the same
+/// balanced-bracket and comma-splitting helpers as the column
+/// parser to handle nested brackets and multi- column indexes
+/// correctly.
+///
+fn extract_index_columns(func: String) -> Option(List(String)) {
+  case string.split_once(func, "[") {
+    Ok(#(_, after_bracket)) -> {
+      let content = extract_until_balanced_bracket(after_bracket, 1, "")
+      let cols =
+        split_by_top_level_comma(content)
+        |> list.filter_map(fn(item) {
+          let trimmed = string.trim(item)
+          extract_quoted_string(trimmed)
+        })
+      case cols {
+        [] -> None
+        _ -> Some(cols)
+      }
+    }
+    Error(_) -> None
+  }
 }
