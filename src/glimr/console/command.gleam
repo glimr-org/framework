@@ -18,7 +18,7 @@ import gleam/string
 import glimr/cache/cache.{type CachePool}
 import glimr/cache/database as cache_database
 import glimr/cache/driver.{type CacheStore, DatabaseStore, FileStore, RedisStore} as cache_driver
-import glimr/cache/file as cache_file
+import glimr/cache/file_cache
 import glimr/config/cache as cache_config
 import glimr/config/database
 import glimr/console/console
@@ -407,7 +407,7 @@ fn with_cache_pool(args: Args, user_handler: fn(Args, CachePool) -> Nil) -> Nil 
 
   case store {
     FileStore(_, _) -> {
-      let pool = cache_file.wrap_pool(cache_file.start_pool(cache_name))
+      let pool = file_cache.wrap_pool(file_cache.start_pool(cache_name))
       user_handler(args, pool)
       cache.stop(pool)
     }
