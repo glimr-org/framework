@@ -3,9 +3,9 @@ import gleam/json
 import gleam/string
 import gleeunit/should
 import glimr/cache/cache.{type CachePool, NotFound, SerializationError}
-import glimr/cache/file
-import glimr/cache/file/cache as file_cache
+import glimr/cache/file/cache as fcache
 import glimr/cache/file/pool
+import glimr/cache/file_cache
 import simplifile
 
 const test_cache_path = "priv/test/cache"
@@ -34,7 +34,7 @@ fn setup_test_pool() -> CachePool {
   let _ = simplifile.create_directory_all(test_cache_path)
 
   setup_config()
-  file.start("test")
+  file_cache.start("test")
 }
 
 fn setup_internal_pool() -> pool.Pool {
@@ -42,7 +42,7 @@ fn setup_internal_pool() -> pool.Pool {
   let _ = simplifile.create_directory_all(test_cache_path)
 
   setup_config()
-  file.start_pool("test")
+  file_cache.start_pool("test")
 }
 
 fn cleanup_test_pool() {
@@ -418,7 +418,7 @@ pub fn remember_json_computes_when_missing_test() {
 pub fn key_to_path_creates_nested_structure_test() {
   let pool = setup_internal_pool()
 
-  let path = file_cache.key_to_path(pool, "test_key")
+  let path = fcache.key_to_path(pool, "test_key")
 
   // Path should contain the base path and 2-level directory structure
   path
@@ -434,8 +434,8 @@ pub fn key_to_path_creates_nested_structure_test() {
 pub fn key_to_path_is_deterministic_test() {
   let pool = setup_internal_pool()
 
-  let path1 = file_cache.key_to_path(pool, "same_key")
-  let path2 = file_cache.key_to_path(pool, "same_key")
+  let path1 = fcache.key_to_path(pool, "same_key")
+  let path2 = fcache.key_to_path(pool, "same_key")
 
   path1
   |> should.equal(path2)
@@ -446,8 +446,8 @@ pub fn key_to_path_is_deterministic_test() {
 pub fn key_to_path_different_keys_different_paths_test() {
   let pool = setup_internal_pool()
 
-  let path1 = file_cache.key_to_path(pool, "key1")
-  let path2 = file_cache.key_to_path(pool, "key2")
+  let path1 = fcache.key_to_path(pool, "key1")
+  let path2 = fcache.key_to_path(pool, "key2")
 
   path1
   |> should.not_equal(path2)

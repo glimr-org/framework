@@ -1,4 +1,4 @@
-import glimr/cache/file
+import glimr/cache/file_cache
 import glimr/console/command.{type Command, type Args}
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#console-commands
@@ -17,7 +17,7 @@ pub fn command() -> Command {
 /// Execute the console command.
 ///
 fn run(_args: Args) -> Nil {
-  let pool = file.start("@{{store_name}}")
+  let pool = file_cache.start("@{{store_name}}")
 
   // Your command logic here
   todo
