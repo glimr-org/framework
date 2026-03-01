@@ -353,3 +353,139 @@ pub fn snapshot_roundtrip_with_array_column_test() {
     ),
   ])
 }
+
+// ------------------------------------------------------------- New Type Strings
+
+pub fn column_type_to_string_enum_test() {
+  snapshot.column_type_to_string(
+    schema_parser.Enum("status", ["active", "inactive"]),
+  )
+  |> should.equal("Enum(status:active,inactive)")
+}
+
+pub fn column_type_to_string_decimal_test() {
+  snapshot.column_type_to_string(schema_parser.Decimal(10, 2))
+  |> should.equal("Decimal(10,2)")
+}
+
+pub fn column_type_to_string_blob_test() {
+  snapshot.column_type_to_string(schema_parser.Blob)
+  |> should.equal("Blob")
+}
+
+pub fn column_type_to_string_time_test() {
+  snapshot.column_type_to_string(schema_parser.Time)
+  |> should.equal("Time")
+}
+
+pub fn column_type_to_string_foreign_no_actions_test() {
+  snapshot.column_type_to_string(schema_parser.Foreign(
+    "users",
+    option.None,
+    option.None,
+  ))
+  |> should.equal("Foreign(users)")
+}
+
+pub fn column_type_to_string_foreign_with_on_delete_test() {
+  snapshot.column_type_to_string(schema_parser.Foreign(
+    "users",
+    option.Some(schema_parser.Cascade),
+    option.None,
+  ))
+  |> should.equal("Foreign(users,onDelete:Cascade)")
+}
+
+pub fn column_type_to_string_foreign_with_both_actions_test() {
+  snapshot.column_type_to_string(schema_parser.Foreign(
+    "users",
+    option.Some(schema_parser.Cascade),
+    option.Some(schema_parser.Restrict),
+  ))
+  |> should.equal("Foreign(users,onDelete:Cascade,onUpdate:Restrict)")
+}
+
+// ------------------------------------------------------------- Snapshot Roundtrip New Types
+
+pub fn snapshot_roundtrip_with_new_types_test() {
+  let snap =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "test",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot(
+                "status",
+                "Enum(status:active,inactive)",
+                False,
+                False,
+              ),
+              ColumnSnapshot("price", "Decimal(10,2)", False, False),
+              ColumnSnapshot("data", "Blob", False, False),
+              ColumnSnapshot("starts_at", "Time", False, False),
+              ColumnSnapshot(
+                "user_id",
+                "Foreign(users,onDelete:Cascade)",
+                False,
+                False,
+              ),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let path = "/tmp/glimr_test_snapshot_new_types.json"
+
+  let assert Ok(_) = snapshot.save(path, snap)
+  let loaded = snapshot.load(path)
+
+  let assert Ok(table_snap) = dict.get(loaded.tables, "test")
+
+  table_snap.columns
+  |> should.equal([
+    ColumnSnapshot("id", "Id", False, False),
+    ColumnSnapshot("status", "Enum(status:active,inactive)", False, False),
+    ColumnSnapshot("price", "Decimal(10,2)", False, False),
+    ColumnSnapshot("data", "Blob", False, False),
+    ColumnSnapshot("starts_at", "Time", False, False),
+    ColumnSnapshot("user_id", "Foreign(users,onDelete:Cascade)", False, False),
+  ])
+}
+
+pub fn snapshot_backwards_compat_foreign_no_actions_test() {
+  // Old snapshot without FK actions should still load
+  let path = "/tmp/glimr_test_snapshot_old_foreign.json"
+  let content =
+    "{
+  \"tables\": {
+    \"posts\": {
+      \"columns\": [
+        {\"name\": \"id\", \"type\": \"Id\", \"nullable\": false, \"has_default\": false},
+        {\"name\": \"user_id\", \"type\": \"Foreign(users)\", \"nullable\": false, \"has_default\": false}
+      ]
+    }
+  }
+}
+"
+
+  let assert Ok(_) = simplifile.write(path, content)
+  let loaded = snapshot.load(path)
+
+  let assert Ok(table_snap) = dict.get(loaded.tables, "posts")
+
+  // Should load with the old format
+  let assert [_, fk_col] = table_snap.columns
+  fk_col.column_type
+  |> should.equal("Foreign(users)")
+}
+
+// ------------------------------------------------------------- SmallInt Snapshot
+
+pub fn column_type_to_string_smallint_test() {
+  snapshot.column_type_to_string(schema_parser.SmallInt)
+  |> should.equal("SmallInt")
+}

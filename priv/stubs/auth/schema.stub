@@ -1,12 +1,12 @@
-import glimr/db/schema.{id, string, table, unix_timestamps}
+import glimr/db/schema
 
-pub const name = "@{{ table_name }}"
+pub const table_name = "@{{ table_name }}"
 
 pub fn definition() {
-  table(name, [
-    id(),
-    string("email"),
-    string("password"),
-    unix_timestamps(),
+  schema.table(table_name, [
+    schema.id(),
+    schema.string("email"),
+    schema.string("password"),
+    schema.unix_timestamps(),
   ])
 }

@@ -60,6 +60,7 @@ pub type Change {
   RenameColumn(table: String, old_name: String, new_name: String)
   CreateIndex(table: String, index: schema_parser.Index)
   DropIndex(table: String, index_name: String)
+  CreateEnumType(name: String, variants: List(String))
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -122,9 +123,18 @@ pub fn compute_diff(
 /// drops, alters) in original order.
 ///
 fn sort_changes_by_dependency(changes: List(Change)) -> List(Change) {
+  // Separate CreateEnumType first (must come before everything)
+  let #(create_enums, non_enum_changes) =
+    list.partition(changes, fn(c) {
+      case c {
+        CreateEnumType(_, _) -> True
+        _ -> False
+      }
+    })
+
   // Separate CreateTable and CreateIndex from other changes
   let #(create_tables, non_create_tables) =
-    list.partition(changes, fn(c) {
+    list.partition(non_enum_changes, fn(c) {
       case c {
         CreateTable(_) -> True
         _ -> False
@@ -156,8 +166,8 @@ fn sort_changes_by_dependency(changes: List(Change)) -> List(Change) {
   // Convert back to CreateTable changes
   let sorted_creates = list.map(sorted_tables, CreateTable)
 
-  // CreateTables first (in dependency order), then CreateIndexes, then other changes
-  list.flatten([sorted_creates, create_indexes, other_changes])
+  // CreateEnumTypes first, then CreateTables (in dependency order), then CreateIndexes, then other changes
+  list.flatten([create_enums, sorted_creates, create_indexes, other_changes])
 }
 
 /// Kahn's algorithm for dependency ordering. Only counts FK
@@ -171,7 +181,7 @@ fn topological_sort(tables: List(Table), all_names: List(String)) -> List(Table)
     table.columns
     |> list.filter_map(fn(col) {
       case col.column_type {
-        schema_parser.Foreign(ref) -> {
+        schema_parser.Foreign(ref, _, _) -> {
           // Extract table name from "table(id)" format
           let ref_table =
             string.split(ref, "(")
@@ -260,6 +270,7 @@ pub fn describe_change(change: Change) -> String {
       "Rename column: " <> table <> "." <> old_name <> " -> " <> new_name
     CreateIndex(table, idx) -> "Create index: " <> index_name(table, idx)
     DropIndex(_, name) -> "Drop index: " <> name
+    CreateEnumType(name, _) -> "Create enum type: " <> name
   }
 }
 
@@ -393,13 +404,26 @@ fn compute_table_diff(old: Snapshot, table: Table) -> List(Change) {
         })
 
       // New columns (excluding renames)
-      let added =
+      let new_columns =
         table.columns
         |> list.filter(fn(c) {
           !list.contains(old_col_names, c.name)
           && !list.contains(renamed_new_names, c.name)
         })
-        |> list.map(fn(c) { AddColumn(table.name, c) })
+
+      // Emit CreateEnumType for new enum columns (Postgres needs
+      // the type to exist before the column references it)
+      let enum_types =
+        new_columns
+        |> list.filter_map(fn(c) {
+          case c.column_type {
+            schema_parser.Enum(name, variants) ->
+              Ok(CreateEnumType(name, variants))
+            _ -> Error(Nil)
+          }
+        })
+
+      let added = list.map(new_columns, fn(c) { AddColumn(table.name, c) })
 
       // Dropped columns (excluding columns that are being renamed)
       let dropped =
@@ -433,7 +457,7 @@ fn compute_table_diff(old: Snapshot, table: Table) -> List(Change) {
       let index_changes =
         compute_index_diff(table.name, old_table.indexes, table.indexes)
 
-      list.flatten([renames, added, dropped, altered, index_changes])
+      list.flatten([renames, enum_types, added, dropped, altered, index_changes])
     }
     Error(_) -> []
   }
@@ -484,6 +508,12 @@ fn change_to_sql(change: Change, driver: Driver) -> String {
       <> ");"
     }
     DropIndex(_, name) -> "DROP INDEX " <> name <> ";"
+    CreateEnumType(name, variants) -> {
+      let variant_list =
+        list.map(variants, fn(v) { "'" <> v <> "'" })
+        |> string.join(", ")
+      "CREATE TYPE " <> name <> " AS ENUM (" <> variant_list <> ");"
+    }
   }
 }
 
@@ -498,7 +528,31 @@ fn create_table_sql(table: Table, driver: Driver) -> String {
     |> list.map(fn(col) { "  " <> column_definition(col, driver) })
     |> string.join(",\n")
 
-  "CREATE TABLE " <> table.name <> " (\n" <> columns_sql <> "\n);"
+  // For Postgres, prepend CREATE TYPE for enum columns
+  let enum_types = case driver {
+    Postgres ->
+      table.columns
+      |> list.filter_map(fn(col) {
+        case col.column_type {
+          schema_parser.Enum(name, variants) -> {
+            let variant_list =
+              list.map(variants, fn(v) { "'" <> v <> "'" })
+              |> string.join(", ")
+            Ok("CREATE TYPE " <> name <> " AS ENUM (" <> variant_list <> ");")
+          }
+          _ -> Error(Nil)
+        }
+      })
+    Sqlite -> []
+  }
+
+  let create_table =
+    "CREATE TABLE " <> table.name <> " (\n" <> columns_sql <> "\n);"
+
+  case enum_types {
+    [] -> create_table
+    types -> string.join(types, "\n\n") <> "\n\n" <> create_table
+  }
 }
 
 /// Assembles a single column's SQL fragment: name, type,
@@ -523,7 +577,33 @@ fn column_definition(column: Column, driver: Driver) -> String {
     _ -> ""
   }
 
-  column.name <> " " <> type_sql <> pk_sql <> nullable_sql <> default_sql
+  // FK action clauses
+  let fk_actions_sql = case column.column_type {
+    schema_parser.Foreign(_, on_delete, on_update) ->
+      foreign_action_clause(on_delete, "ON DELETE")
+      <> foreign_action_clause(on_update, "ON UPDATE")
+    _ -> ""
+  }
+
+  // SQLite CHECK constraint for enum columns
+  let check_sql = case column.column_type, driver {
+    schema_parser.Enum(_, variants), Sqlite -> {
+      let variant_list =
+        list.map(variants, fn(v) { "'" <> v <> "'" })
+        |> string.join(", ")
+      " CHECK (" <> column.name <> " IN (" <> variant_list <> "))"
+    }
+    _, _ -> ""
+  }
+
+  column.name
+  <> " "
+  <> type_sql
+  <> pk_sql
+  <> fk_actions_sql
+  <> nullable_sql
+  <> default_sql
+  <> check_sql
 }
 
 /// The big type mapping table. Postgres has rich types
@@ -540,6 +620,7 @@ fn column_type_sql(col_type: ColumnType, driver: Driver) -> String {
         schema_parser.String -> "VARCHAR(255)"
         schema_parser.Text -> "TEXT"
         schema_parser.Int -> "INTEGER"
+        schema_parser.SmallInt -> "SMALLINT"
         schema_parser.BigInt -> "BIGINT"
         schema_parser.Float -> "DOUBLE PRECISION"
         schema_parser.Boolean -> "BOOLEAN"
@@ -548,8 +629,14 @@ fn column_type_sql(col_type: ColumnType, driver: Driver) -> String {
         schema_parser.Date -> "DATE"
         schema_parser.Json -> "JSONB"
         schema_parser.Uuid -> "UUID"
-        schema_parser.Foreign(ref) -> "INTEGER REFERENCES " <> ref <> "(id)"
+        schema_parser.Foreign(ref, _, _) ->
+          "INTEGER REFERENCES " <> ref <> "(id)"
         schema_parser.Array(inner) -> column_type_sql(inner, Postgres) <> "[]"
+        schema_parser.Enum(name, _) -> name
+        schema_parser.Decimal(p, s) ->
+          "NUMERIC(" <> int.to_string(p) <> ", " <> int.to_string(s) <> ")"
+        schema_parser.Blob -> "BYTEA"
+        schema_parser.Time -> "TIME"
       }
     Sqlite ->
       case col_type {
@@ -557,6 +644,7 @@ fn column_type_sql(col_type: ColumnType, driver: Driver) -> String {
         schema_parser.String -> "TEXT"
         schema_parser.Text -> "TEXT"
         schema_parser.Int -> "INTEGER"
+        schema_parser.SmallInt -> "INTEGER"
         schema_parser.BigInt -> "INTEGER"
         schema_parser.Float -> "REAL"
         schema_parser.Boolean -> "INTEGER"
@@ -565,8 +653,12 @@ fn column_type_sql(col_type: ColumnType, driver: Driver) -> String {
         schema_parser.Date -> "TEXT"
         schema_parser.Json -> "TEXT"
         schema_parser.Uuid -> "TEXT"
-        schema_parser.Foreign(_) -> "INTEGER"
+        schema_parser.Foreign(_, _, _) -> "INTEGER"
         schema_parser.Array(_) -> "TEXT"
+        schema_parser.Enum(_, _) -> "TEXT"
+        schema_parser.Decimal(_, _) -> "TEXT"
+        schema_parser.Blob -> "BLOB"
+        schema_parser.Time -> "TEXT"
       }
   }
 }
@@ -632,6 +724,38 @@ fn default_to_sql(
   }
 }
 
+/// Foreign keys optionally specify what happens on delete or
+/// update — CASCADE, RESTRICT, SET NULL, etc. If no action was
+/// set in the schema, we emit nothing and let the database use
+/// its default (usually NO ACTION). The leading space is
+/// intentional so the caller can just concatenate.
+///
+fn foreign_action_clause(
+  action: option.Option(schema_parser.ForeignAction),
+  prefix: String,
+) -> String {
+  case action {
+    option.Some(a) -> " " <> prefix <> " " <> foreign_action_to_sql(a)
+    option.None -> ""
+  }
+}
+
+/// The SQL keywords for FK actions have spaces in them ("SET
+/// NULL", "NO ACTION") while the Gleam constructors don't.
+/// Centralizing the mapping here instead of inlining it in
+/// column_definition keeps the string literals in one place so
+/// a typo doesn't silently produce invalid DDL.
+///
+fn foreign_action_to_sql(action: schema_parser.ForeignAction) -> String {
+  case action {
+    schema_parser.Cascade -> "CASCADE"
+    schema_parser.Restrict -> "RESTRICT"
+    schema_parser.SetNull -> "SET NULL"
+    schema_parser.SetDefault -> "SET DEFAULT"
+    schema_parser.NoAction -> "NO ACTION"
+  }
+}
+
 /// String defaults go into the migration as SQL literals, so a
 /// value like `it's` would break the SQL syntax if we didn't
 /// double the quote. This is the only escaping needed since
@@ -683,8 +807,12 @@ fn types_compatible_for_rename(old_type: String, new_type: String) -> Bool {
         // String <-> Text (both are text types)
         "String", "Text" -> True
         "Text", "String" -> True
-        // Int <-> BigInt (same integer family)
+        // SmallInt <-> Int <-> BigInt (same integer family)
+        "SmallInt", "Int" -> True
+        "SmallInt", "BigInt" -> True
+        "Int", "SmallInt" -> True
         "Int", "BigInt" -> True
+        "BigInt", "SmallInt" -> True
         "BigInt", "Int" -> True
         // Everything else is incompatible
         _, _ -> False

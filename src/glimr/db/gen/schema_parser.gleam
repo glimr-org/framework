@@ -73,6 +73,7 @@ pub type ColumnType {
   String
   Text
   Int
+  SmallInt
   BigInt
   Float
   Boolean
@@ -81,21 +82,44 @@ pub type ColumnType {
   Date
   Json
   Uuid
-  Foreign(String)
+  Foreign(
+    table: String,
+    on_delete: Option(ForeignAction),
+    on_update: Option(ForeignAction),
+  )
   Array(ColumnType)
+  Enum(name: String, variants: List(String))
+  Decimal(precision: Int, scale: Int)
+  Blob
+  Time
+}
+
+/// What should the database do when a referenced row is deleted
+/// or updated? Without specifying this, most databases default
+/// to RESTRICT (block the operation), which is safe but rigid.
+/// Cascade deletes child rows automatically, SetNull clears the
+/// FK, and NoAction defers the check to transaction commit
+/// time.
+///
+pub type ForeignAction {
+  Cascade
+  Restrict
+  SetNull
+  SetDefault
+  NoAction
 }
 
 // ------------------------------------------------------------- Public Functions
 
 /// Parse a schema.gleam file content into a Table structure.
-/// Extracts the table name from `pub const name = "..."` and
-/// parses the column definitions from the `table(name, [...])`
-/// call.
+/// Extracts the table name from `pub const table_name = "..."`
+/// and parses the column definitions from the
+/// `table(table_name, [...])` call.
 ///
 pub fn parse(content: String) -> Result(Table, String) {
   // Extract table name from `pub const name = "tablename"`
   case extract_table_name(content) {
-    None -> Error("Could not find table name (pub const name = \"...\")")
+    None -> Error("Could not find table name (pub const table_name = \"...\")")
     Some(table_name) -> {
       // Extract the list content from table(name, [...])
       case extract_column_list(content) {
@@ -113,25 +137,35 @@ pub fn parse(content: String) -> Result(Table, String) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Extract the table name from a schema file by looking for the
-/// `pub const name = "tablename"` declaration at the module
-/// level.
+/// Extract the table name from a schema file by looking for
+/// `pub const table_name = "tablename"` (preferred) or the
+/// legacy `pub const name = "tablename"` declaration.
 ///
 fn extract_table_name(content: String) -> Option(String) {
-  // Look for: pub const name = "tablename"
+  // Look for: pub const table_name = "tablename"
+  // Also supports legacy: pub const name = "tablename"
   let lines = string.split(content, "\n")
   list.find_map(lines, fn(line) {
     let trimmed = string.trim(line)
-    case string.starts_with(trimmed, "pub const name = \"") {
+    case string.starts_with(trimmed, "pub const table_name = \"") {
       True -> {
-        // Extract the value between quotes
-        let without_prefix = string.drop_start(trimmed, 18)
+        let without_prefix = string.drop_start(trimmed, 24)
         case string.split(without_prefix, "\"") {
           [name, ..] -> Ok(name)
           _ -> Error(Nil)
         }
       }
-      False -> Error(Nil)
+      False ->
+        case string.starts_with(trimmed, "pub const name = \"") {
+          True -> {
+            let without_prefix = string.drop_start(trimmed, 18)
+            case string.split(without_prefix, "\"") {
+              [name, ..] -> Ok(name)
+              _ -> Error(Nil)
+            }
+          }
+          False -> Error(Nil)
+        }
     }
   })
   |> option.from_result()
@@ -250,28 +284,44 @@ fn parse_column_item(item: String) -> List(Column) {
           Column("created_at", UnixTimestamp, False, None, None),
           Column("updated_at", UnixTimestamp, False, None, None),
         ]
-        False -> {
-          // Check if this item has modifiers (|> nullable(), |> default(...), |> rename_from(...), |> array())
-          let #(base, is_nullable, default_value, renamed_from, array_depth) =
-            extract_modifiers(trimmed)
+        False ->
+          case string.starts_with(trimmed, "soft_deletes()") {
+            True -> [Column("deleted_at", Timestamp, True, None, None)]
+            False -> {
+              // Check if this item has modifiers (|> nullable(), |> default(...), |> rename_from(...), |> array())
+              let mods = extract_modifiers(trimmed)
 
-          // Parse the base column function
-          case parse_column_function(base) {
-            Some(col) -> {
-              let col_type = wrap_array_type(col.column_type, array_depth)
-              [
-                Column(
-                  ..col,
-                  column_type: col_type,
-                  nullable: is_nullable,
-                  default: default_value,
-                  renamed_from: renamed_from,
-                ),
-              ]
+              // Parse the base column function
+              case parse_column_function(mods.base) {
+                Some(col) -> {
+                  let col_type =
+                    wrap_array_type(col.column_type, mods.array_depth)
+                  // Apply FK actions if this is a Foreign column
+                  let col_type = case col_type {
+                    Foreign(ref, _, _) ->
+                      Foreign(ref, mods.on_delete, mods.on_update)
+                    _ -> col_type
+                  }
+                  // Apply enum name override if this is an Enum column
+                  let col_type = case col_type, mods.enum_name_override {
+                    Enum(_, variants), Some(override_name) ->
+                      Enum(override_name, variants)
+                    _, _ -> col_type
+                  }
+                  [
+                    Column(
+                      ..col,
+                      column_type: col_type,
+                      nullable: mods.nullable,
+                      default: mods.default,
+                      renamed_from: mods.renamed_from,
+                    ),
+                  ]
+                }
+                None -> []
+              }
             }
-            None -> []
           }
-        }
       }
   }
 }
@@ -290,13 +340,33 @@ fn wrap_array_type(col_type: ColumnType, depth: Int) -> ColumnType {
   }
 }
 
-/// Extract modifiers from a column definition. Returns the base
-/// column function, whether it's nullable, any default value,
-/// any rename_from directive, and the array nesting depth.
+/// Column definitions in schema files are pipe chains like
+/// `string("email") |> nullable() |> array()`. Rather than
+/// threading all these flags through individual parse
+/// functions, we extract everything into one record up front.
+/// This keeps `parse_column_item` clean — it just reads the
+/// modifiers and applies them to the base column.
 ///
-fn extract_modifiers(
-  item: String,
-) -> #(String, Bool, Option(DefaultValue), Option(String), Int) {
+pub type Modifiers {
+  Modifiers(
+    base: String,
+    nullable: Bool,
+    default: Option(DefaultValue),
+    renamed_from: Option(String),
+    array_depth: Int,
+    on_delete: Option(ForeignAction),
+    on_update: Option(ForeignAction),
+    enum_name_override: Option(String),
+  )
+}
+
+/// Splits a pipe chain like `string("name") |> nullable() |>
+/// on_delete(Cascade)` on `|>` and scans each segment for known
+/// modifiers. The base column call (first segment) gets parsed
+/// separately by `parse_column_function` — this only cares
+/// about the modifier segments after it.
+///
+fn extract_modifiers(item: String) -> Modifiers {
   let parts = string.split(item, "|>")
 
   let base = case list.first(parts) {
@@ -326,12 +396,47 @@ fn extract_modifiers(
     })
     |> option.from_result()
 
-  #(base, is_nullable, default_value, renamed_from, array_depth)
+  // Extract on_delete action
+  let on_delete_action =
+    list.find_map(parts, fn(p) {
+      let trimmed = string.trim(p)
+      parse_foreign_action(trimmed, "on_delete(")
+    })
+    |> option.from_result()
+
+  // Extract on_update action
+  let on_update_action =
+    list.find_map(parts, fn(p) {
+      let trimmed = string.trim(p)
+      parse_foreign_action(trimmed, "on_update(")
+    })
+    |> option.from_result()
+
+  // Extract enum_name override
+  let enum_name_override =
+    list.find_map(parts, fn(p) {
+      let trimmed = string.trim(p)
+      parse_enum_name(trimmed)
+    })
+    |> option.from_result()
+
+  Modifiers(
+    base: base,
+    nullable: is_nullable,
+    default: default_value,
+    renamed_from: renamed_from,
+    array_depth: array_depth,
+    on_delete: on_delete_action,
+    on_update: on_update_action,
+    enum_name_override: enum_name_override,
+  )
 }
 
-/// Parse a rename_from modifier and extract the old column
-/// name. Handles both `rename_from("old")` and
-/// `schema.rename_from("old")`.
+/// Developers can write either `rename_from("old")` or
+/// `schema.rename_from("old")` depending on their import style.
+/// Both produce the same result — the old column name that the
+/// migration system uses to emit RENAME COLUMN instead of
+/// drop+add.
 ///
 fn parse_rename_from(s: String) -> Result(String, Nil) {
   case
@@ -343,9 +448,10 @@ fn parse_rename_from(s: String) -> Result(String, Nil) {
   }
 }
 
-/// Extract the first double-quoted string from the input.
-/// Returns the content between the first pair of double quotes,
-/// used for parsing column names and string arguments.
+/// The schema DSL uses Gleam string syntax everywhere — column
+/// names, table references, default values. This is the shared
+/// workhorse that pulls the first double-quoted value out of
+/// any expression, used by nearly every other parser function.
 ///
 fn extract_quoted_string(s: String) -> Result(String, Nil) {
   case string.split_once(s, "\"") {
@@ -359,9 +465,10 @@ fn extract_quoted_string(s: String) -> Result(String, Nil) {
   }
 }
 
-/// Extract the content between the first pair of parentheses.
-/// Returns the trimmed content inside the parentheses, used for
-/// parsing function arguments like default values.
+/// For modifier functions that take non-string arguments like
+/// `default_int(42)` or `on_delete(Cascade)`, we need the raw
+/// content inside the parens rather than a quoted string. This
+/// grabs that content and trims it.
 ///
 fn extract_parens_content(s: String) -> Result(String, Nil) {
   case string.split_once(s, "(") {
@@ -375,9 +482,11 @@ fn extract_parens_content(s: String) -> Result(String, Nil) {
   }
 }
 
-/// Parse a default value modifier and extract the default. Uses
-/// a lookup table to match prefix and delegate to the
-/// appropriate extractor function.
+/// Default values have wildly different syntax —
+/// `default_bool(True)` vs `default_string("hello")` vs
+/// `default_now()`. A lookup table keeps this manageable
+/// instead of a giant if-else chain, and adding a new default
+/// type is just one more entry in the list.
 ///
 fn parse_default_value(s: String) -> Result(DefaultValue, Nil) {
   let handlers = [
@@ -402,9 +511,11 @@ fn parse_default_value(s: String) -> Result(DefaultValue, Nil) {
   |> result.flatten()
 }
 
-/// Extract a boolean default value by checking for "True" in
-/// the string. Returns DefaultBool(True) if found, otherwise
-/// DefaultBool(False).
+/// The schema DSL uses Gleam's `True`/`False` literals, so
+/// `default_bool(True)` contains the string "True". We can't
+/// parse it as actual Gleam — we're just doing string matching
+/// on the source text — so checking for the presence of "True"
+/// is the simplest reliable test.
 ///
 fn extract_bool_default(s: String) -> Result(DefaultValue, Nil) {
   case string.contains(s, "True") {
@@ -413,18 +524,21 @@ fn extract_bool_default(s: String) -> Result(DefaultValue, Nil) {
   }
 }
 
-/// Extract a string default value from the quoted argument.
-/// Parses the content between double quotes and wraps it in
-/// DefaultString.
+/// String defaults like `default_string("active")` embed the
+/// value as a Gleam string literal in the schema source. We
+/// just need to pull it out of the quotes — the SQL generator
+/// handles escaping later when it writes the DEFAULT clause.
 ///
 fn extract_string_default(s: String) -> Result(DefaultValue, Nil) {
   extract_quoted_string(s)
   |> result.map(DefaultString)
 }
 
-/// Extract an integer default value from the parentheses.
-/// Parses the numeric string inside the parentheses and wraps
-/// it in DefaultInt.
+/// `default_int(0)` passes the literal `0` as Gleam source
+/// text. We pull it from the parens and parse it as an actual
+/// Int. If parsing fails (malformed input), returning
+/// Error(Nil) means the default is silently ignored rather than
+/// crashing the parser.
 ///
 fn extract_int_default(s: String) -> Result(DefaultValue, Nil) {
   case extract_parens_content(s) {
@@ -437,9 +551,10 @@ fn extract_int_default(s: String) -> Result(DefaultValue, Nil) {
   }
 }
 
-/// Extract a float default value from the parentheses. Parses
-/// the numeric string inside the parentheses and wraps it in
-/// DefaultFloat.
+/// Same pattern as `extract_int_default` but for float literals
+/// like `default_float(0.0)`. Gleam's float parser handles the
+/// conversion; we just provide the raw string from inside the
+/// parens.
 ///
 fn extract_float_default(s: String) -> Result(DefaultValue, Nil) {
   case extract_parens_content(s) {
@@ -452,9 +567,13 @@ fn extract_float_default(s: String) -> Result(DefaultValue, Nil) {
   }
 }
 
-/// Parse a column function call like `string("name")` into a
-/// Column struct. Uses a lookup table for standard column types
-/// and handles special cases for id() and foreign().
+/// Most column types follow the same `type("name")` pattern,
+/// but a few are special: `id()` has no name argument,
+/// `foreign()` takes two arguments, `enum()` takes a name and a
+/// variant list, and `decimal()` takes precision and scale.
+/// This dispatches to specialized parsers for those and uses a
+/// lookup table for the rest to avoid repeating the same
+/// extraction logic 15 times.
 ///
 fn parse_column_function(func: String) -> Option(Column) {
   let trimmed = string.trim(func)
@@ -465,43 +584,66 @@ fn parse_column_function(func: String) -> Option(Column) {
       case string.starts_with(trimmed, "foreign(") {
         True -> parse_foreign_column(trimmed)
         False -> {
-          // All other column types follow the same pattern: type("name")
-          let column_types = [
-            #("string_sized(", String),
-            #("string(", String),
-            #("text(", Text),
-            #("int(", Int),
-            #("bigint(", BigInt),
-            #("float(", Float),
-            #("boolean(", Boolean),
-            #("timestamp(", Timestamp),
-            #("unix_timestamp(", UnixTimestamp),
-            #("date(", Date),
-            #("json(", Json),
-            #("uuid(", Uuid),
-          ]
+          // Handle enum() specially since it has a name and a list of variants
+          case
+            string.starts_with(trimmed, "enum(")
+            || string.starts_with(trimmed, "schema.enum(")
+          {
+            True -> parse_enum_column(trimmed)
+            False -> {
+              // Handle decimal() specially since it has three arguments
+              case
+                string.starts_with(trimmed, "decimal(")
+                || string.starts_with(trimmed, "schema.decimal(")
+              {
+                True -> parse_decimal_column(trimmed)
+                False -> {
+                  // All other column types follow the same pattern: type("name")
+                  let column_types = [
+                    #("string_sized(", String),
+                    #("string(", String),
+                    #("text(", Text),
+                    #("int(", Int),
+                    #("smallint(", SmallInt),
+                    #("bigint(", BigInt),
+                    #("float(", Float),
+                    #("boolean(", Boolean),
+                    #("timestamp(", Timestamp),
+                    #("unix_timestamp(", UnixTimestamp),
+                    #("date(", Date),
+                    #("json(", Json),
+                    #("uuid(", Uuid),
+                    #("blob(", Blob),
+                    #("time(", Time),
+                  ]
 
-          list.find_map(column_types, fn(entry) {
-            let #(prefix, col_type) = entry
-            case string.starts_with(trimmed, prefix) {
-              True ->
-                case parse_named_column(trimmed, col_type) {
-                  Some(col) -> Ok(col)
-                  None -> Error(Nil)
+                  list.find_map(column_types, fn(entry) {
+                    let #(prefix, col_type) = entry
+                    case string.starts_with(trimmed, prefix) {
+                      True ->
+                        case parse_named_column(trimmed, col_type) {
+                          Some(col) -> Ok(col)
+                          None -> Error(Nil)
+                        }
+                      False -> Error(Nil)
+                    }
+                  })
+                  |> option.from_result()
                 }
-              False -> Error(Nil)
+              }
             }
-          })
-          |> option.from_result()
+          }
         }
       }
     }
   }
 }
 
-/// Parse a column function with a name argument like
-/// `string("name")` into a Column struct with the given type
-/// and default nullability/default values.
+/// The common case for 15+ column types: `string("email")`,
+/// `int("age")`, `boolean("active")`, etc. They all take a
+/// single quoted name argument and return a non-nullable column
+/// with no default. Modifiers like nullable() and default() get
+/// applied later by `parse_column_item`.
 ///
 fn parse_named_column(func: String, col_type: ColumnType) -> Option(Column) {
   case extract_quoted_string(func) {
@@ -510,14 +652,18 @@ fn parse_named_column(func: String, col_type: ColumnType) -> Option(Column) {
   }
 }
 
-/// Parse a foreign key column from `foreign("column_name",
-/// "table")`. Extracts both the column name and the referenced
-/// table.
+/// Foreign keys need special parsing because they take two
+/// quoted arguments — the column name and the referenced table.
+/// `foreign("user_id", "users")` produces a column named
+/// `user_id` with type `Foreign("users", None, None)`. The FK
+/// actions (on_delete, on_update) get applied later from the
+/// modifiers.
 ///
 fn parse_foreign_column(func: String) -> Option(Column) {
   let parts = string.split(func, "\"")
   case parts {
-    [_, name, _, ref, ..] -> Some(Column(name, Foreign(ref), False, None, None))
+    [_, name, _, ref, ..] ->
+      Some(Column(name, Foreign(ref, None, None), False, None, None))
     _ -> None
   }
 }
@@ -634,5 +780,115 @@ fn extract_index_columns(func: String) -> Option(List(String)) {
       }
     }
     Error(_) -> None
+  }
+}
+
+/// Enums have the most complex syntax of any column type:
+/// `enum("status", ["active", "inactive"])` nests a list inside
+/// the function call. The column name defaults to the enum type
+/// name too (used for the Postgres CREATE TYPE), though `|>
+/// enum_name("custom")` can override it later.
+///
+fn parse_enum_column(func: String) -> Option(Column) {
+  // Extract the column name (first quoted string)
+  case extract_quoted_string(func) {
+    Ok(name) -> {
+      // Extract the variant list from [...] inside the function call
+      case string.split_once(func, "[") {
+        Ok(#(_, after_bracket)) -> {
+          let content = extract_until_balanced_bracket(after_bracket, 1, "")
+          let variants =
+            split_by_top_level_comma(content)
+            |> list.filter_map(fn(item) {
+              let trimmed = string.trim(item)
+              extract_quoted_string(trimmed)
+            })
+          Some(Column(name, Enum(name, variants), False, None, None))
+        }
+        Error(_) -> None
+      }
+    }
+    Error(_) -> None
+  }
+}
+
+/// Decimals take three arguments: name, precision, and scale.
+/// `decimal("price", 10, 2)` means 10 total digits with 2 after
+/// the decimal point. We parse the integers from the trailing
+/// arguments after extracting the quoted name.
+///
+fn parse_decimal_column(func: String) -> Option(Column) {
+  case extract_quoted_string(func) {
+    Ok(name) -> {
+      // Get content after the closing quote of the name
+      case string.split_once(func, "\"" <> name <> "\"") {
+        Ok(#(_, after_name)) -> {
+          // Parse the remaining args: , 10, 2)
+          let args =
+            after_name
+            |> string.replace(")", "")
+            |> string.split(",")
+            |> list.filter_map(fn(s) { int.parse(string.trim(s)) })
+          case args {
+            [precision, scale] ->
+              Some(Column(name, Decimal(precision, scale), False, None, None))
+            _ -> None
+          }
+        }
+        Error(_) -> None
+      }
+    }
+    Error(_) -> None
+  }
+}
+
+/// FK actions can be written as `on_delete(Cascade)` or
+/// `on_delete(schema.Cascade)` depending on how the developer
+/// imported the module. The prefix parameter lets us reuse this
+/// for both `on_delete` and `on_update` without duplicating the
+/// variant matching logic.
+///
+fn parse_foreign_action(s: String, prefix: String) -> Result(ForeignAction, Nil) {
+  let has_prefix =
+    string.starts_with(s, prefix) || string.starts_with(s, "schema." <> prefix)
+  case has_prefix {
+    True -> {
+      // Extract the action name from inside the parens
+      case extract_parens_content(s) {
+        Ok(content) -> {
+          // Handle both "Cascade" and "schema.Cascade"
+          let action_str = case string.split_once(content, ".") {
+            Ok(#(_, after_dot)) -> string.trim(after_dot)
+            Error(_) -> string.trim(content)
+          }
+          case action_str {
+            "Cascade" -> Ok(Cascade)
+            "Restrict" -> Ok(Restrict)
+            "SetNull" -> Ok(SetNull)
+            "SetDefault" -> Ok(SetDefault)
+            "NoAction" -> Ok(NoAction)
+            _ -> Error(Nil)
+          }
+        }
+        Error(_) -> Error(Nil)
+      }
+    }
+    False -> Error(Nil)
+  }
+}
+
+/// By default, the Postgres enum type name is derived from the
+/// column name. But sometimes you want multiple columns sharing
+/// one enum type, or a name that doesn't match the column. `|>
+/// enum_name("payment_status")` overrides the auto-generated
+/// name.
+///
+fn parse_enum_name(s: String) -> Result(String, Nil) {
+  case
+    string.starts_with(s, "enum_name(")
+    || string.starts_with(s, "schema.enum_name(")
+  {
+    True -> extract_quoted_string(s)
+    False -> Error(Nil)
   }
 }
