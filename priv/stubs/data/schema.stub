@@ -1,13 +1,13 @@
-import glimr/db/schema.{id, table, unix_timestamps}
+import glimr/db/schema
 
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#migrations
 
-pub const name = "@{{ table_name }}"
+pub const table_name = "@{{ table_name }}"
 
 pub fn definition() {
-  table(name, [
-    id(),
+  schema.table(table_name, [
+    schema.id(),
     todo,
-    unix_timestamps(),
+    schema.unix_timestamps(),
   ])
 }

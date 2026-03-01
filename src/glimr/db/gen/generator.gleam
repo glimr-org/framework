@@ -33,24 +33,25 @@ pub fn generate(
 ) -> String {
   let header = generate_header(model_name)
   let imports = generate_imports(table)
+  let enum_types = generate_enum_types(table)
   let model_type = generate_model_type(model_name, table)
   let model_row_decoder = generate_model_decoder(model_name, table)
   let model_encoder = generate_model_encoder(model_name, table)
   let model_decoder = generate_model_json_decoder(model_name, table)
   let query_code = generate_queries(model_name, table, queries)
 
-  string.join(
-    [
-      header,
-      imports,
-      model_type,
-      model_row_decoder,
-      model_encoder,
-      model_decoder,
-      query_code,
-    ],
-    "\n\n",
-  )
+  [
+    header,
+    imports,
+    enum_types,
+    model_type,
+    model_row_decoder,
+    model_encoder,
+    model_decoder,
+    query_code,
+  ]
+  |> list.filter(fn(s) { s != "" })
+  |> string.join("\n\n")
 }
 
 // ------------------------------------------------------------- Private Functions
@@ -80,8 +81,20 @@ fn generate_imports(table: Table) -> String {
   let has_nullable = list.any(columns, fn(col) { col.nullable })
   let has_array =
     list.any(columns, fn(col) { codegen.is_array(col.column_type) })
+  let has_blob = list.any(columns, fn(col) { codegen.is_blob(col.column_type) })
+  let has_enum = list.any(columns, fn(col) { codegen.is_enum(col.column_type) })
 
   let base_imports = "import gleam/dynamic/decode\nimport gleam/json"
+
+  let bit_array_import = case has_blob {
+    True -> "\nimport gleam/bit_array"
+    False -> ""
+  }
+
+  let result_import = case has_enum {
+    True -> "\nimport gleam/result"
+    False -> ""
+  }
 
   let option_import = case has_nullable {
     True -> "\nimport gleam/option.{type Option}"
@@ -95,7 +108,74 @@ fn generate_imports(table: Table) -> String {
 
   let db_import = "\nimport glimr/db/db"
 
-  base_imports <> option_import <> glimr_decode_import <> db_import
+  base_imports
+  <> bit_array_import
+  <> result_import
+  <> option_import
+  <> glimr_decode_import
+  <> db_import
+}
+
+/// For each Enum column in the table, generates a Gleam custom
+/// type with PascalCase variants plus `to_string` and
+/// `from_string` converter functions. This gives compile-time
+/// safety — you can't accidentally pass an invalid string where
+/// an enum is expected.
+///
+fn generate_enum_types(table: Table) -> String {
+  let columns = schema_parser.columns(table)
+  let enum_blocks =
+    list.filter_map(columns, fn(col) {
+      case col.column_type {
+        schema_parser.Enum(name, variants) -> {
+          let type_name = pascal_case(name)
+          let fn_prefix = snake_case(name)
+
+          // Type definition
+          let variant_strs =
+            list.map(variants, fn(v) { "  " <> pascal_case(v) })
+          let type_def =
+            "pub type "
+            <> type_name
+            <> " {\n"
+            <> string.join(variant_strs, "\n")
+            <> "\n}"
+
+          // to_string function
+          let to_cases =
+            list.map(variants, fn(v) {
+              "    " <> pascal_case(v) <> " -> \"" <> v <> "\""
+            })
+          let to_string_fn =
+            "pub fn "
+            <> fn_prefix
+            <> "_to_string(value: "
+            <> type_name
+            <> ") -> String {\n  case value {\n"
+            <> string.join(to_cases, "\n")
+            <> "\n  }\n}"
+
+          // from_string function
+          let from_cases =
+            list.map(variants, fn(v) {
+              "    \"" <> v <> "\" -> Ok(" <> pascal_case(v) <> ")"
+            })
+          let from_string_fn =
+            "pub fn "
+            <> fn_prefix
+            <> "_from_string(value: String) -> Result("
+            <> type_name
+            <> ", Nil) {\n  case value {\n"
+            <> string.join(from_cases, "\n")
+            <> "\n    _ -> Error(Nil)\n  }\n}"
+
+          Ok(type_def <> "\n\n" <> to_string_fn <> "\n\n" <> from_string_fn)
+        }
+        _ -> Error(Nil)
+      }
+    })
+
+  string.join(enum_blocks, "\n\n")
 }
 
 /// The whole point of code generation is type safety — instead
@@ -154,7 +234,27 @@ fn generate_model_decoder(model_name: String, table: Table) -> String {
       <> ")"
     })
 
-  let field_names = list.map(columns, fn(col) { col.name })
+  // For enum columns, map the decoded string through from_string
+  let field_names =
+    list.map(columns, fn(col) {
+      case col.column_type {
+        schema_parser.Enum(name, variants) -> {
+          let fn_prefix = snake_case(name)
+          let default_variant = case variants {
+            [first, ..] -> pascal_case(first)
+            [] -> "Nil"
+          }
+          "result.unwrap("
+          <> fn_prefix
+          <> "_from_string("
+          <> col.name
+          <> "), "
+          <> default_variant
+          <> ")"
+        }
+        _ -> col.name
+      }
+    })
   let constructor_call =
     type_name <> "(" <> string.join(field_names, ", ") <> ")"
 
@@ -222,7 +322,27 @@ fn generate_model_json_decoder(model_name: String, table: Table) -> String {
       <> ")"
     })
 
-  let field_names = list.map(columns, fn(col) { col.name })
+  // For enum columns, map the decoded string through from_string
+  let field_names =
+    list.map(columns, fn(col) {
+      case col.column_type {
+        schema_parser.Enum(name, variants) -> {
+          let fn_prefix = snake_case(name)
+          let default_variant = case variants {
+            [first, ..] -> pascal_case(first)
+            [] -> "Nil"
+          }
+          "result.unwrap("
+          <> fn_prefix
+          <> "_from_string("
+          <> col.name
+          <> "), "
+          <> default_variant
+          <> ")"
+        }
+        _ -> col.name
+      }
+    })
   let constructor_call =
     type_name <> "(" <> string.join(field_names, ", ") <> ")"
 
@@ -249,7 +369,12 @@ fn generate_encoder_field(
   col_type: ColumnType,
   nullable: Bool,
 ) -> String {
-  case codegen.is_array(col_type) {
+  // Special types that need custom encoder expressions
+  let needs_expr =
+    codegen.is_array(col_type)
+    || codegen.is_blob(col_type)
+    || codegen.is_enum(col_type)
+  case needs_expr {
     True -> {
       let expr = codegen.json_encoder_expr(col_type, "v")
       case nullable {
@@ -1075,6 +1200,7 @@ fn value_wrapper(col_type: ColumnType) -> String {
     schema_parser.String -> "db.string"
     schema_parser.Text -> "db.string"
     schema_parser.Int -> "db.int"
+    schema_parser.SmallInt -> "db.int"
     schema_parser.BigInt -> "db.int"
     schema_parser.Float -> "db.float"
     schema_parser.Boolean -> "db.bool"
@@ -1083,8 +1209,12 @@ fn value_wrapper(col_type: ColumnType) -> String {
     schema_parser.Date -> "db.string"
     schema_parser.Json -> "db.string"
     schema_parser.Uuid -> "db.string"
-    schema_parser.Foreign(_) -> "db.int"
+    schema_parser.Foreign(_, _, _) -> "db.int"
     schema_parser.Array(_) -> "db.string"
+    schema_parser.Enum(_, _) -> "db.string"
+    schema_parser.Decimal(_, _) -> "db.string"
+    schema_parser.Blob -> "db.blob"
+    schema_parser.Time -> "db.string"
   }
 }
 

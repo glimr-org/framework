@@ -65,6 +65,8 @@ pub type ColumnType {
   Text
   /// Standard integer (INT/INTEGER)
   Int
+  /// Small integer (SMALLINT)
+  SmallInt
   /// Large integer (BIGINT)
   BigInt
   /// Floating point number (REAL/DOUBLE PRECISION)
@@ -81,11 +83,37 @@ pub type ColumnType {
   Json
   /// UUID (UUID for Postgres, TEXT for SQLite)
   Uuid
-  /// Foreign key reference to another table
-  Foreign(table: String)
+  /// Foreign key reference to another table with optional actions
+  Foreign(
+    table: String,
+    on_delete: Option(ForeignAction),
+    on_update: Option(ForeignAction),
+  )
   /// Array of another column type (PostgreSQL native arrays, JSON
   /// in SQLite)
   Array(ColumnType)
+  /// Enum with named variants (CREATE TYPE in Postgres, CHECK in
+  /// SQLite). Generates a Gleam custom type with
+  /// to_string/from_string.
+  Enum(name: String, variants: List(String))
+  /// Precise numeric value (NUMERIC in Postgres, TEXT in SQLite)
+  Decimal(precision: Int, scale: Int)
+  /// Binary data (BYTEA in Postgres, BLOB in SQLite)
+  Blob
+  /// Time without date (TIME in Postgres, TEXT in SQLite)
+  Time
+}
+
+/// Defines the referential actions for foreign key constraints.
+/// Used with `on_delete` and `on_update` modifiers to control
+/// what happens when the referenced row is deleted or updated.
+///
+pub type ForeignAction {
+  Cascade
+  Restrict
+  SetNull
+  SetDefault
+  NoAction
 }
 
 /// Defines default values that can be assigned to columns. Used
@@ -112,16 +140,16 @@ pub type Default {
 /// *Example:*
 ///
 /// ```gleam
-/// import glimr/db/schema.{table, id, string, timestamps}
+/// import glimr/db/schema
 ///
-/// pub const name = "users"
+/// pub const table_name = "users"
 ///
 /// pub fn definition() {
-///   table(name, [
-///     id(),
-///     string("name"),
-///     string("email"),
-///     timestamps(),
+///   schema.table(table_name, [
+///     schema.id(),
+///     schema.string("name"),
+///     schema.string("email"),
+///     schema.timestamps(),
 ///   ])
 /// }
 /// ```
@@ -188,6 +216,17 @@ pub fn text(name: String) -> ColumnDef {
 ///
 pub fn int(name: String) -> ColumnDef {
   Single(Column(name, Int, False, None, None))
+}
+
+/// Creates a small integer column for compact storage of small
+/// values like status codes or counters.
+///
+/// Maps to:
+/// - PostgreSQL: `name SMALLINT`
+/// - SQLite: `name INTEGER`
+///
+pub fn smallint(name: String) -> ColumnDef {
+  Single(Column(name, SmallInt, False, None, None))
 }
 
 /// Creates a large integer column for values exceeding standard
@@ -291,7 +330,130 @@ pub fn uuid(name: String) -> ColumnDef {
 /// ```
 ///
 pub fn foreign(name: String, references: String) -> ColumnDef {
-  Single(Column(name, Foreign(references), False, None, None))
+  Single(Column(name, Foreign(references, None, None), False, None, None))
+}
+
+/// Creates an enum column that generates a Gleam custom type
+/// with `to_string` and `from_string` converters. The enum name
+/// is auto-generated from the column name (PascalCase) but can
+/// be overridden with `|> enum_name("custom")`.
+///
+/// Maps to:
+/// - PostgreSQL: Custom `CREATE TYPE` with enum values
+/// - SQLite: `TEXT` with `CHECK` constraint
+///
+/// *Example:*
+///
+/// ```gleam
+/// table("users", [
+///   schema.enum("status", ["active", "inactive", "banned"]),
+/// ])
+/// ```
+///
+pub fn enum(name: String, variants: List(String)) -> ColumnDef {
+  Single(Column(name, Enum(name, variants), False, None, None))
+}
+
+/// Creates a precise numeric column with the given precision
+/// and scale.
+///
+/// Maps to:
+/// - PostgreSQL: `NUMERIC(precision, scale)`
+/// - SQLite: `TEXT`
+///
+pub fn decimal(name: String, precision: Int, scale: Int) -> ColumnDef {
+  Single(Column(name, Decimal(precision, scale), False, None, None))
+}
+
+/// Creates a binary data column.
+///
+/// Maps to:
+/// - PostgreSQL: `BYTEA`
+/// - SQLite: `BLOB`
+///
+pub fn blob(name: String) -> ColumnDef {
+  Single(Column(name, Blob, False, None, None))
+}
+
+/// Creates a time column (without date component).
+///
+/// Maps to:
+/// - PostgreSQL: `TIME`
+/// - SQLite: `TEXT`
+///
+pub fn time(name: String) -> ColumnDef {
+  Single(Column(name, Time, False, None, None))
+}
+
+/// Sets the ON DELETE action for a foreign key column. Only
+/// applies to columns with `Foreign` type.
+///
+/// *Example:*
+///
+/// ```gleam
+/// foreign("user_id", "users")
+///   |> on_delete(Cascade)
+/// ```
+///
+pub fn on_delete(def: ColumnDef, action: ForeignAction) -> ColumnDef {
+  case def {
+    Single(col) ->
+      case col.column_type {
+        Foreign(table, _, on_update) ->
+          Single(
+            Column(..col, column_type: Foreign(table, Some(action), on_update)),
+          )
+        _ -> def
+      }
+    Multiple(_) -> def
+  }
+}
+
+/// Sets the ON UPDATE action for a foreign key column. Only
+/// applies to columns with `Foreign` type.
+///
+/// *Example:*
+///
+/// ```gleam
+/// foreign("user_id", "users")
+///   |> on_update(Restrict)
+/// ```
+///
+pub fn on_update(def: ColumnDef, action: ForeignAction) -> ColumnDef {
+  case def {
+    Single(col) ->
+      case col.column_type {
+        Foreign(table, on_delete, _) ->
+          Single(
+            Column(..col, column_type: Foreign(table, on_delete, Some(action))),
+          )
+        _ -> def
+      }
+    Multiple(_) -> def
+  }
+}
+
+/// Overrides the auto-generated enum type name. By default, the
+/// enum type name is derived from the column name in
+/// PascalCase. Use this to set a custom name.
+///
+/// *Example:*
+///
+/// ```gleam
+/// schema.enum("status", ["active", "inactive"])
+///   |> enum_name("user_status")
+/// ```
+///
+pub fn enum_name(def: ColumnDef, name: String) -> ColumnDef {
+  case def {
+    Single(col) ->
+      case col.column_type {
+        Enum(_, variants) ->
+          Single(Column(..col, column_type: Enum(name, variants)))
+        _ -> def
+      }
+    Multiple(_) -> def
+  }
 }
 
 /// Creates both `created_at` and `updated_at` timestamp
@@ -315,6 +477,18 @@ pub fn unix_timestamps() -> ColumnDef {
     Column("created_at", UnixTimestamp, False, None, None),
     Column("updated_at", UnixTimestamp, False, None, None),
   ])
+}
+
+/// Adds a nullable `deleted_at` timestamp column for soft
+/// delete support. Records are marked as deleted by setting
+/// this column instead of being removed from the database.
+///
+/// Maps to:
+/// - PostgreSQL: `deleted_at TIMESTAMP WITH TIME ZONE`
+/// - SQLite: `deleted_at TEXT`
+///
+pub fn soft_deletes() -> ColumnDef {
+  Single(Column("deleted_at", Timestamp, True, None, None))
 }
 
 /// Marks the column as nullable (allows NULL). By default,

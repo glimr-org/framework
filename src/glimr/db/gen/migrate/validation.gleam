@@ -97,6 +97,74 @@ pub fn validate_array_types(tables: List(Table)) -> Nil {
   })
 }
 
+/// Enum columns need at least one variant, can't have empty
+/// variant strings, and can't have duplicate variants. Without
+/// these checks, the generated Gleam custom type would be
+/// invalid or the database CHECK/CREATE TYPE would fail.
+///
+pub fn validate_enum_variants(tables: List(Table)) -> Nil {
+  list.each(tables, fn(table) {
+    list.each(table.columns, fn(col) {
+      case col.column_type {
+        schema_parser.Enum(_, variants) -> {
+          let red = "\u{001b}[31m"
+          let reset = "\u{001b}[0m"
+          // Must have at least one variant
+          case variants {
+            [] -> {
+              let error_msg =
+                red
+                <> "Error: Enum column '"
+                <> col.name
+                <> "' in table '"
+                <> table.name
+                <> "' must have at least one variant."
+                <> reset
+              panic as error_msg
+            }
+            _ -> Nil
+          }
+          // No empty variant strings
+          list.each(variants, fn(v) {
+            case v {
+              "" -> {
+                let error_msg =
+                  red
+                  <> "Error: Enum column '"
+                  <> col.name
+                  <> "' in table '"
+                  <> table.name
+                  <> "' has an empty variant string."
+                  <> reset
+                panic as error_msg
+              }
+              _ -> Nil
+            }
+          })
+          // No duplicate variants
+          let duplicates = find_duplicates(variants)
+          case duplicates {
+            [] -> Nil
+            dupes -> {
+              let error_msg =
+                red
+                <> "Error: Enum column '"
+                <> col.name
+                <> "' in table '"
+                <> table.name
+                <> "' has duplicate variants: "
+                <> string.join(dupes, ", ")
+                <> reset
+              panic as error_msg
+            }
+          }
+        }
+        _ -> Nil
+      }
+    })
+  })
+}
+
 // ------------------------------------------------------------- Private Functions
 
 /// `Array(Array(Int))` is fine — it's just nested lists. But
@@ -124,7 +192,7 @@ fn validate_array_inner(
         <> reset
       panic as error_msg
     }
-    schema_parser.Array(schema_parser.Foreign(ref)) -> {
+    schema_parser.Array(schema_parser.Foreign(ref, _, _)) -> {
       let red = "\u{001b}[31m"
       let reset = "\u{001b}[0m"
       let error_msg =
@@ -136,6 +204,32 @@ fn validate_array_inner(
         <> "', column '"
         <> col_name
         <> "'. Foreign key constraints cannot apply to array elements."
+        <> reset
+      panic as error_msg
+    }
+    schema_parser.Array(schema_parser.Enum(_, _)) -> {
+      let red = "\u{001b}[31m"
+      let reset = "\u{001b}[0m"
+      let error_msg =
+        red
+        <> "Error: Array(Enum) is not allowed in table '"
+        <> table_name
+        <> "', column '"
+        <> col_name
+        <> "'. Enum arrays are not supported."
+        <> reset
+      panic as error_msg
+    }
+    schema_parser.Array(schema_parser.Blob) -> {
+      let red = "\u{001b}[31m"
+      let reset = "\u{001b}[0m"
+      let error_msg =
+        red
+        <> "Error: Array(Blob) is not allowed in table '"
+        <> table_name
+        <> "', column '"
+        <> col_name
+        <> "'. Binary arrays are not supported."
         <> reset
       panic as error_msg
     }

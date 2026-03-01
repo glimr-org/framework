@@ -8,9 +8,11 @@
 //// mapping functions are the single source of truth for those
 //// decisions, so every generated model stays consistent.
 
+import gleam/string
 import glimr/db/gen/schema_parser.{
-  type ColumnType, Array, BigInt, Boolean, Date, Float, Foreign, Id, Int, Json,
-  String, Text, Timestamp, UnixTimestamp, Uuid,
+  type ColumnType, Array, BigInt, Blob, Boolean, Date, Decimal, Enum, Float,
+  Foreign, Id, Int, Json, SmallInt, String, Text, Time, Timestamp, UnixTimestamp,
+  Uuid,
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -28,6 +30,7 @@ pub fn gleam_type(col_type: ColumnType) -> String {
     String -> "String"
     Text -> "String"
     Int -> "Int"
+    SmallInt -> "Int"
     BigInt -> "Int"
     Float -> "Float"
     Boolean -> "Bool"
@@ -36,8 +39,12 @@ pub fn gleam_type(col_type: ColumnType) -> String {
     Date -> "String"
     Json -> "String"
     Uuid -> "String"
-    Foreign(_) -> "Int"
+    Foreign(_, _, _) -> "Int"
     Array(inner) -> "List(" <> gleam_type(inner) <> ")"
+    Enum(name, _) -> enum_type_name(name)
+    Decimal(_, _) -> "String"
+    Blob -> "BitArray"
+    Time -> "String"
   }
 }
 
@@ -55,6 +62,7 @@ pub fn decoder_fn(col_type: ColumnType) -> String {
     String -> "decode.string"
     Text -> "decode.string"
     Int -> "decode.int"
+    SmallInt -> "decode.int"
     BigInt -> "decode.int"
     Float -> "decode.float"
     Boolean -> "glimr_decode.bool()"
@@ -63,8 +71,12 @@ pub fn decoder_fn(col_type: ColumnType) -> String {
     Date -> "decode.string"
     Json -> "decode.string"
     Uuid -> "decode.string"
-    Foreign(_) -> "decode.int"
+    Foreign(_, _, _) -> "decode.int"
     Array(inner) -> "glimr_decode.list_of(" <> decoder_fn(inner) <> ")"
+    Enum(_, _) -> "decode.string"
+    Decimal(_, _) -> "decode.string"
+    Blob -> "decode.bit_array"
+    Time -> "decode.string"
   }
 }
 
@@ -81,6 +93,7 @@ pub fn json_encoder_fn(col_type: ColumnType) -> String {
     String -> "json.string"
     Text -> "json.string"
     Int -> "json.int"
+    SmallInt -> "json.int"
     BigInt -> "json.int"
     Float -> "json.float"
     Boolean -> "json.bool"
@@ -89,8 +102,12 @@ pub fn json_encoder_fn(col_type: ColumnType) -> String {
     Date -> "json.string"
     Json -> "json.string"
     Uuid -> "json.string"
-    Foreign(_) -> "json.int"
-    Array(_) -> panic as "Use generate_encoder_expr for Array types"
+    Foreign(_, _, _) -> "json.int"
+    Array(_) -> panic as "Use json_encoder_expr for Array types"
+    Enum(_, _) -> panic as "Use json_encoder_expr for Enum types"
+    Blob -> panic as "Use json_encoder_expr for Blob types"
+    Decimal(_, _) -> "json.string"
+    Time -> "json.string"
   }
 }
 
@@ -107,6 +124,11 @@ pub fn json_encoder_expr(col_type: ColumnType, accessor: String) -> String {
       let inner_fn = json_array_item_encoder(inner)
       "json.array(" <> accessor <> ", " <> inner_fn <> ")"
     }
+    Enum(name, _) -> {
+      let fn_name = snake_case(name) <> "_to_string"
+      "json.string(" <> fn_name <> "(" <> accessor <> "))"
+    }
+    Blob -> "json.string(bit_array.base64_encode(" <> accessor <> ", True))"
     _ -> json_encoder_fn(col_type) <> "(" <> accessor <> ")"
   }
 }
@@ -137,5 +159,95 @@ pub fn is_array(col_type: ColumnType) -> Bool {
   case col_type {
     Array(_) -> True
     _ -> False
+  }
+}
+
+/// Blobs go through base64 encoding for JSON output and need a
+/// `gleam/bit_array` import that other column types don't. The
+/// generator uses this check to add that import only when the
+/// table actually has a blob column.
+///
+pub fn is_blob(col_type: ColumnType) -> Bool {
+  case col_type {
+    Blob -> True
+    _ -> False
+  }
+}
+
+/// Enum columns get their own Gleam custom type (e.g. `type
+/// Status { Active | Inactive }`) plus converter functions. The
+/// generator needs to know which columns are enums so it can
+/// emit these type definitions alongside the model code.
+///
+pub fn is_enum(col_type: ColumnType) -> Bool {
+  case col_type {
+    Enum(_, _) -> True
+    _ -> False
+  }
+}
+
+/// Gleam requires PascalCase for custom type names, but schema
+/// column names are snake_case. An enum column named
+/// `payment_status` with variants becomes a Gleam type
+/// `PaymentStatus` — this does that conversion.
+///
+pub fn enum_type_name(name: String) -> String {
+  pascal_case(name)
+}
+
+// ------------------------------------------------------------- Private Functions
+
+/// Splits on underscores, capitalizes each word, and joins
+/// them. `payment_status` becomes `PaymentStatus`. This is the
+/// inverse of `snake_case` and both are needed because Gleam
+/// types use PascalCase but database columns use snake_case.
+///
+fn pascal_case(s: String) -> String {
+  s
+  |> string.split("_")
+  |> list.map(capitalize)
+  |> string.join("")
+}
+
+import gleam/list
+
+/// Building block for `pascal_case` — uppercases just the first
+/// grapheme while leaving the rest untouched. Using grapheme
+/// operations instead of byte slicing means this handles
+/// Unicode correctly.
+///
+fn capitalize(s: String) -> String {
+  case string.pop_grapheme(s) {
+    Ok(#(first, rest)) -> string.uppercase(first) <> rest
+    Error(_) -> s
+  }
+}
+
+/// Enum type names arrive in PascalCase from `enum_type_name`,
+/// but some codegen paths need the snake_case version for
+/// function names (e.g. `status_to_string`). This inserts
+/// underscores before uppercase letters that follow lowercase
+/// ones.
+///
+fn snake_case(s: String) -> String {
+  do_snake_case(string.to_graphemes(s), "", False)
+}
+
+/// Tracks whether the previous character was lowercase so we
+/// know when a capital letter marks a word boundary.
+/// `PaymentStatus` → `P` (no underscore, start of string),
+/// `ayment` (lowercase), `S` (uppercase after lowercase →
+/// insert underscore) → `payment_status`.
+///
+fn do_snake_case(chars: List(String), acc: String, prev_lower: Bool) -> String {
+  case chars {
+    [] -> string.lowercase(acc)
+    [c, ..rest] -> {
+      let is_upper = c == string.uppercase(c) && c != string.lowercase(c)
+      case is_upper && prev_lower {
+        True -> do_snake_case(rest, acc <> "_" <> c, False)
+        False -> do_snake_case(rest, acc <> c, !is_upper)
+      }
+    }
   }
 }

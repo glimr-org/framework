@@ -249,7 +249,7 @@ pub fn validate_array_of_foreign_panics_test() {
       columns: [
         Column(
           "user_ids",
-          schema_parser.Array(schema_parser.Foreign("users")),
+          schema_parser.Array(schema_parser.Foreign("users", None, None)),
           False,
           None,
           None,
@@ -296,7 +296,7 @@ pub fn validate_nested_array_of_foreign_panics_test() {
         Column(
           "refs",
           schema_parser.Array(
-            schema_parser.Array(schema_parser.Foreign("users")),
+            schema_parser.Array(schema_parser.Foreign("users", None, None)),
           ),
           False,
           None,
@@ -308,6 +308,142 @@ pub fn validate_nested_array_of_foreign_panics_test() {
   ]
 
   let result = panic_to_result(fn() { validation.validate_array_types(tables) })
+
+  result |> should.be_error()
+}
+
+// ------------------------------------------------------------- Invalid: Array(Enum)
+
+pub fn validate_array_of_enum_panics_test() {
+  let tables = [
+    Table(
+      name: "bad",
+      columns: [
+        Column(
+          "statuses",
+          schema_parser.Array(
+            schema_parser.Enum("status", ["active", "inactive"]),
+          ),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    ),
+  ]
+
+  let result = panic_to_result(fn() { validation.validate_array_types(tables) })
+
+  result |> should.be_error()
+}
+
+// ------------------------------------------------------------- Invalid: Array(Blob)
+
+pub fn validate_array_of_blob_panics_test() {
+  let tables = [
+    Table(
+      name: "bad",
+      columns: [
+        Column(
+          "files",
+          schema_parser.Array(schema_parser.Blob),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    ),
+  ]
+
+  let result = panic_to_result(fn() { validation.validate_array_types(tables) })
+
+  result |> should.be_error()
+}
+
+// ------------------------------------------------------------- Enum Variant Validation
+
+pub fn validate_valid_enum_test() {
+  let tables = [
+    Table(
+      name: "users",
+      columns: [
+        Column(
+          "status",
+          schema_parser.Enum("status", ["active", "inactive"]),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    ),
+  ]
+
+  // Should not panic
+  validation.validate_enum_variants(tables)
+}
+
+pub fn validate_enum_empty_variants_panics_test() {
+  let tables = [
+    Table(
+      name: "bad",
+      columns: [
+        Column("status", schema_parser.Enum("status", []), False, None, None),
+      ],
+      indexes: [],
+    ),
+  ]
+
+  let result =
+    panic_to_result(fn() { validation.validate_enum_variants(tables) })
+
+  result |> should.be_error()
+}
+
+pub fn validate_enum_empty_variant_string_panics_test() {
+  let tables = [
+    Table(
+      name: "bad",
+      columns: [
+        Column(
+          "status",
+          schema_parser.Enum("status", ["active", ""]),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    ),
+  ]
+
+  let result =
+    panic_to_result(fn() { validation.validate_enum_variants(tables) })
+
+  result |> should.be_error()
+}
+
+pub fn validate_enum_duplicate_variants_panics_test() {
+  let tables = [
+    Table(
+      name: "bad",
+      columns: [
+        Column(
+          "status",
+          schema_parser.Enum("status", ["active", "inactive", "active"]),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    ),
+  ]
+
+  let result =
+    panic_to_result(fn() { validation.validate_enum_variants(tables) })
 
   result |> should.be_error()
 }

@@ -10,6 +10,7 @@
 
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode
+import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -151,6 +152,7 @@ pub fn column_type_to_string(col_type: ColumnType) -> String {
     schema_parser.String -> "String"
     schema_parser.Text -> "Text"
     schema_parser.Int -> "Int"
+    schema_parser.SmallInt -> "SmallInt"
     schema_parser.BigInt -> "BigInt"
     schema_parser.Float -> "Float"
     schema_parser.Boolean -> "Boolean"
@@ -159,9 +161,42 @@ pub fn column_type_to_string(col_type: ColumnType) -> String {
     schema_parser.Date -> "Date"
     schema_parser.Json -> "Json"
     schema_parser.Uuid -> "Uuid"
-    schema_parser.Foreign(ref) -> "Foreign(" <> ref <> ")"
+    schema_parser.Foreign(ref, on_delete, on_update) -> {
+      let base = "Foreign(" <> ref
+      let del = case on_delete {
+        Some(action) -> ",onDelete:" <> foreign_action_to_string(action)
+        None -> ""
+      }
+      let upd = case on_update {
+        Some(action) -> ",onUpdate:" <> foreign_action_to_string(action)
+        None -> ""
+      }
+      base <> del <> upd <> ")"
+    }
     schema_parser.Array(inner) ->
       "Array(" <> column_type_to_string(inner) <> ")"
+    schema_parser.Enum(name, variants) ->
+      "Enum(" <> name <> ":" <> string.join(variants, ",") <> ")"
+    schema_parser.Decimal(p, s) ->
+      "Decimal(" <> int.to_string(p) <> "," <> int.to_string(s) <> ")"
+    schema_parser.Blob -> "Blob"
+    schema_parser.Time -> "Time"
+  }
+}
+
+/// The snapshot stores FK actions as readable strings like
+/// "Cascade" and "SetNull" rather than the SQL keywords
+/// "CASCADE" and "SET NULL". This keeps the snapshot format
+/// database-agnostic — the SQL module handles the dialect-
+/// specific conversion when generating migrations.
+///
+fn foreign_action_to_string(action: schema_parser.ForeignAction) -> String {
+  case action {
+    schema_parser.Cascade -> "Cascade"
+    schema_parser.Restrict -> "Restrict"
+    schema_parser.SetNull -> "SetNull"
+    schema_parser.SetDefault -> "SetDefault"
+    schema_parser.NoAction -> "NoAction"
   }
 }
 

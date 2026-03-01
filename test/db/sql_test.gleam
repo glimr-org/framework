@@ -916,3 +916,582 @@ pub fn nullable_array_column_postgres_test() {
   |> string.contains("tags VARCHAR(255)[] NOT NULL")
   |> should.be_false()
 }
+
+// ------------------------------------------------------------- Enum SQL
+
+pub fn create_table_with_enum_postgres_test() {
+  let table =
+    Table(
+      name: "users",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column(
+          "status",
+          schema_parser.Enum("status", ["active", "inactive", "banned"]),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "users",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot(
+                "status",
+                "Enum(status:active,inactive,banned)",
+                False,
+                False,
+              ),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Postgres)
+
+  // Should have CREATE TYPE before CREATE TABLE
+  result
+  |> string.contains(
+    "CREATE TYPE status AS ENUM ('active', 'inactive', 'banned');",
+  )
+  |> should.be_true()
+
+  // Column should use the enum type name
+  result
+  |> string.contains("status status NOT NULL")
+  |> should.be_true()
+}
+
+pub fn create_table_with_enum_sqlite_test() {
+  let table =
+    Table(
+      name: "users",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column(
+          "status",
+          schema_parser.Enum("status", ["active", "inactive"]),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "users",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot(
+                "status",
+                "Enum(status:active,inactive)",
+                False,
+                False,
+              ),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Sqlite)
+
+  // SQLite should use TEXT with CHECK constraint
+  result
+  |> string.contains(
+    "status TEXT NOT NULL CHECK (status IN ('active', 'inactive'))",
+  )
+  |> should.be_true()
+}
+
+// ------------------------------------------------------------- Decimal SQL
+
+pub fn create_table_with_decimal_postgres_test() {
+  let table =
+    Table(
+      name: "products",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column("price", schema_parser.Decimal(10, 2), False, None, None),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "products",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot("price", "Decimal(10,2)", False, False),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Postgres)
+
+  result
+  |> string.contains("price NUMERIC(10, 2) NOT NULL")
+  |> should.be_true()
+}
+
+pub fn create_table_with_decimal_sqlite_test() {
+  let table =
+    Table(
+      name: "products",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column("price", schema_parser.Decimal(10, 2), False, None, None),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "products",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot("price", "Decimal(10,2)", False, False),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Sqlite)
+
+  result
+  |> string.contains("price TEXT NOT NULL")
+  |> should.be_true()
+}
+
+// ------------------------------------------------------------- Blob SQL
+
+pub fn create_table_with_blob_postgres_test() {
+  let table =
+    Table(
+      name: "files",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column("data", schema_parser.Blob, False, None, None),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "files",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot("data", "Blob", False, False),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Postgres)
+
+  result
+  |> string.contains("data BYTEA NOT NULL")
+  |> should.be_true()
+}
+
+pub fn create_table_with_blob_sqlite_test() {
+  let table =
+    Table(
+      name: "files",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column("data", schema_parser.Blob, False, None, None),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "files",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot("data", "Blob", False, False),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Sqlite)
+
+  result
+  |> string.contains("data BLOB NOT NULL")
+  |> should.be_true()
+}
+
+// ------------------------------------------------------------- Time SQL
+
+pub fn create_table_with_time_postgres_test() {
+  let table =
+    Table(
+      name: "events",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column("starts_at", schema_parser.Time, False, None, None),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "events",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot("starts_at", "Time", False, False),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Postgres)
+
+  result
+  |> string.contains("starts_at TIME NOT NULL")
+  |> should.be_true()
+}
+
+pub fn create_table_with_time_sqlite_test() {
+  let table =
+    Table(
+      name: "events",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column("starts_at", schema_parser.Time, False, None, None),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "events",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot("starts_at", "Time", False, False),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Sqlite)
+
+  result
+  |> string.contains("starts_at TEXT NOT NULL")
+  |> should.be_true()
+}
+
+// ------------------------------------------------------------- Foreign Key Actions SQL
+
+pub fn foreign_on_delete_cascade_postgres_test() {
+  let table =
+    Table(
+      name: "posts",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column(
+          "user_id",
+          schema_parser.Foreign("users", Some(schema_parser.Cascade), None),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "posts",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot(
+                "user_id",
+                "Foreign(users,onDelete:Cascade)",
+                False,
+                False,
+              ),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Postgres)
+
+  result
+  |> string.contains("REFERENCES users(id) ON DELETE CASCADE")
+  |> should.be_true()
+}
+
+pub fn foreign_on_update_restrict_postgres_test() {
+  let table =
+    Table(
+      name: "posts",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column(
+          "user_id",
+          schema_parser.Foreign("users", None, Some(schema_parser.Restrict)),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "posts",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot(
+                "user_id",
+                "Foreign(users,onUpdate:Restrict)",
+                False,
+                False,
+              ),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Postgres)
+
+  result
+  |> string.contains("ON UPDATE RESTRICT")
+  |> should.be_true()
+}
+
+pub fn foreign_both_actions_postgres_test() {
+  let table =
+    Table(
+      name: "posts",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column(
+          "user_id",
+          schema_parser.Foreign(
+            "users",
+            Some(schema_parser.Cascade),
+            Some(schema_parser.SetNull),
+          ),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "posts",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot(
+                "user_id",
+                "Foreign(users,onDelete:Cascade,onUpdate:SetNull)",
+                False,
+                False,
+              ),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Postgres)
+
+  result
+  |> string.contains("ON DELETE CASCADE")
+  |> should.be_true()
+
+  result
+  |> string.contains("ON UPDATE SET NULL")
+  |> should.be_true()
+}
+
+pub fn foreign_on_delete_cascade_sqlite_test() {
+  let table =
+    Table(
+      name: "posts",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column(
+          "user_id",
+          schema_parser.Foreign("users", Some(schema_parser.Cascade), None),
+          False,
+          None,
+          None,
+        ),
+      ],
+      indexes: [],
+    )
+
+  let old = Snapshot(tables: dict.new())
+  let new =
+    Snapshot(
+      tables: dict.from_list([
+        #(
+          "posts",
+          TableSnapshot(
+            columns: [
+              ColumnSnapshot("id", "Id", False, False),
+              ColumnSnapshot(
+                "user_id",
+                "Foreign(users,onDelete:Cascade)",
+                False,
+                False,
+              ),
+            ],
+            indexes: [],
+          ),
+        ),
+      ]),
+    )
+
+  let diff = sql.compute_diff(old, new, [table], False)
+  let result = sql.generate_sql(diff, Sqlite)
+
+  // SQLite also supports FK actions
+  result
+  |> string.contains("ON DELETE CASCADE")
+  |> should.be_true()
+}
+
+// ------------------------------------------------------------- Describe Change
+
+pub fn describe_create_enum_type_test() {
+  let change = sql.CreateEnumType("status", ["active", "inactive"])
+
+  sql.describe_change(change)
+  |> should.equal("Create enum type: status")
+}
+
+// ------------------------------------------------------------- SmallInt SQL
+
+pub fn create_table_smallint_postgres_test() {
+  let tables = [
+    Table(
+      name: "counters",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column("priority", schema_parser.SmallInt, False, None, None),
+      ],
+      indexes: [],
+    ),
+  ]
+
+  let old = Snapshot(tables: dict.new())
+  let new = snapshot.build(tables)
+  let diff = sql.compute_diff(old, new, tables, False)
+  let result = sql.generate_sql(diff, Postgres)
+
+  result |> string.contains("priority SMALLINT NOT NULL") |> should.be_true()
+}
+
+pub fn create_table_smallint_sqlite_test() {
+  let tables = [
+    Table(
+      name: "counters",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column("priority", schema_parser.SmallInt, False, None, None),
+      ],
+      indexes: [],
+    ),
+  ]
+
+  let old = Snapshot(tables: dict.new())
+  let new = snapshot.build(tables)
+  let diff = sql.compute_diff(old, new, tables, False)
+  let result = sql.generate_sql(diff, Sqlite)
+
+  result |> string.contains("priority INTEGER NOT NULL") |> should.be_true()
+}
