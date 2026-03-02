@@ -23,7 +23,7 @@ import simplifile
 /// required.
 ///
 pub fn run(database: String, table: String, driver: db.Driver) -> Nil {
-  let migrations_path = "src/data/" <> database <> "/_migrations"
+  let migrations_path = "src/database/" <> database <> "/_migrations"
 
   let _ = simplifile.create_directory_all(migrations_path)
 

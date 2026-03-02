@@ -1,6 +1,24 @@
+import gleam/list
 import gleam/string
 import gleeunit/should
+import glimr/filesystem/filesystem
 import glimr/internal/services/make_auth_service
+
+// ------------------------------------------------------------- Model: Stub Files Exist
+
+pub fn all_auth_query_stubs_exist_test() {
+  let query_stubs = make_auth_service.auth_query_stubs()
+  list.each(query_stubs, fn(name) {
+    let stub_path = "auth/queries/" <> name <> ".stub"
+    let result = filesystem.read_stub("glimr", stub_path)
+    should.be_ok(result)
+  })
+}
+
+pub fn auth_schema_stub_exists_test() {
+  let result = filesystem.read_stub("glimr", "auth/schema.stub")
+  should.be_ok(result)
+}
 
 // ------------------------------------------------------------- Kernel: Import Injection
 
@@ -216,7 +234,7 @@ pub type Context {
 
   let result = make_auth_service.inject_into_context(input, "user", "main")
 
-  should.be_true(has_line(result, "import data/main/models/user/gen/user"))
+  should.be_true(has_line(result, "import database/main/models/user/gen/user"))
 }
 
 pub fn context_field_injection_with_custom_model_test() {
@@ -236,7 +254,7 @@ pub type Context {
   should.be_true(has_line(result, "customer: Option(customer.Customer),"))
   should.be_true(has_line(
     result,
-    "import data/postgres/models/customer/gen/customer",
+    "import database/postgres/models/customer/gen/customer",
   ))
 }
 

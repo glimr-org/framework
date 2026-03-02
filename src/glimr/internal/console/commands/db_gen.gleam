@@ -28,6 +28,11 @@ pub fn command() -> Command {
       short: "m",
       description: "Run migrations after generating",
     ),
+    Flag(
+      name: "verbose",
+      short: "v",
+      description: "Display detailed information about generation",
+    ),
   ])
   |> command.db_handler(run)
 }
@@ -38,10 +43,11 @@ fn run(args: Args, pool: DbPool) -> Nil {
   let database = command.get_option(args, "database")
   let model_option = command.get_option(args, "model")
   let should_migrate = command.has_flag(args, "migrate")
+  let verbose = command.has_flag(args, "verbose")
 
   let model_filter = parse_model_filter(model_option)
 
-  let models_path = "src/data/" <> database <> "/models"
+  let models_path = "src/database/" <> database <> "/models"
   case validate_models(models_path, model_filter) {
     Error(invalid) -> {
       console.output()
@@ -54,13 +60,18 @@ fn run(args: Args, pool: DbPool) -> Nil {
       |> console.print()
     }
     Ok(validated_filter) -> {
-      gen_migrate.run(database, validated_filter)
+      gen_migrate.run(database, validated_filter, verbose)
 
-      console.output()
-      |> console.blank_line(1)
-      |> console.print()
+      case verbose {
+        True -> {
+          console.output()
+          |> console.blank_line(1)
+          |> console.print()
+        }
+        False -> Nil
+      }
 
-      db_gen.run(database, validated_filter)
+      db_gen.run(database, validated_filter, verbose)
 
       case should_migrate {
         True -> {

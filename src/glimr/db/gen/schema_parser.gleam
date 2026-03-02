@@ -1,12 +1,12 @@
 //// Schema Parser
 ////
-//// Parses schema.gleam files to extract table definitions.
-//// This parser handles the list-based schema definition
-//// format:
-////
-//// table(name, [ id(), string("name"), string("bio") |>
-//// nullable(), boolean("is_active") |>
-//// default(DefaultBool(True)), timestamps(), ])
+//// Schema files are just Gleam code — `table("users", [ id(),
+//// string("email"), ... ])` — which means we're parsing Gleam
+//// source text, not a custom DSL. This module extracts table
+//// names, column definitions, modifiers like nullable() and
+//// default(), and index declarations from that source text so
+//// the code generator and migration differ have a structured
+//// representation to work with.
 
 import gleam/float
 import gleam/int
@@ -17,9 +17,10 @@ import gleam/string
 
 // ------------------------------------------------------------- Public Types
 
-/// Represents a database table with a name and list of columns.
-/// Parsed from schema.gleam files and used for code generation
-/// and migration diffing.
+/// The single source of truth that the code generator and
+/// migration differ both consume. One parse pass produces this,
+/// and everything downstream — types, decoders, encoders, DDL —
+/// derives from it.
 ///
 pub type Table {
   Table(name: String, columns: List(Column), indexes: List(Index))
@@ -34,9 +35,10 @@ pub type Index {
   Index(columns: List(String), unique: Bool, name: Option(String))
 }
 
-/// Represents a database column with its name, type,
-/// nullability, default value, and optional rename tracking for
-/// migration generation.
+/// Carries everything needed to generate both the Gleam type
+/// field and the SQL column definition. The renamed_from field
+/// is transient — it only exists during migration generation so
+/// the differ can emit RENAME instead of drop+add.
 ///
 pub type Column {
   Column(
@@ -48,9 +50,11 @@ pub type Column {
   )
 }
 
-/// Represents the default value for a column. Supports boolean,
-/// string, integer, float, current timestamp, current unix
-/// timestamp, and null defaults.
+/// Each variant maps to a specific SQL DEFAULT clause that may
+/// differ between Postgres and SQLite. DefaultNow becomes
+/// CURRENT_TIMESTAMP everywhere, but DefaultAutoUuid needs
+/// gen_random_uuid() on Postgres and a randomblob hack on
+/// SQLite.
 ///
 pub type DefaultValue {
   DefaultBool(Bool)
@@ -64,9 +68,11 @@ pub type DefaultValue {
   DefaultEmptyArray
 }
 
-/// Represents the data type of a column. Maps to appropriate
-/// SQL types for each database driver (PostgreSQL and SQLite)
-/// during code generation.
+/// The codegen module maps each variant to a Gleam type, a
+/// decoder function, and a JSON encoder. The SQL module maps
+/// them to driver-specific DDL types. Adding a new variant here
+/// means updating both modules — the compiler will tell you
+/// everywhere you missed.
 ///
 pub type ColumnType {
   Id
@@ -111,10 +117,10 @@ pub type ForeignAction {
 
 // ------------------------------------------------------------- Public Functions
 
-/// Parse a schema.gleam file content into a Table structure.
-/// Extracts the table name from `pub const table_name = "..."`
-/// and parses the column definitions from the
-/// `table(table_name, [...])` call.
+/// The only public entry point — give it a schema file's text
+/// and get back a fully parsed Table or an error explaining
+/// what's missing. Everything downstream (codegen, migrations,
+/// validation) starts from this result.
 ///
 pub fn parse(content: String) -> Result(Table, String) {
   // Extract table name from `pub const name = "tablename"`
@@ -137,9 +143,22 @@ pub fn parse(content: String) -> Result(Table, String) {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Extract the table name from a schema file by looking for
-/// `pub const table_name = "tablename"` (preferred) or the
-/// legacy `pub const name = "tablename"` declaration.
+/// Developers can write `schema.string("x")` or just
+/// `string("x")` depending on how they imported the module.
+/// Stripping the prefix early means no other parser function
+/// needs to care about import style.
+///
+fn strip_schema_prefix(s: String) -> String {
+  case string.starts_with(s, "schema.") {
+    True -> string.drop_start(s, 7)
+    False -> s
+  }
+}
+
+/// Looks for `pub const table_name = "users"` first, then falls
+/// back to the legacy `pub const name = "users"` form.
+/// Supporting both means old schemas keep working without
+/// requiring a migration to the new naming convention.
 ///
 fn extract_table_name(content: String) -> Option(String) {
   // Look for: pub const table_name = "tablename"
@@ -171,9 +190,10 @@ fn extract_table_name(content: String) -> Option(String) {
   |> option.from_result()
 }
 
-/// Extract the column list content from `table(name, [...])`.
-/// Returns the content inside the square brackets for further
-/// parsing into individual column definitions.
+/// Finds the `[...]` inside `table(name, [...])` and extracts
+/// just the column list content. Balanced bracket tracking
+/// handles nested structures like `enum("status", ["a", "b"])`
+/// that would break a naive split.
 ///
 fn extract_column_list(content: String) -> Option(String) {
   case string.split_once(content, "table(") {
@@ -191,9 +211,10 @@ fn extract_column_list(content: String) -> Option(String) {
   }
 }
 
-/// Recursively extract content until the matching closing
-/// bracket is found, tracking bracket depth for nested
-/// structures.
+/// Enum columns have nested brackets like `["active",
+/// "inactive"]` inside the outer column list brackets. Naive
+/// splitting would break on the inner `]`, so we count bracket
+/// depth to find the real closing bracket.
 ///
 fn extract_until_balanced_bracket(s: String, depth: Int, acc: String) -> String {
   case depth <= 0 {
@@ -210,9 +231,10 @@ fn extract_until_balanced_bracket(s: String, depth: Int, acc: String) -> String 
   }
 }
 
-/// Parse the column list content into a list of Column structs.
-/// Splits by top-level commas and parses each column definition
-/// including modifiers like nullable and default values.
+/// Splits the raw text between `[` and `]` into individual
+/// column definitions, then parses each one. Using flat_map
+/// instead of map handles `timestamps()` which expands into two
+/// columns (created_at, updated_at).
 ///
 fn parse_column_list(list_content: String) -> List(Column) {
   let items = split_by_top_level_comma(list_content)
@@ -220,17 +242,19 @@ fn parse_column_list(list_content: String) -> List(Column) {
   |> list.flat_map(parse_column_item)
 }
 
-/// Split a string by commas, but only at the top level (not
-/// inside parentheses). Used to separate column definitions in
-/// the schema list.
+/// A naive comma split would break `enum("status", ["a", "b"])`
+/// into three pieces. Tracking parenthesis depth ensures we
+/// only split on commas that actually separate column
+/// definitions.
 ///
 fn split_by_top_level_comma(content: String) -> List(String) {
   split_by_comma_helper(content, 0, "", [])
 }
 
-/// Recursive helper for splitting by top-level commas. Tracks
-/// parenthesis depth to avoid splitting inside function calls
-/// and nested expressions.
+/// Gleam has no stateful string scanner, so we walk character
+/// by character incrementing a paren counter. A comma at depth
+/// zero is a column separator; a comma at any other depth is
+/// part of the column definition itself.
 ///
 fn split_by_comma_helper(
   s: String,
@@ -267,25 +291,28 @@ fn split_by_comma_helper(
   }
 }
 
-/// Parse a single column item string into Column structs.
-/// Handles special cases like timestamps() which expand to
-/// multiple columns, and extracts modifiers like nullable().
+/// Most column items produce a single Column, but
+/// `timestamps()` and `unix_timestamps()` expand into two
+/// (created_at + updated_at) and `soft_deletes()` adds a
+/// nullable deleted_at. The pipe chain modifiers (nullable,
+/// default, etc.) are extracted once and applied at the end.
 ///
 fn parse_column_item(item: String) -> List(Column) {
   let trimmed = string.trim(item)
-  case string.starts_with(trimmed, "timestamps()") {
+  let base = strip_schema_prefix(trimmed)
+  case string.starts_with(base, "timestamps()") {
     True -> [
       Column("created_at", Timestamp, False, None, None),
       Column("updated_at", Timestamp, False, None, None),
     ]
     False ->
-      case string.starts_with(trimmed, "unix_timestamps()") {
+      case string.starts_with(base, "unix_timestamps()") {
         True -> [
           Column("created_at", UnixTimestamp, False, None, None),
           Column("updated_at", UnixTimestamp, False, None, None),
         ]
         False ->
-          case string.starts_with(trimmed, "soft_deletes()") {
+          case string.starts_with(base, "soft_deletes()") {
             True -> [Column("deleted_at", Timestamp, True, None, None)]
             False -> {
               // Check if this item has modifiers (|> nullable(), |> default(...), |> rename_from(...), |> array())
@@ -367,11 +394,13 @@ pub type Modifiers {
 /// about the modifier segments after it.
 ///
 fn extract_modifiers(item: String) -> Modifiers {
-  let parts = string.split(item, "|>")
+  let parts =
+    string.split(item, "|>")
+    |> list.map(fn(p) { string.trim(p) |> strip_schema_prefix })
 
   let base = case list.first(parts) {
-    Ok(b) -> string.trim(b)
-    Error(_) -> item
+    Ok(b) -> b
+    Error(_) -> strip_schema_prefix(string.trim(item))
   }
 
   let is_nullable =
@@ -576,7 +605,7 @@ fn extract_float_default(s: String) -> Result(DefaultValue, Nil) {
 /// extraction logic 15 times.
 ///
 fn parse_column_function(func: String) -> Option(Column) {
-  let trimmed = string.trim(func)
+  let trimmed = string.trim(func) |> strip_schema_prefix
   case string.starts_with(trimmed, "id()") {
     True -> Some(Column("id", Id, False, None, None))
     False -> {
@@ -668,27 +697,27 @@ fn parse_foreign_column(func: String) -> Option(Column) {
   }
 }
 
-/// Get columns in definition order from a table. Returns the
-/// list of columns as defined in the schema file, preserving
-/// their original order.
+/// Accessor for the column list. Table is opaque to downstream
+/// modules, so the code generator and migration differ use this
+/// instead of reaching into the record directly.
 ///
 pub fn columns(table: Table) -> List(Column) {
   table.columns
 }
 
-/// Returns the parsed index definitions from a table. The
-/// migration snapshot builder uses this to capture the current
-/// index state for diffing against future schema changes.
+/// Same reasoning as `columns` — keeps the Table internals
+/// encapsulated while giving the snapshot builder and migration
+/// differ access to the index definitions.
 ///
 pub fn indexes(table: Table) -> List(Index) {
   table.indexes
 }
 
-/// Scans the schema file content for an `indexes([...])` block
-/// and parses each entry inside it. This runs after column
-/// parsing since indexes reference column names. If there's no
-/// indexes block, the table simply has no indexes — it's not an
-/// error because most tables start without them.
+/// Indexes are optional — most tables start without them and
+/// add them later as query patterns emerge. Returning an empty
+/// list when there's no `indexes([...])` block means the rest
+/// of the pipeline doesn't need to special-case "no indexes
+/// defined."
 ///
 fn extract_indexes(content: String) -> List(Index) {
   case string.split_once(content, "indexes([") {
@@ -714,10 +743,12 @@ fn extract_indexes(content: String) -> List(Index) {
 /// `default()`.
 ///
 fn parse_index_item(item: String) -> Option(Index) {
-  let parts = string.split(item, "|>")
+  let parts =
+    string.split(item, "|>")
+    |> list.map(fn(p) { string.trim(p) |> strip_schema_prefix })
   let base = case list.first(parts) {
-    Ok(b) -> string.trim(b)
-    Error(_) -> item
+    Ok(b) -> b
+    Error(_) -> strip_schema_prefix(string.trim(item))
   }
 
   // Parse the base: unique([...]) or index([...])

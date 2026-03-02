@@ -5,7 +5,7 @@ import glimr/db/driver
 import glimr/internal/actions/run_setup_db
 
 /// The console command description.
-const description = "Set up a new database directory in src/data"
+const description = "Set up a new database directory in src/database"
 
 /// Define the console command and its properties.
 ///

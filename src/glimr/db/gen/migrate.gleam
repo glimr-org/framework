@@ -26,15 +26,20 @@ import simplifile
 
 // ------------------------------------------------------------- Public Functions
 
-/// Single entry point that resolves the driver type from
-/// database.toml and delegates to do_run with the correct
-/// paths. Keeping driver resolution here means console commands
-/// just pass a connection name without knowing the folder
-/// structure or driver details.
+/// Pass a connection name and the migration system figures out
+/// the rest — reads the driver type from database.toml, finds
+/// the schema files, diffs against the snapshot, and writes the
+/// migration SQL. The optional model filter lets you generate
+/// migrations for just the tables you changed.
 ///
-pub fn run(name: String, model_filter: Option(List(String))) {
-  io.println(console.warning("Glimr Migration Generator"))
-  io.println("  Connection: " <> name)
+pub fn run(name: String, model_filter: Option(List(String)), verbose: Bool) {
+  case verbose {
+    True -> {
+      io.println(console.warning("Glimr Migration Generator"))
+      io.println("  Connection: " <> name)
+    }
+    False -> Nil
+  }
 
   // Resolve driver type from database.toml config
   let connections = database.load()
@@ -46,16 +51,19 @@ pub fn run(name: String, model_filter: Option(List(String))) {
     driver.Sqlite -> "sqlite"
   }
 
-  io.println("  Driver: " <> driver_type_str)
-
-  let is_filtered = option.is_some(model_filter)
-  case model_filter {
-    Some(models) -> io.println("  Models: " <> string.join(models, ", "))
-    None -> Nil
+  case verbose {
+    True -> io.println("  Driver: " <> driver_type_str)
+    False -> Nil
   }
 
-  // Folder structure: src/data/{name}/...
-  let base_path = "src/data/" <> name
+  let is_filtered = option.is_some(model_filter)
+  case verbose, model_filter {
+    True, Some(models) -> io.println("  Models: " <> string.join(models, ", "))
+    _, _ -> Nil
+  }
+
+  // Folder structure: src/database/{name}/...
+  let base_path = "src/database/" <> name
   let models_path = base_path <> "/models"
   let snapshot_path = base_path <> "/._schema_snapshot.json"
   let migrations_path = base_path <> "/_migrations"
@@ -74,15 +82,26 @@ pub fn run(name: String, model_filter: Option(List(String))) {
     driver_type_str,
     model_filter,
     is_filtered,
+    verbose,
   )
+
+  case verbose {
+    True -> Nil
+    False -> {
+      console.output()
+      |> console.line_success("Generated migrations (" <> name <> ")")
+      |> console.print()
+    }
+  }
 }
 
 // ------------------------------------------------------------- Private Functions
 
-/// Separated from run to keep the public API clean — run
-/// handles config resolution while this function owns the full
-/// pipeline: load snapshot, scan schemas, diff, generate SQL,
-/// write file, and update the snapshot.
+/// The full migration pipeline: load the previous snapshot,
+/// scan current schemas, validate them, diff to find changes,
+/// generate SQL, write the migration file, and update the
+/// snapshot. When filtering by model, the snapshot merge
+/// preserves unrelated tables.
 ///
 fn do_run(
   models_path: String,
@@ -92,6 +111,7 @@ fn do_run(
   driver_name: String,
   model_filter: Option(List(String)),
   is_filtered: Bool,
+  verbose: Bool,
 ) {
   // Load existing snapshot
   let old_snapshot = snapshot.load(snapshot_path)
@@ -108,9 +128,13 @@ fn do_run(
       validation.validate_array_types(tables)
       validation.validate_enum_variants(tables)
 
-      io.println(
-        "  Found " <> int.to_string(list.length(tables)) <> " table(s)",
-      )
+      case verbose {
+        True ->
+          io.println(
+            "  Found " <> int.to_string(list.length(tables)) <> " table(s)",
+          )
+        False -> Nil
+      }
 
       // Build new snapshot (only for scanned tables)
       let new_snapshot = snapshot.build(tables)
@@ -121,19 +145,29 @@ fn do_run(
 
       case diff.changes {
         [] -> {
-          io.println("")
-          io.println("  No changes detected.")
+          case verbose {
+            True -> {
+              io.println("")
+              io.println("  No changes detected.")
+            }
+            False -> Nil
+          }
         }
         changes -> {
-          io.println("")
-          io.println(
-            "  Detected "
-            <> int.to_string(list.length(changes))
-            <> " change(s):",
-          )
-          list.each(changes, fn(change) {
-            io.println("    - " <> sql.describe_change(change))
-          })
+          case verbose {
+            True -> {
+              io.println("")
+              io.println(
+                "  Detected "
+                <> int.to_string(list.length(changes))
+                <> " change(s):",
+              )
+              list.each(changes, fn(change) {
+                io.println("    - " <> sql.describe_change(change))
+              })
+            }
+            False -> Nil
+          }
 
           // Generate migration SQL for the configured driver only
           let timestamp = get_timestamp()
@@ -152,8 +186,13 @@ fn do_run(
 
           case simplifile.write(migration_path, content) {
             Ok(_) -> {
-              io.println("")
-              io.println("  Generated: " <> migration_path)
+              case verbose {
+                True -> {
+                  io.println("")
+                  io.println("  Generated: " <> migration_path)
+                }
+                False -> Nil
+              }
 
               // Update snapshot (merge when filtered, replace when not)
               let final_snapshot = case is_filtered {
@@ -161,7 +200,12 @@ fn do_run(
                 False -> new_snapshot
               }
               case snapshot.save(snapshot_path, final_snapshot) {
-                Ok(_) -> io.println("  Updated: " <> snapshot_path)
+                Ok(_) -> {
+                  case verbose {
+                    True -> io.println("  Updated: " <> snapshot_path)
+                    False -> Nil
+                  }
+                }
                 Error(_) ->
                   io.println("  Warning: Could not update snapshot file")
               }
@@ -179,14 +223,20 @@ fn do_run(
     }
   }
 
-  io.println("")
-  io.println(console.success("  Successfully generated migrations!"))
+  case verbose {
+    True -> {
+      io.println("")
+      io.println(console.success("  Successfully generated migrations!"))
+    }
+    False -> Nil
+  }
 }
 
-/// Large projects may only want to migrate a subset of models
-/// at a time. The optional filter limits which model
-/// directories are scanned so the diff only includes changes
-/// for the specified models, leaving others untouched.
+/// Reads each model's schema file and parses it into a Table.
+/// The optional filter limits which models are scanned — when
+/// you pass `--model user`, only the user schema gets parsed so
+/// the diff doesn't accidentally generate drops for tables that
+/// are just filtered out.
 ///
 fn scan_schemas(
   models_path: String,

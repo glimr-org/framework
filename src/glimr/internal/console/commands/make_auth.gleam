@@ -43,10 +43,10 @@ fn run(args: Args, pool: DbPool) -> Nil {
   make_auth_service.create_model(model_name, connection)
 
   // 2. Generate migration from schema
-  gen_migrate.run(connection, Some([model_name]))
+  gen_migrate.run(connection, Some([model_name]), False)
 
   // 3. Generate repository from schema + queries
-  db_gen.run(connection, Some([model_name]))
+  db_gen.run(connection, Some([model_name]), False)
 
   // 4. Generate load middleware (queries DB for full model)
   make_auth_service.create_load_middleware(model_name, connection, ctx_db_name)

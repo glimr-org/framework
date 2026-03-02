@@ -17,41 +17,60 @@ import tom
 
 // ------------------------------------------------------------- Public Types
 
-/// Top-level configuration container. Holds all configuration
-/// sections loaded from glimr.toml including hooks for build
-/// and run lifecycle events.
+/// Everything the framework needs to customize its behavior
+/// lives here in one place. Passing this single value through
+/// the build and watch pipelines avoids repeatedly reading
+/// glimr.toml or scattering config lookups across modules.
 ///
 pub type Config {
-  Config(hooks: Hooks, commands: Commands, routes: Routes, loom: Loom)
+  Config(
+    hooks: Hooks,
+    commands: Commands,
+    routes: Routes,
+    loom: Loom,
+    database: Database,
+  )
 }
 
-/// Command configuration for package discovery and auto-
-/// compilation. Lists packages that provide console commands to
-/// be included in the command registry.
+/// Third-party packages can ship their own CLI commands (like a
+/// mailer package adding `./glimr send-test-email`). The
+/// packages list tells the command compiler which dependencies
+/// to scan for command modules.
 ///
 pub type Commands {
   Commands(auto_compile: Bool, packages: List(String))
 }
 
-/// Route configuration for auto-compilation during development.
-/// When enabled, routes are recompiled automatically when
-/// source files change during development mode.
+/// Disabling auto_compile is useful when you're working on
+/// something unrelated and don't want route recompilation
+/// slowing down your feedback loop on every save.
 ///
 pub type Routes {
   Routes(auto_compile: Bool)
 }
 
-/// Loom template configuration for auto-compilation during
-/// development. When enabled, Loom templates are recompiled
-/// automatically when source files change.
+/// Same idea as Routes — you can turn off template
+/// recompilation when you're deep in backend work and don't
+/// want the watcher spending time on templates you haven't
+/// touched.
 ///
 pub type Loom {
   Loom(auto_compile: Bool)
 }
 
-/// Hook configuration for build and run lifecycle events. Each
-/// field contains a list of shell commands to execute at the
-/// corresponding lifecycle point.
+/// Schema changes trigger query regeneration and migration
+/// diffing. Turning this off prevents the watcher from
+/// regenerating models while you're in the middle of editing
+/// multiple schema files at once.
+///
+pub type Database {
+  Database(auto_gen: Bool)
+}
+
+/// Shell commands that run at specific points in the build and
+/// dev lifecycle. Want to run `npm run build` before every
+/// `./glimr build`? Add it to build_pre. Need to clear a cache
+/// after hot reload? That's run_reload_pre.
 ///
 pub type Hooks {
   Hooks(
@@ -65,9 +84,9 @@ pub type Hooks {
 
 // ------------------------------------------------------------- Public Functions
 
-/// Loads configuration from glimr.toml in the current
-/// directory. Returns default configuration if the file doesn't
-/// exist or cannot be parsed.
+/// A missing or broken glimr.toml shouldn't prevent the app
+/// from running — sensible defaults mean everything works out
+/// of the box until you need to customize something.
 ///
 @internal
 pub fn load() -> Config {
@@ -77,9 +96,10 @@ pub fn load() -> Config {
   }
 }
 
-/// Loads environment variables from the .env file into the
-/// runtime environment. Called during application startup to
-/// make configuration values available.
+/// Database URLs, API keys, and other secrets live in .env
+/// rather than source code. Loading them early in startup means
+/// any module can call env.get() without worrying about
+/// initialization order.
 ///
 @internal
 pub fn load_env() -> Nil {
@@ -91,18 +111,18 @@ pub fn load_env() -> Nil {
   Nil
 }
 
-/// Returns the application server port from environment. Reads
-/// APP_PORT from the environment and defaults to 8000 if not
-/// set or invalid.
+/// Defaults to 8000 so new projects work without any .env file.
+/// Production deploys override this via APP_PORT to match their
+/// infrastructure's port assignment.
 ///
 @internal
 pub fn app_port() -> Int {
   env.get_int("APP_PORT") |> result.unwrap(8000)
 }
 
-/// Returns the development proxy port from environment. Reads
-/// DEV_PROXY_PORT from the environment and defaults to 8001 if
-/// not set or invalid.
+/// The dev proxy sits in front of the app so browsers don't see
+/// connection-refused errors during hot reloads. 8001 is one
+/// above the default app port, keeping the mental model simple.
 ///
 @internal
 pub fn dev_proxy_port() -> Int {
@@ -111,9 +131,9 @@ pub fn dev_proxy_port() -> Int {
 
 // ------------------------------------------------------------- Private Functions
 
-/// Parses TOML content into a Config struct. Extracts the
-/// hooks, commands, routes, and loom sections and falls back to
-/// defaults if parsing fails or sections are missing.
+/// Each section falls back to its own default independently, so
+/// a typo in [hooks] doesn't blow away your [database] settings
+/// — you only lose the section that's malformed.
 ///
 fn parse(content: String) -> Config {
   case tom.parse(content) {
@@ -125,15 +145,22 @@ fn parse(content: String) -> Config {
       let commands = parse_commands(toml)
       let routes = parse_routes(toml)
       let loom = parse_loom(toml)
-      Config(hooks: hooks, commands: commands, routes: routes, loom: loom)
+      let database = parse_database(toml)
+      Config(
+        hooks: hooks,
+        commands: commands,
+        routes: routes,
+        loom: loom,
+        database: database,
+      )
     }
     Error(_) -> default_config()
   }
 }
 
-/// Extracts command configuration from the [commands] TOML
-/// section. Parses auto_compile flag and packages list for
-/// console command discovery and registry compilation.
+/// The packages list defaults to ["glimr"] so the framework's
+/// built-in commands are always available, even if you forget
+/// to configure this section.
 ///
 fn parse_commands(toml: Dict(String, tom.Toml)) -> Commands {
   let auto_compile = case tom.get_bool(toml, ["commands", "auto_compile"]) {
@@ -153,9 +180,10 @@ fn parse_commands(toml: Dict(String, tom.Toml)) -> Commands {
   Commands(auto_compile: auto_compile, packages: packages)
 }
 
-/// Extracts route configuration from the [routes] TOML section.
-/// Parses auto_compile flag that controls whether routes are
-/// recompiled automatically during development.
+/// Defaults to auto_compile: True because most developers want
+/// instant feedback on route changes. The rare case where you'd
+/// disable this is when recompilation is too slow on a very
+/// large route file.
 ///
 fn parse_routes(toml: Dict(String, tom.Toml)) -> Routes {
   let auto_compile = case tom.get_bool(toml, ["routes", "auto_compile"]) {
@@ -165,9 +193,9 @@ fn parse_routes(toml: Dict(String, tom.Toml)) -> Routes {
   Routes(auto_compile: auto_compile)
 }
 
-/// Extracts loom configuration from the [loom] TOML section.
-/// Parses auto_compile flag that controls whether templates are
-/// recompiled automatically during development.
+/// Same pattern as parse_routes — defaults to True so templates
+/// recompile on save. Template compilation is fast enough that
+/// disabling this is rarely needed.
 ///
 fn parse_loom(toml: Dict(String, tom.Toml)) -> Loom {
   let auto_compile = case tom.get_bool(toml, ["loom", "auto_compile"]) {
@@ -177,9 +205,23 @@ fn parse_loom(toml: Dict(String, tom.Toml)) -> Loom {
   Loom(auto_compile: auto_compile)
 }
 
-/// Extracts hook configuration from the [hooks] TOML section.
-/// Parses build.pre, build.post, run.pre, and run.reload
-/// subsections into the Hooks struct.
+/// Auto-generation is on by default so editing a schema file
+/// immediately regenerates the typed query module. You might
+/// turn this off temporarily when restructuring multiple models
+/// to avoid partial regeneration between saves.
+///
+fn parse_database(toml: Dict(String, tom.Toml)) -> Database {
+  let auto_gen = case tom.get_bool(toml, ["database", "auto_gen"]) {
+    Ok(b) -> b
+    Error(_) -> True
+  }
+  Database(auto_gen: auto_gen)
+}
+
+/// The TOML nesting mirrors the lifecycle: [hooks.build] has
+/// pre/post, [hooks.run] has pre, and [hooks.run.reload] has
+/// pre and post-modified. Each resolves to a simple list of
+/// shell commands.
 ///
 fn parse_hooks(toml: tom.Toml) -> Hooks {
   let build = get_table(toml, "build")
@@ -195,9 +237,10 @@ fn parse_hooks(toml: tom.Toml) -> Hooks {
   )
 }
 
-/// Gets a nested table from TOML by key. Returns an empty table
-/// if the key doesn't exist or the value is not a table,
-/// allowing safe chaining.
+/// Returning an empty table instead of Error on missing keys
+/// means callers can chain lookups without checking each level
+/// — a missing [hooks.build] section just produces empty hook
+/// lists instead of crashing.
 ///
 fn get_table(toml: tom.Toml, key: String) -> tom.Toml {
   case toml {
@@ -211,17 +254,19 @@ fn get_table(toml: tom.Toml, key: String) -> tom.Toml {
   }
 }
 
-/// Gets a doubly-nested table from TOML. Chains two get_table
-/// calls to access tables like [hooks.run.reload] using keys
-/// "run" and "reload".
+/// Reaches two levels deep into the TOML tree — needed for
+/// [hooks.run.reload] which nests under both "run" and
+/// "reload". Missing at either level gracefully returns an
+/// empty table.
 ///
 fn get_nested_table(toml: tom.Toml, key1: String, key2: String) -> tom.Toml {
   get_table(toml, key1) |> get_table(key2)
 }
 
-/// Extracts a list of strings from a TOML table by key. Handles
-/// both array values and single string values, returning an
-/// empty list if the key is missing or has wrong type.
+/// Accepting both `pre = "cmd"` and `pre = ["cmd1", "cmd2"]` in
+/// the TOML means developers don't have to use array syntax for
+/// a single hook command — a small convenience that avoids a
+/// common config mistake.
 ///
 fn get_string_list(toml: tom.Toml, key: String) -> List(String) {
   case toml {
@@ -244,9 +289,10 @@ fn get_string_list(toml: tom.Toml, key: String) -> List(String) {
   }
 }
 
-/// Returns the default configuration with empty hooks. Used
-/// when glimr.toml doesn't exist or cannot be parsed to provide
-/// sensible defaults.
+/// Fresh projects shouldn't need a glimr.toml to work. These
+/// defaults enable all auto-compilation features and leave
+/// hooks empty, so everything "just works" until the developer
+/// needs to customize.
 ///
 fn default_config() -> Config {
   Config(
@@ -254,36 +300,46 @@ fn default_config() -> Config {
     commands: default_commands(),
     routes: default_routes(),
     loom: default_loom(),
+    database: default_database(),
   )
 }
 
-/// Returns default commands configuration with glimr as the
-/// only package and auto_compile enabled. This ensures the
-/// framework's built-in commands are always available.
+/// Including "glimr" in the default package list means the
+/// framework's built-in commands (build, run, gen, etc.) are
+/// always discovered, even without any config file.
 ///
 fn default_commands() -> Commands {
   Commands(auto_compile: True, packages: ["glimr"])
 }
 
-/// Returns default routes configuration with auto_compile
-/// enabled. Routes will be recompiled on changes during
-/// development unless explicitly disabled.
+/// Auto-compile on by default so the dev experience is instant
+/// feedback — save a controller, see the route change without
+/// manually running a compile step.
 ///
 fn default_routes() -> Routes {
   Routes(auto_compile: True)
 }
 
-/// Returns default loom configuration with auto_compile
-/// enabled. Templates will be recompiled on changes during
-/// development unless explicitly disabled.
+/// Templates auto-compile by default so editing a .loom.html
+/// file immediately shows up in the browser on refresh,
+/// matching the "save and see" workflow developers expect.
 ///
 fn default_loom() -> Loom {
   Loom(auto_compile: True)
 }
 
-/// Returns default hooks with all lists empty. No commands will
-/// be executed at any lifecycle point unless explicitly
-/// configured in glimr.toml.
+/// With auto_gen on, adding a column to a schema file
+/// regenerates the typed repository module within a second, so
+/// you can immediately use the new field without running a
+/// manual gen command.
+///
+fn default_database() -> Database {
+  Database(auto_gen: True)
+}
+
+/// Empty by default because hooks are opt-in — most projects
+/// don't need custom build steps until they integrate frontend
+/// tooling or external codegen.
 ///
 fn default_hooks() -> Hooks {
   Hooks(

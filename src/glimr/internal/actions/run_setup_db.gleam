@@ -18,7 +18,7 @@ import simplifile
 /// already configured.
 ///
 pub fn run(name: String, create_sqlite: Bool) -> Nil {
-  let base_path = "src/data/" <> name
+  let base_path = "src/database/" <> name
 
   // Check if directory already exists
   case simplifile.is_directory(base_path) {

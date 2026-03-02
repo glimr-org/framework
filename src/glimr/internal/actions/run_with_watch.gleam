@@ -14,6 +14,7 @@ import gleam/list
 import gleam/string
 import glimr/console/console
 import glimr/internal/actions/compile_commands
+import glimr/internal/actions/compile_database
 import glimr/internal/actions/compile_loom
 import glimr/internal/actions/compile_routes
 import glimr/internal/actions/run_hooks
@@ -98,14 +99,32 @@ fn watch_loop(
           && string.ends_with(f, ".gleam")
         })
 
+      let database_changed =
+        list.any(files, fn(f) {
+          {
+            string.contains(f, "src/database/")
+            && string.ends_with(f, "_schema.gleam")
+          }
+          || {
+            string.contains(f, "src/database/")
+            && string.contains(f, "/queries/")
+            && string.ends_with(f, ".sql")
+          }
+        })
+
       let only_compiled_files =
         list.all(files, fn(f) { string.contains(f, "src/compiled/") })
 
       let routes_trigger =
         controller_changed || validator_changed || middleware_changed
 
-      case routes_trigger, loom_source_changed, command_changed {
-        True, _, _ -> {
+      case
+        routes_trigger,
+        loom_source_changed,
+        command_changed,
+        database_changed
+      {
+        True, _, _, _ -> {
           case cfg.routes.auto_compile {
             True -> {
               let route_related_files =
@@ -132,7 +151,7 @@ fn watch_loop(
             False -> watch_loop(current_mtimes, port, cfg, False)
           }
         }
-        _, True, _ -> {
+        _, True, _, _ -> {
           case cfg.loom.auto_compile {
             True -> {
               let loom_files =
@@ -163,7 +182,7 @@ fn watch_loop(
             False -> watch_loop(current_mtimes, port, cfg, False)
           }
         }
-        _, _, True -> {
+        _, _, True, _ -> {
           case cfg.commands.auto_compile {
             True -> {
               let command_files =
@@ -190,7 +209,44 @@ fn watch_loop(
             False -> watch_loop(current_mtimes, port, cfg, False)
           }
         }
-        False, False, False -> {
+        _, _, _, True -> {
+          case cfg.database.auto_gen {
+            True -> {
+              let db_files =
+                list.filter(files, fn(f) {
+                  string.contains(f, "src/database/")
+                  && !string.contains(f, "/gen/")
+                  && !string.contains(f, "/_migrations/")
+                })
+
+              io.println("")
+              io.println(console.warning("Database changes detected:"))
+              list.each(db_files, fn(f) { io.println("  " <> f) })
+              io.println("")
+
+              // Extract unique connection names and regenerate for each
+              let connections =
+                db_files
+                |> list.filter_map(extract_database_name)
+                |> list.unique
+
+              let db_had_error =
+                list.any(connections, fn(connection) {
+                  case compile_database.run(connection) {
+                    Ok(_) -> False
+                    Error(msg) -> {
+                      io.println(console.error(msg))
+                      True
+                    }
+                  }
+                })
+
+              watch_loop(current_mtimes, port, cfg, db_had_error)
+            }
+            False -> watch_loop(current_mtimes, port, cfg, False)
+          }
+        }
+        False, False, False, False -> {
           // Skip restart if only compiled files changed after a compile error
           case only_compiled_files && had_compile_error {
             True -> watch_loop(current_mtimes, port, cfg, False)
@@ -271,16 +327,30 @@ fn stop_port(port: Port) -> Nil
 @external(erlang, "glimr_port_ffi", "start_output_reader")
 fn start_output_reader(port: Port) -> Nil
 
-/// Filtering to .gleam and .loom.html avoids reacting to editor
-/// swap files, .beam outputs, or other transient files that
-/// shouldn't trigger recompilation.
+/// When a schema file changes, we need to know which database
+/// connection it belongs to so we regenerate only that
+/// connection's models. The connection name is the directory
+/// right after "src/database/" in the path.
+///
+fn extract_database_name(path: String) -> Result(String, Nil) {
+  case string.split(path, "/") {
+    ["src", "database", name, ..] -> Ok(name)
+    _ -> Error(Nil)
+  }
+}
+
+/// Filtering to .gleam, .loom.html, and .sql avoids reacting to
+/// editor swap files, .beam outputs, or other transient files
+/// that shouldn't trigger recompilation.
 ///
 fn get_watched_file_mtimes(dir: String) -> Dict(String, Int) {
   case simplifile.get_files(dir) {
     Ok(files) -> {
       files
       |> list.filter(fn(f) {
-        string.ends_with(f, ".gleam") || string.ends_with(f, ".loom.html")
+        string.ends_with(f, ".gleam")
+        || string.ends_with(f, ".loom.html")
+        || string.ends_with(f, ".sql")
       })
       |> list.filter_map(fn(f) {
         case get_mtime(f) {
@@ -294,9 +364,10 @@ fn get_watched_file_mtimes(dir: String) -> Dict(String, Int) {
   }
 }
 
-/// Wraps simplifile.file_info to expose only the mtime field,
-/// keeping the watch loop code focused on time comparison
-/// rather than file metadata details.
+/// simplifile.file_info returns a big record with permissions,
+/// size, etc. — all we care about is whether the file was
+/// modified since last check, so we pull out just the mtime and
+/// discard the rest.
 ///
 fn get_mtime(path: String) -> Result(Int, Nil) {
   case simplifile.file_info(path) {

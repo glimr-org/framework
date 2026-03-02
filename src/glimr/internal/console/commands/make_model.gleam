@@ -28,7 +28,7 @@ fn run(args: Args) -> Nil {
 
   let model_name = string.lowercase(model_name_input)
   let table_name = glimr_string.pluralize(model_name)
-  let model_dir = "src/data/" <> connection <> "/models/" <> model_name
+  let model_dir = "src/database/" <> connection <> "/models/" <> model_name
   let queries_dir = model_dir <> "/queries"
 
   let assert Ok(dir_exists) = filesystem.directory_exists(model_dir)
@@ -45,7 +45,7 @@ fn run(args: Args) -> Nil {
       let assert Ok(_) =
         filesystem.write_from_stub_with_variables(
           package: "glimr",
-          stub_path: "data/schema.stub",
+          stub_path: "database/schema.stub",
           dest_path: schema_path,
           variables: [#("table_name", table_name)],
         )
@@ -56,7 +56,7 @@ fn run(args: Args) -> Nil {
         let assert Ok(_) =
           filesystem.write_from_stub_with_variables(
             package: "glimr",
-            stub_path: "data/queries/" <> query_name <> ".stub",
+            stub_path: "database/queries/" <> query_name <> ".stub",
             dest_path: query_path,
             variables: [#("table_name", table_name)],
           )

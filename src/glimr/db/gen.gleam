@@ -22,32 +22,51 @@ import simplifile
 
 // ------------------------------------------------------------- Public Functions
 
-/// Single entry point so console commands just pass a
-/// connection name without knowing the folder structure. The
-/// optional model filter lets developers regenerate a subset of
-/// models without touching the rest.
+/// Pass a connection name and optionally a list of specific
+/// models to regenerate. Without a filter, every model in the
+/// connection gets processed — the filter exists so you can
+/// regenerate just the model you're working on without waiting
+/// for all of them.
 ///
-pub fn run(name: String, model_filter: Option(List(String))) {
-  io.println(console.warning("Glimr Query Generator"))
-  io.println("  Connection: " <> name)
-
-  case model_filter {
-    Some(models) -> io.println("  Models: " <> string.join(models, ", "))
-    None -> Nil
+pub fn run(name: String, model_filter: Option(List(String)), verbose: Bool) {
+  case verbose {
+    True -> {
+      io.println(console.warning("Glimr Query Generator"))
+      io.println("  Connection: " <> name)
+    }
+    False -> Nil
   }
 
-  let models_path = "src/data/" <> name <> "/models"
-  generate_models(models_path, model_filter)
+  case verbose, model_filter {
+    True, Some(models) -> io.println("  Models: " <> string.join(models, ", "))
+    _, _ -> Nil
+  }
+
+  let models_path = "src/database/" <> name <> "/models"
+  generate_models(models_path, model_filter, verbose)
+
+  case verbose {
+    True -> Nil
+    False -> {
+      console.output()
+      |> console.line_success("Generated queries (" <> name <> ")")
+      |> console.print()
+    }
+  }
 }
 
 // ------------------------------------------------------------- Private Functions
 
-/// Separated from run to keep path construction out of the main
-/// logic. Reads the models directory, applies the optional
-/// filter, then processes each model independently so a parse
-/// failure in one model doesn't block the rest.
+/// Each model is processed independently so a broken schema in
+/// one model doesn't prevent the others from regenerating.
+/// You'll still see the error for the broken one, but the rest
+/// of your queries stay up to date.
 ///
-fn generate_models(models_path: String, model_filter: Option(List(String))) {
+fn generate_models(
+  models_path: String,
+  model_filter: Option(List(String)),
+  verbose: Bool,
+) {
   case simplifile.read_directory(models_path) {
     Ok(entries) -> {
       let model_dirs =
@@ -63,18 +82,32 @@ fn generate_models(models_path: String, model_filter: Option(List(String))) {
           }
         })
 
-      io.println(
-        "  Found " <> int.to_string(list.length(model_dirs)) <> " model(s)",
-      )
+      case verbose {
+        True ->
+          io.println(
+            "  Found " <> int.to_string(list.length(model_dirs)) <> " model(s)",
+          )
+        False -> Nil
+      }
 
       list.each(model_dirs, fn(model_name) {
-        io.println("")
-        io.println("  Processing: " <> model_name)
-        process_model(models_path, model_name)
+        case verbose {
+          True -> {
+            io.println("")
+            io.println("  Processing: " <> model_name)
+          }
+          False -> Nil
+        }
+        process_model(models_path, model_name, verbose)
       })
 
-      io.println("")
-      io.println(console.success("  Successfully generated queries!"))
+      case verbose {
+        True -> {
+          io.println("")
+          io.println(console.success("  Successfully generated queries!"))
+        }
+        False -> Nil
+      }
     }
     Error(_) -> {
       io.println("  Error: Could not read " <> models_path)
@@ -89,7 +122,7 @@ fn generate_models(models_path: String, model_filter: Option(List(String))) {
 /// that model without affecting others. The output is
 /// auto-formatted so generated code matches project style.
 ///
-fn process_model(models_path: String, model_name: String) -> Nil {
+fn process_model(models_path: String, model_name: String, verbose: Bool) -> Nil {
   let model_path = models_path <> "/" <> model_name
   let schema_path = model_path <> "/" <> model_name <> "_schema.gleam"
   let queries_path = model_path <> "/queries"
@@ -99,13 +132,17 @@ fn process_model(models_path: String, model_name: String) -> Nil {
     Ok(schema_content) -> {
       case schema_parser.parse(schema_content) {
         Ok(table) -> {
-          io.println(
-            "    Schema: "
-            <> table.name
-            <> " ("
-            <> int.to_string(list.length(table.columns))
-            <> " columns)",
-          )
+          case verbose {
+            True ->
+              io.println(
+                "    Schema: "
+                <> table.name
+                <> " ("
+                <> int.to_string(list.length(table.columns))
+                <> " columns)",
+              )
+            False -> Nil
+          }
 
           let queries = case simplifile.read_directory(queries_path) {
             Ok(files) -> {
@@ -134,7 +171,11 @@ fn process_model(models_path: String, model_name: String) -> Nil {
             Error(_) -> []
           }
 
-          io.println("    Queries: " <> int.to_string(list.length(queries)))
+          case verbose {
+            True ->
+              io.println("    Queries: " <> int.to_string(list.length(queries)))
+            False -> Nil
+          }
 
           let generated = generator.generate(model_name, table, queries)
 
@@ -145,7 +186,10 @@ fn process_model(models_path: String, model_name: String) -> Nil {
             Ok(_) -> {
               let _ =
                 shellout.command("gleam", ["format", output_path], ".", [])
-              io.println("    Generated: " <> output_path)
+              case verbose {
+                True -> io.println("    Generated: " <> output_path)
+                False -> Nil
+              }
             }
             Error(_) -> io.println("    Error: Could not write " <> output_path)
           }

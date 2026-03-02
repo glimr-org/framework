@@ -17,10 +17,10 @@ import simplifile
 
 // ------------------------------------------------------------- Public Types
 
-/// Grouping version, name, and SQL into a single record lets
-/// the loader return one sorted list that downstream functions
-/// can filter and execute without re-reading files or
-/// re-parsing filenames.
+/// A migration is identified by its version (timestamp prefix)
+/// and carries the raw SQL to execute. The version doubles as
+/// the sort key for execution order and the primary key in the
+/// tracking table.
 ///
 pub type Migration {
   Migration(version: String, name: String, sql: String)
@@ -37,7 +37,7 @@ pub type Migration {
 pub fn load_all_migrations(
   connection_name: String,
 ) -> Result(List(Migration), String) {
-  let migrations_path = "src/data/" <> connection_name <> "/_migrations"
+  let migrations_path = "src/database/" <> connection_name <> "/_migrations"
 
   let _ = simplifile.create_directory_all(migrations_path)
 
@@ -150,10 +150,10 @@ pub fn apply_pending(
 
 // ------------------------------------------------------------- Private Functions
 
-/// Separated from apply_pending so the public API hides the
-/// accumulator. Processing one migration at a time and
-/// prepending to the accumulator avoids repeated list appends,
-/// with a final reverse to restore order.
+/// Processes migrations one at a time, stopping on the first
+/// failure. The accumulator collects applied versions so the
+/// caller knows exactly how far we got — useful for logging
+/// "applied 3 of 5 migrations" when something fails.
 ///
 fn do_apply_pending(
   conn: Connection,

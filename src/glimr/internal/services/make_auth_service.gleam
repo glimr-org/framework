@@ -23,14 +23,14 @@ import simplifile
 
 // ------------------------------------------------------------- Public Functions
 
-/// Generates the auth model schema and query files under
-/// src/data/{connection}/models/{model}/. Uses auth-specific
-/// stubs that come pre-filled with email and hashed_password
-/// columns.
+/// Sets up the database side of auth — schema with email and
+/// hashed_password columns, plus standard CRUD queries. Skips
+/// if the model directory already exists so running the command
+/// twice doesn't blow away customizations.
 ///
 pub fn create_model(model_name: String, connection: String) -> Nil {
   let table_name = glimr_string.pluralize(model_name)
-  let model_dir = "src/data/" <> connection <> "/models/" <> model_name
+  let model_dir = "src/database/" <> connection <> "/models/" <> model_name
   let queries_dir = model_dir <> "/queries"
 
   let assert Ok(dir_exists) = filesystem.directory_exists(model_dir)
@@ -55,9 +55,7 @@ pub fn create_model(model_name: String, connection: String) -> Nil {
           variables: variables,
         )
 
-      let query_stubs = [
-        "create", "delete", "find", "by_email", "list", "update",
-      ]
+      let query_stubs = auth_query_stubs()
       list.each(query_stubs, fn(query_name) {
         let query_path = queries_dir <> "/" <> query_name <> ".sql"
         let assert Ok(_) =
@@ -76,10 +74,10 @@ pub fn create_model(model_name: String, connection: String) -> Nil {
   }
 }
 
-/// Scaffolds the loader middleware that resolves the current
-/// user from the session and loads the full model from the
-/// database. Written to
-/// src/app/http/middleware/load_{model}.gleam.
+/// Every request that needs the current user has to look it up
+/// from the session. This middleware does that once, early in
+/// the pipeline, so controllers can just read ctx.user instead
+/// of repeating the same session-to-database lookup.
 ///
 pub fn create_load_middleware(
   model_name: String,
@@ -97,10 +95,10 @@ pub fn create_load_middleware(
   ])
 }
 
-/// Scaffolds the auth guard middleware that redirects
-/// unauthenticated users. Written to
-/// src/app/http/middleware/auth/{model}.gleam so it works with
-/// @middleware "auth/{model}".
+/// Protected pages need to bounce unauthenticated visitors to
+/// the login page. This middleware handles that redirect so
+/// controllers don't need to check auth status themselves —
+/// just attach `@middleware "auth/{model}"` to the route.
 ///
 pub fn create_auth_middleware(model_name: String) -> Nil {
   let file_path = "src/app/http/middleware/auth/" <> model_name <> ".gleam"
@@ -110,10 +108,10 @@ pub fn create_auth_middleware(model_name: String) -> Nil {
   ])
 }
 
-/// Scaffolds the guest guard middleware that redirects
-/// authenticated users away. Written to
-/// src/app/http/middleware/guest/{model}.gleam so it works with
-/// @middleware "guest/{model}".
+/// Login and registration pages shouldn't be accessible to
+/// already-authenticated users — showing them a login form when
+/// they're already signed in is confusing. This middleware
+/// redirects them away.
 ///
 pub fn create_guest_middleware(model_name: String) -> Nil {
   let file_path = "src/app/http/middleware/guest/" <> model_name <> ".gleam"
@@ -123,10 +121,10 @@ pub fn create_guest_middleware(model_name: String) -> Nil {
   ])
 }
 
-/// Patches the kernel file to import and register the load
-/// middleware for this model. Inserts the import after the last
-/// import line and adds load_{model}.run after the last .run
-/// entry in each middleware group.
+/// The loader middleware needs to be registered in the HTTP
+/// kernel so it runs on every request. Patching the file
+/// automatically saves the developer from manually editing the
+/// kernel and figuring out the right placement.
 ///
 pub fn register_in_kernel(model_name: String) -> Nil {
   let kernel_path = "src/app/http/kernel.gleam"
@@ -163,9 +161,10 @@ pub fn register_in_kernel(model_name: String) -> Nil {
   }
 }
 
-/// Patches the context file to add a typed field for this
-/// model. Inserts {model}: Option({model}.Model) into the
-/// Context type constructor, along with the repository import.
+/// Controllers access the current user via `ctx.user`, which
+/// means the Context type needs a field for it. Adding the
+/// field and its import automatically means the developer
+/// doesn't have to manually wire up types across files.
 ///
 pub fn register_in_context(model_name: String, connection: String) -> Nil {
   let ctx_path = "src/app/http/context/ctx.gleam"
@@ -201,8 +200,10 @@ pub fn register_in_context(model_name: String, connection: String) -> Nil {
   }
 }
 
-/// Patches the ctx_provider file to initialize the new model
-/// field as option.None in the Context constructor.
+/// The ctx_provider creates the initial Context value with all
+/// fields set. Without this patch, the new auth field would be
+/// missing from the constructor and every request would crash
+/// with a missing field error.
 ///
 pub fn register_in_ctx_provider(model_name: String) -> Nil {
   let provider_path = "src/app/providers/ctx_provider.gleam"
@@ -238,9 +239,10 @@ pub fn register_in_ctx_provider(model_name: String) -> Nil {
   }
 }
 
-/// Pure string transformation for kernel injection. Exposed as
-/// public so the test suite can verify the transformation
-/// without touching the filesystem.
+/// Public so the test suite can verify the string
+/// transformation without touching the filesystem. The actual
+/// command reads the file, calls this, then writes back —
+/// keeping I/O at the edges.
 ///
 pub fn inject_into_kernel(content: String, model_name: String) -> String {
   let middleware_name = "load_" <> model_name
@@ -253,10 +255,10 @@ pub fn inject_into_kernel(content: String, model_name: String) -> String {
   string.join(lines, "\n")
 }
 
-/// Pure string transformation for context injection. Exposed as
-/// public so the test suite can verify the transformation
-/// without touching the filesystem. Adds a typed field using
-/// the generated repository's model type.
+/// Same pattern as inject_into_kernel — pure string transform
+/// that the test suite can exercise without file I/O. Adds the
+/// import for the generated repository module and inserts the
+/// typed Option field into the Context constructor.
 ///
 pub fn inject_into_context(
   content: String,
@@ -267,7 +269,7 @@ pub fn inject_into_context(
   let model_type = pascal_case(model_name)
   let repo_module = model_name
   let repo_import =
-    "import data/"
+    "import database/"
     <> connection
     <> "/models/"
     <> model_name
@@ -293,9 +295,10 @@ pub fn inject_into_context(
   string.join(lines, "\n")
 }
 
-/// Pure string transformation for ctx_provider injection. Adds
-/// option.None initialization for the model field in the
-/// Context constructor, and ensures gleam/option is imported.
+/// Completes the trio of inject functions — this one handles
+/// the ctx_provider where Context values are first constructed.
+/// Inserts `{model}: option.None` so the new field has a valid
+/// default value.
 ///
 pub fn inject_into_ctx_provider(content: String, model_name: String) -> String {
   let lines = string.split(content, "\n")
@@ -312,11 +315,21 @@ pub fn inject_into_ctx_provider(content: String, model_name: String) -> String {
   string.join(lines, "\n")
 }
 
+/// Public so the Postgres and SQLite make_auth commands can
+/// check which queries were generated. Keeping the list here
+/// instead of duplicating it in each driver command means
+/// adding a new auth query only requires one change.
+///
+pub fn auth_query_stubs() -> List(String) {
+  ["create", "delete", "find", "by_email", "list", "update"]
+}
+
 // ------------------------------------------------------------- Private Functions
 
-/// Writes a stub file to the given path with variable
-/// substitution. Checks for existing files first to avoid
-/// overwriting user customizations.
+/// Checking for existing files before writing prevents the
+/// command from destroying customizations when a developer runs
+/// it again (e.g. after adding a second auth model for admins
+/// alongside users).
 ///
 fn scaffold_file(
   file_path: String,
@@ -355,9 +368,10 @@ fn scaffold_file(
   }
 }
 
-/// Writes modified content to a file and runs gleam format.
-/// Rolls back to the original content if formatting fails so
-/// the file is never left in a broken state.
+/// If gleam format fails (meaning the injected code broke the
+/// syntax), we roll back to the original file contents rather
+/// than leaving the developer with a broken file they have to
+/// fix manually.
 ///
 fn write_and_format(
   path: String,
@@ -390,10 +404,11 @@ fn write_and_format(
   }
 }
 
-/// Prevents duplicate imports when the command is run multiple
-/// times or when the user already added the import manually.
-/// Uses string.contains rather than exact matching so aliased
-/// or selectively imported variants are still detected.
+/// Running make_auth twice shouldn't produce duplicate imports.
+/// Using string.contains rather than exact matching catches
+/// variations like `import gleam/option.{type Option}` vs
+/// `import gleam/option` — both mean the module is already
+/// imported.
 ///
 fn has_import(lines: List(String), module: String) -> Bool {
   list.any(lines, fn(line) {
@@ -490,10 +505,10 @@ fn insert_middleware_entries_loop(
   }
 }
 
-/// Inserts a model field into the Context type constructor.
-/// Finds the last field line before the closing paren `)` and
-/// inserts the new field after it. Normalizes single-line
-/// constructors to multi-line first so the field scanner works.
+/// Some developers write their Context on one line, others
+/// spread it across many. Normalizing to multi-line first means
+/// the field scanner has a consistent format to work with, and
+/// gleam format cleans up the style afterward.
 ///
 fn insert_context_field(
   lines: List(String),
@@ -505,10 +520,11 @@ fn insert_context_field(
   insert_context_field_loop(lines, field_line, -1, 0, [])
 }
 
-/// Scans lines looking for the closing paren of the Context
-/// constructor. Tracks the last line that looks like a field
-/// (contains `:` and is indented) so the new field gets
-/// inserted right after the last existing field.
+/// Inserting after the last field rather than before `)` means
+/// the new field gets a trailing comma naturally (we add one),
+/// and the existing fields don't need their commas adjusted.
+/// Field detection is heuristic — indented lines with `:` that
+/// aren't comments or type declarations.
 ///
 fn insert_context_field_loop(
   lines: List(String),
@@ -554,10 +570,10 @@ fn insert_context_field_loop(
   }
 }
 
-/// Expands single-line record constructors into multi-line so
-/// the field scanner can work uniformly. Detects lines like `
-/// Context(field: Type, field: Type)` and splits them into one
-/// field per line. Already multi-line constructors pass through
+/// A single-line constructor like `Context(db: Pool, env: Env)`
+/// would break the field scanner which expects one field per
+/// line. Splitting it into multi-line first gives us a uniform
+/// format. Already multi-line constructors pass through
 /// unchanged.
 ///
 fn expand_single_line_constructor(lines: List(String)) -> List(String) {
