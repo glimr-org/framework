@@ -11,6 +11,7 @@
 
 import glimr/http/fail
 import glimr/http/kernel.{type Next}
+import glimr/response/response
 import wisp.{type Request, type Response}
 
 // ------------------------------------------------------------- Public Functions
@@ -29,6 +30,6 @@ pub fn run(req: Request, ctx: context, next: Next(context)) -> Response {
 
   case fail.rescue(fn() { next(req, ctx) }) {
     fail.Ok(response) -> response
-    fail.Fail(status) -> wisp.response(status)
+    fail.Fail(status) -> response.empty(status)
   }
 }

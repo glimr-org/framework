@@ -182,7 +182,7 @@ pub fn write_compiled_file(
     <> imports_str
     <> http_import
     <> middleware_import
-    <> "\nimport wisp"
+    <> "\nimport glimr/response/response"
     <> "\n\npub fn routes("
     <> fn_args
     <> ") {\n"
@@ -1041,7 +1041,8 @@ fn generate_code(
   let #(cases, line_to_route) =
     generate_path_cases_with_lines(sorted_routes, start_line, [], dict.new())
 
-  let code = "  case path {\n" <> cases <> "\n\n    _ -> wisp.not_found()\n  }"
+  let code =
+    "  case path {\n" <> cases <> "\n\n    _ -> response.not_found()\n  }"
   #(code, line_to_route)
 }
 
@@ -1216,7 +1217,7 @@ fn generate_method_cases(routes: List(ParsedRoute)) -> String {
         })
 
       case method_routes {
-        [] -> "      wisp.not_found()"
+        [] -> "      response.not_found()"
         [#(method, path, handler, middleware, validator, fn_params)] -> {
           let method_upper = string.capitalise(method)
           let route_params = extract_params_from_path(path)
@@ -1232,7 +1233,7 @@ fn generate_method_cases(routes: List(ParsedRoute)) -> String {
           <> method_upper
           <> " -> "
           <> handler_call
-          <> "\n        _ -> wisp.method_not_allowed(["
+          <> "\n        _ -> response.method_not_allowed(["
           <> method_upper
           <> "])\n      }"
         }
@@ -1260,7 +1261,7 @@ fn generate_method_cases(routes: List(ParsedRoute)) -> String {
 
           "      case method {\n"
           <> cases
-          <> "\n        _ -> wisp.method_not_allowed(["
+          <> "\n        _ -> response.method_not_allowed(["
           <> methods_list
           <> "])\n      }"
         }

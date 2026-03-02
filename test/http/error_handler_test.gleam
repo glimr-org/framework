@@ -7,7 +7,7 @@ import wisp
 // ------------------------------------------------------------- HTML Response Tests
 
 pub fn html_200_unchanged_test() {
-  let resp = wisp.response(200)
+  let resp = response.empty(200)
 
   let result = error_handler.default_responses(response.HTML, fn() { resp })
 
@@ -16,7 +16,7 @@ pub fn html_200_unchanged_test() {
 }
 
 pub fn html_404_test() {
-  let resp = wisp.response(404)
+  let resp = response.empty(404)
 
   let result = error_handler.default_responses(response.HTML, fn() { resp })
 
@@ -34,7 +34,7 @@ pub fn html_404_test() {
 }
 
 pub fn html_405_test() {
-  let resp = wisp.response(405)
+  let resp = response.empty(405)
 
   let result = error_handler.default_responses(response.HTML, fn() { resp })
 
@@ -52,7 +52,7 @@ pub fn html_405_test() {
 }
 
 pub fn html_400_test() {
-  let resp = wisp.response(400)
+  let resp = response.empty(400)
 
   let result = error_handler.default_responses(response.HTML, fn() { resp })
 
@@ -70,7 +70,7 @@ pub fn html_400_test() {
 }
 
 pub fn html_413_test() {
-  let resp = wisp.response(413)
+  let resp = response.empty(413)
 
   let result = error_handler.default_responses(response.HTML, fn() { resp })
 
@@ -88,7 +88,7 @@ pub fn html_413_test() {
 }
 
 pub fn html_500_test() {
-  let resp = wisp.response(500)
+  let resp = response.empty(500)
 
   let result = error_handler.default_responses(response.HTML, fn() { resp })
 
@@ -108,7 +108,7 @@ pub fn html_500_test() {
 // ------------------------------------------------------------- JSON Response Tests
 
 pub fn json_200_unchanged_test() {
-  let resp = wisp.response(200)
+  let resp = response.empty(200)
 
   let result = error_handler.default_responses(response.JSON, fn() { resp })
 
@@ -117,7 +117,7 @@ pub fn json_200_unchanged_test() {
 }
 
 pub fn json_404_test() {
-  let resp = wisp.response(404)
+  let resp = response.empty(404)
 
   let result = error_handler.default_responses(response.JSON, fn() { resp })
 
@@ -144,7 +144,7 @@ pub fn json_404_test() {
 }
 
 pub fn json_405_test() {
-  let resp = wisp.response(405)
+  let resp = response.empty(405)
 
   let result = error_handler.default_responses(response.JSON, fn() { resp })
 
@@ -162,7 +162,7 @@ pub fn json_405_test() {
 }
 
 pub fn json_400_test() {
-  let resp = wisp.response(400)
+  let resp = response.empty(400)
 
   let result = error_handler.default_responses(response.JSON, fn() { resp })
 
@@ -180,7 +180,7 @@ pub fn json_400_test() {
 }
 
 pub fn json_422_test() {
-  let resp = wisp.response(422)
+  let resp = response.empty(422)
 
   let result = error_handler.default_responses(response.JSON, fn() { resp })
 
@@ -198,7 +198,7 @@ pub fn json_422_test() {
 }
 
 pub fn json_413_test() {
-  let resp = wisp.response(413)
+  let resp = response.empty(413)
 
   let result = error_handler.default_responses(response.JSON, fn() { resp })
 
@@ -216,7 +216,7 @@ pub fn json_413_test() {
 }
 
 pub fn json_500_test() {
-  let resp = wisp.response(500)
+  let resp = response.empty(500)
 
   let result = error_handler.default_responses(response.JSON, fn() { resp })
 

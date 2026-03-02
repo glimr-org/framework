@@ -8,6 +8,7 @@ import glimr/http/middleware/log_request
 import glimr/http/middleware/method_override
 import glimr/http/middleware/rescue_crashes
 import glimr/http/middleware/serve_static
+import glimr/response/response
 import simplifile
 import wisp
 
@@ -53,7 +54,7 @@ pub fn serve_static_conforms_to_middleware_type_test() {
 
   let response =
     middleware.apply([serve_static.run], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -68,7 +69,7 @@ pub fn method_override_conforms_to_middleware_type_test() {
 
   let response =
     middleware.apply([method_override.run], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -81,7 +82,7 @@ pub fn log_request_conforms_to_middleware_type_test() {
 
   let response =
     middleware.apply([log_request.run], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -94,7 +95,7 @@ pub fn rescue_crashes_conforms_to_middleware_type_test() {
 
   let response =
     middleware.apply([rescue_crashes.run], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -107,7 +108,7 @@ pub fn handle_head_conforms_to_middleware_type_test() {
 
   let response =
     middleware.apply([handle_head.run], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -123,8 +124,8 @@ pub fn method_override_passes_context_through_test() {
   let response =
     middleware.apply([method_override.run], req, ctx, fn(_req, ctx) {
       case ctx {
-        TestContext("preserved") -> wisp.response(200)
-        _ -> wisp.response(500)
+        TestContext("preserved") -> response.empty(200)
+        _ -> response.empty(500)
       }
     })
 
@@ -142,8 +143,8 @@ pub fn log_request_passes_request_and_context_through_test() {
     middleware.apply([log_request.run], req, ctx, fn(req, ctx) {
       let path = wisp.path_segments(req)
       case path, ctx {
-        ["test-path"], TestContext("preserved") -> wisp.response(200)
-        _, _ -> wisp.response(500)
+        ["test-path"], TestContext("preserved") -> response.empty(200)
+        _, _ -> response.empty(500)
       }
     })
 
@@ -161,8 +162,8 @@ pub fn rescue_crashes_passes_request_and_context_through_test() {
     middleware.apply([rescue_crashes.run], req, ctx, fn(req, ctx) {
       let path = wisp.path_segments(req)
       case path, ctx {
-        ["safe"], TestContext("preserved") -> wisp.response(200)
-        _, _ -> wisp.response(500)
+        ["safe"], TestContext("preserved") -> response.empty(200)
+        _, _ -> response.empty(500)
       }
     })
 
@@ -181,7 +182,7 @@ pub fn serve_static_passes_through_for_non_static_requests_test() {
 
   let response =
     middleware.apply([serve_static.run], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -200,8 +201,8 @@ pub fn handle_head_converts_head_to_get_test() {
     middleware.apply([handle_head.run], req, ctx, fn(req, _ctx) {
       // handle_head converts HEAD to GET for the handler
       case req.method {
-        http.Get -> wisp.response(200)
-        _ -> wisp.response(500)
+        http.Get -> response.empty(200)
+        _ -> response.empty(500)
       }
     })
 
@@ -225,7 +226,7 @@ pub fn multiple_wrappers_compose_in_pipeline_test() {
       ],
       req,
       ctx,
-      fn(_req, _ctx) { wisp.response(200) },
+      fn(_req, _ctx) { response.empty(200) },
     )
 
   response.status
@@ -250,7 +251,7 @@ pub fn full_web_pipeline_test() {
       ],
       req,
       ctx,
-      fn(_req, _ctx) { wisp.response(200) },
+      fn(_req, _ctx) { response.empty(200) },
     )
 
   response.status
@@ -275,7 +276,7 @@ pub fn full_api_pipeline_test() {
       ],
       req,
       ctx,
-      fn(_req, _ctx) { wisp.response(200) },
+      fn(_req, _ctx) { response.empty(200) },
     )
 
   response.status

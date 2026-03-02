@@ -2,6 +2,7 @@ import gleam/http
 import gleam/http/request
 import gleeunit/should
 import glimr/http/kernel
+import glimr/response/response
 import glimr/routing/router
 import routing/helpers
 import wisp
@@ -15,13 +16,13 @@ pub fn prefix_match_exact_test() {
       middleware_group: kernel.Api,
       routes: fn(_path, _method, _req, _ctx) {
         // This shouldn't be called
-        wisp.response(500)
+        response.empty(500)
       },
     ),
     router.RouteGroup(
       prefix: "",
       middleware_group: kernel.Web,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(200) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(200) },
     ),
   ]
 
@@ -44,12 +45,12 @@ pub fn prefix_match_api_route_test() {
     router.RouteGroup(
       prefix: "/api",
       middleware_group: kernel.Api,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(201) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(201) },
     ),
     router.RouteGroup(
       prefix: "",
       middleware_group: kernel.Web,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(200) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(200) },
     ),
   ]
 
@@ -72,12 +73,12 @@ pub fn prefix_match_nested_prefix_test() {
     router.RouteGroup(
       prefix: "/api/v1",
       middleware_group: kernel.Api,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(202) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(202) },
     ),
     router.RouteGroup(
       prefix: "",
       middleware_group: kernel.Web,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(200) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(200) },
     ),
   ]
 
@@ -101,12 +102,12 @@ pub fn prefix_match_first_wins_test() {
     router.RouteGroup(
       prefix: "/api",
       middleware_group: kernel.Api,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(201) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(201) },
     ),
     router.RouteGroup(
       prefix: "",
       middleware_group: kernel.Web,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(200) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(200) },
     ),
   ]
 
@@ -131,7 +132,7 @@ pub fn prefix_match_catch_all_test() {
     router.RouteGroup(
       prefix: "",
       middleware_group: kernel.Web,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(200) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(200) },
     ),
   ]
 
@@ -159,15 +160,15 @@ pub fn full_path_passed_to_handler_test() {
       routes: fn(path, _method, _req, _ctx) {
         // Path should include full path with prefix
         case path {
-          ["api", "users", "123"] -> wisp.response(201)
-          _ -> wisp.response(500)
+          ["api", "users", "123"] -> response.empty(201)
+          _ -> response.empty(500)
         }
       },
     ),
     router.RouteGroup(
       prefix: "",
       middleware_group: kernel.Web,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(200) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(200) },
     ),
   ]
 
@@ -193,8 +194,8 @@ pub fn path_stripping_empty_prefix_no_change_test() {
       routes: fn(path, _method, _req, _ctx) {
         // Path should include all segments
         case path {
-          ["users", "123"] -> wisp.response(200)
-          _ -> wisp.response(500)
+          ["users", "123"] -> response.empty(200)
+          _ -> response.empty(500)
         }
       },
     ),
@@ -222,8 +223,8 @@ pub fn full_path_nested_prefix_test() {
       routes: fn(path, _method, _req, _ctx) {
         // Path should include full path with nested prefix
         case path {
-          ["api", "v1", "users"] -> wisp.response(201)
-          _ -> wisp.response(500)
+          ["api", "v1", "users"] -> response.empty(201)
+          _ -> response.empty(500)
         }
       },
     ),
@@ -251,8 +252,8 @@ pub fn path_stripping_root_path_test() {
       routes: fn(path, _method, _req, _ctx) {
         // Root path becomes empty list
         case path {
-          [] -> wisp.response(200)
-          _ -> wisp.response(500)
+          [] -> response.empty(200)
+          _ -> response.empty(500)
         }
       },
     ),
@@ -281,8 +282,8 @@ pub fn handler_pattern_matching_exact_test() {
       middleware_group: kernel.Web,
       routes: fn(path, method, _req, _ctx) {
         case path, method {
-          ["users"], http.Get -> wisp.response(200)
-          _, _ -> wisp.response(404)
+          ["users"], http.Get -> response.empty(200)
+          _, _ -> response.empty(404)
         }
       },
     ),
@@ -312,11 +313,11 @@ pub fn handler_pattern_matching_with_id_test() {
           ["users", id], http.Get -> {
             // Type-safe id extraction!
             case id {
-              "123" -> wisp.response(200)
-              _ -> wisp.response(404)
+              "123" -> response.empty(200)
+              _ -> response.empty(404)
             }
           }
-          _, _ -> wisp.response(404)
+          _, _ -> response.empty(404)
         }
       },
     ),
@@ -343,9 +344,9 @@ pub fn handler_pattern_matching_method_test() {
       middleware_group: kernel.Web,
       routes: fn(path, method, _req, _ctx) {
         case path, method {
-          ["users"], http.Get -> wisp.response(200)
-          ["users"], http.Post -> wisp.response(201)
-          _, _ -> wisp.response(404)
+          ["users"], http.Get -> response.empty(200)
+          ["users"], http.Post -> response.empty(201)
+          _, _ -> response.empty(404)
         }
       },
     ),
@@ -393,8 +394,8 @@ pub fn handler_pattern_matching_catch_all_test() {
       middleware_group: kernel.Web,
       routes: fn(path, method, _req, _ctx) {
         case path, method {
-          ["users"], http.Get -> wisp.response(200)
-          _, _ -> wisp.response(404)
+          ["users"], http.Get -> response.empty(200)
+          _, _ -> response.empty(404)
         }
       },
     ),
@@ -421,12 +422,12 @@ pub fn middleware_group_api_test() {
     router.RouteGroup(
       prefix: "/api",
       middleware_group: kernel.Api,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(200) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(200) },
     ),
     router.RouteGroup(
       prefix: "",
       middleware_group: kernel.Web,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(200) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(200) },
     ),
   ]
 
@@ -465,12 +466,12 @@ pub fn middleware_group_web_test() {
     router.RouteGroup(
       prefix: "/api",
       middleware_group: kernel.Api,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(200) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(200) },
     ),
     router.RouteGroup(
       prefix: "",
       middleware_group: kernel.Web,
-      routes: fn(_path, _method, _req, _ctx) { wisp.response(200) },
+      routes: fn(_path, _method, _req, _ctx) { response.empty(200) },
     ),
   ]
 
@@ -531,8 +532,8 @@ pub fn handler_404_passes_through_test() {
       middleware_group: kernel.Web,
       routes: fn(path, method, _req, _ctx) {
         case path, method {
-          ["users"], http.Get -> wisp.response(200)
-          _, _ -> wisp.response(404)
+          ["users"], http.Get -> response.empty(200)
+          _, _ -> response.empty(404)
         }
       },
     ),
@@ -562,8 +563,8 @@ pub fn context_passed_to_handler_test() {
       routes: fn(_path, _method, _req, ctx) {
         // Handler can access context
         case ctx {
-          helpers.TestContext("secret") -> wisp.response(200)
-          _ -> wisp.response(500)
+          helpers.TestContext("secret") -> response.empty(200)
+          _ -> response.empty(500)
         }
       },
     ),
@@ -591,8 +592,8 @@ pub fn request_passed_to_handler_test() {
       routes: fn(_path, _method, req, _ctx) {
         // Handler can access request
         case req.method {
-          http.Post -> wisp.response(201)
-          _ -> wisp.response(200)
+          http.Post -> response.empty(201)
+          _ -> response.empty(200)
         }
       },
     ),

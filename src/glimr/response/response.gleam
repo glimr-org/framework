@@ -9,6 +9,7 @@
 //// stay focused on the data, not the encoding.
 ////
 
+import gleam/http
 import gleam/int
 import gleam/json.{type Json}
 import gleam/string
@@ -173,6 +174,51 @@ pub fn status_reason(status: Int) -> String {
     504 -> "Gateway Timeout"
     _ -> "Error"
   }
+}
+
+/// Some responses don't need a body — a 204 after a successful
+/// DELETE, a 401 rejection, a 301 redirect where only headers
+/// matter. Forcing controllers to build an html or json
+/// response in those cases just adds noise.
+///
+/// *Example:*
+///
+/// ```gleam
+/// response.empty(401)
+/// ```
+///
+pub fn empty(status: Int) -> Response {
+  wisp.response(status)
+}
+
+/// The route compiler's generated dispatch code needs a 404 to
+/// return when no route matches, and controllers need one when
+/// a resource lookup comes up empty. Having it here keeps wisp
+/// out of both — and if we ever want 404s to go through the
+/// custom error page system, there's one place to change.
+///
+pub fn not_found() -> Response {
+  wisp.not_found()
+}
+
+/// When something genuinely breaks — a database write fails, an
+/// external service is down — controllers need a clean way to
+/// bail out. Like the other status helpers, this keeps wisp
+/// imports out of controller code so the abstraction boundary
+/// holds.
+///
+pub fn internal_server_error() -> Response {
+  wisp.internal_server_error()
+}
+
+/// When a URL matches but the HTTP method doesn't — say a POST
+/// to a GET-only route — the spec requires a 405 with an Allow
+/// header listing what methods actually work. The route
+/// compiler generates these automatically so developers get
+/// correct HTTP semantics without thinking about it.
+///
+pub fn method_not_allowed(allowed: List(http.Method)) -> Response {
+  wisp.method_not_allowed(allowed)
 }
 
 // ------------------------------------------------------------- Private Functions

@@ -407,7 +407,7 @@ pub fn show(_req: Request, _ctx: Context) {
     compile_controller("app/http/controllers/home_controller", source)
 
   result.routes_code
-  |> string.contains("_ -> wisp.not_found()")
+  |> string.contains("_ -> response.not_found()")
   |> should.be_true
 }
 
@@ -433,7 +433,7 @@ pub fn store(_req: Request, _ctx: Context) {
     compile_controller("app/http/controllers/user_controller", source)
 
   result.routes_code
-  |> string.contains("wisp.method_not_allowed([Get, Post])")
+  |> string.contains("response.method_not_allowed([Get, Post])")
   |> should.be_true
 }
 

@@ -3,6 +3,7 @@ import gleam/http/request
 import gleam/option.{type Option, None, Some}
 import gleeunit/should
 import glimr/http/middleware
+import glimr/response/response
 import wisp
 
 pub type TestContext {
@@ -26,7 +27,7 @@ pub fn apply_no_middleware_test() {
   let ctx = TestContext("test", None)
 
   let response =
-    middleware.apply([], req, ctx, fn(_req, _ctx) { wisp.response(200) })
+    middleware.apply([], req, ctx, fn(_req, _ctx) { response.empty(200) })
 
   response.status
   |> should.equal(200)
@@ -41,8 +42,8 @@ pub fn apply_no_middleware_calls_handler_test() {
     middleware.apply([], req, ctx, fn(req, _ctz) {
       // Verify request is passed through
       case req.method {
-        http.Get -> wisp.response(200)
-        _ -> wisp.response(500)
+        http.Get -> response.empty(200)
+        _ -> response.empty(500)
       }
     })
 
@@ -63,7 +64,7 @@ pub fn apply_single_middleware_test() {
 
   let response =
     middleware.apply([middleware1], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -87,8 +88,8 @@ pub fn apply_single_middleware_modifies_request_test() {
     middleware.apply([middleware1], req, ctx, fn(req, _ctx) {
       let path = wisp.path_segments(req)
       case path {
-        ["modified"] -> wisp.response(200)
-        _ -> wisp.response(500)
+        ["modified"] -> response.empty(200)
+        _ -> response.empty(500)
       }
     })
 
@@ -115,7 +116,7 @@ pub fn apply_single_middleware_accesses_context_test() {
 
   let response =
     middleware.apply([middleware1], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.headers
@@ -140,7 +141,7 @@ pub fn apply_multiple_middleware_test() {
 
   let response =
     middleware.apply([middleware1, middleware2], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -188,7 +189,7 @@ pub fn apply_middleware_execution_order_test() {
       [middleware1, middleware2, middleware3],
       req,
       ctx,
-      fn(_req, _ctx) { wisp.response(200) },
+      fn(_req, _ctx) { response.empty(200) },
     )
 
   // First middleware (outermost) has final say
@@ -223,8 +224,8 @@ pub fn apply_middleware_chain_modifies_request_test() {
       // Handler should see final path
       let path = wisp.path_segments(req)
       case path {
-        ["step2"] -> wisp.response(200)
-        _ -> wisp.response(500)
+        ["step2"] -> response.empty(200)
+        _ -> response.empty(500)
       }
     })
 
@@ -242,14 +243,14 @@ pub fn apply_middleware_can_short_circuit_test() {
     case ctx {
       TestContext("authorized", _) -> next(req, ctx)
       // Short-circuit - don't call next
-      _ -> wisp.response(401)
+      _ -> response.empty(401)
     }
   }
 
   let response =
     middleware.apply([auth_middleware], req, ctx, fn(_req, _ctx) {
       // This handler should never be called
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -262,7 +263,7 @@ pub fn apply_middleware_early_return_stops_chain_test() {
 
   let middleware1 = fn(_req, _ctx, _next) {
     // First middleware returns early without calling next
-    wisp.response(403)
+    response.empty(403)
   }
 
   let middleware2 = fn(req, ctx, next) {
@@ -274,7 +275,7 @@ pub fn apply_middleware_early_return_stops_chain_test() {
   let response =
     middleware.apply([middleware1, middleware2], req, ctx, fn(_req, _ctx) {
       // Handler should never be called either
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -318,12 +319,12 @@ pub fn apply_middleware_modifies_status_code_test() {
   let middleware1 = fn(req, ctx, next) {
     let _resp = next(req, ctx)
     // Change status code (create new response)
-    wisp.response(201)
+    response.empty(201)
   }
 
   let response =
     middleware.apply([middleware1], req, ctx, fn(_req, _ctx) {
-      wisp.response(200)
+      response.empty(200)
     })
 
   response.status
@@ -343,7 +344,7 @@ pub fn apply_middleware_realistic_auth_flow_test() {
         let resp = next(req, ctx)
         wisp.set_header(resp, "x-user", "admin")
       }
-      _ -> wisp.response(401)
+      _ -> response.empty(401)
     }
   }
 
@@ -358,7 +359,7 @@ pub fn apply_middleware_realistic_auth_flow_test() {
       [logging_middleware, auth_middleware],
       req,
       ctx,
-      fn(_req, _ctx) { wisp.response(200) },
+      fn(_req, _ctx) { response.empty(200) },
     )
 
   response.status
@@ -394,10 +395,10 @@ pub fn apply_middleware_modifies_context_test() {
       // Handler should see the modified context
       case ctx.user {
         Some(username) -> {
-          let resp = wisp.response(200)
+          let resp = response.empty(200)
           wisp.set_header(resp, "x-username", username)
         }
-        None -> wisp.response(401)
+        None -> response.empty(401)
       }
     })
 
@@ -429,7 +430,7 @@ pub fn apply_middleware_chain_modifies_context_test() {
         // User is valid, continue
         next(req, ctx)
       }
-      _ -> wisp.response(403)
+      _ -> response.empty(403)
     }
   }
 
@@ -442,10 +443,10 @@ pub fn apply_middleware_chain_modifies_context_test() {
         // Handler should see the modified context from auth middleware
         case ctx.user {
           Some(username) -> {
-            let resp = wisp.response(200)
+            let resp = response.empty(200)
             wisp.set_header(resp, "x-validated-user", username)
           }
-          None -> wisp.response(500)
+          None -> response.empty(500)
         }
       },
     )
