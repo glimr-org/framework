@@ -1,7 +1,7 @@
 import gleam/http
 import gleam/http/request
 import gleeunit/should
-import glimr/config
+import glimr/config/config
 import glimr/http/middleware
 import glimr/http/middleware/handle_head
 import glimr/http/middleware/log_request

@@ -3,7 +3,7 @@ import gleam/list
 import gleam/result
 import gleam/string
 import gleeunit/should
-import glimr/config
+import glimr/config/config
 import glimr/session/cookie_store
 import glimr/session/session
 import glimr/session/store

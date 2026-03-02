@@ -12,7 +12,7 @@ import gleam/erlang/process
 import gleam/io
 import gleam/list
 import gleam/string
-import glimr/config
+import glimr/config/config
 import glimr/console/console
 import glimr/internal/actions/compile_commands
 import glimr/internal/actions/compile_database

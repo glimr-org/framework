@@ -19,7 +19,7 @@ import glimr/cache/cache.{type CachePool}
 import glimr/cache/database as cache_database
 import glimr/cache/driver.{type CacheStore, DatabaseStore, FileStore, RedisStore} as cache_driver
 import glimr/cache/file_cache
-import glimr/config
+import glimr/config/config
 import glimr/console/console
 import glimr/db/db.{type Config, type DbPool}
 import glimr/db/driver

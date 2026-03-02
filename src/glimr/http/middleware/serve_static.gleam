@@ -8,7 +8,7 @@
 //// duplicating the value across middleware and config.
 ////
 
-import glimr/config
+import glimr/config/config
 import glimr/http/kernel.{type Next}
 import wisp.{type Request, type Response}
 

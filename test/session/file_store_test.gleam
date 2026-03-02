@@ -2,7 +2,7 @@ import gleam/dict
 import gleam/int
 import gleeunit/should
 import glimr/cache/file_cache
-import glimr/config
+import glimr/config/config
 import glimr/session/file_store
 import glimr/session/store
 import glimr/utils/unix_timestamp

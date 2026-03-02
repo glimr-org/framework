@@ -7,7 +7,7 @@
 
 import gleam/list
 import gleam/result
-import glimr/config
+import glimr/config/config
 import glimr/internal/actions/compile_commands
 import glimr/internal/actions/compile_database
 import glimr/internal/actions/compile_loom

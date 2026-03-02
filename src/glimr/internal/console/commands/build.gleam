@@ -7,7 +7,7 @@
 
 import gleam/io
 import gleam/result
-import glimr/config
+import glimr/config/config
 import glimr/console/command.{type Args, type Command}
 import glimr/console/console
 import glimr/internal/actions/auto_compile

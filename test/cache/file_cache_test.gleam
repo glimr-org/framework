@@ -6,7 +6,7 @@ import glimr/cache/cache.{type CachePool, NotFound, SerializationError}
 import glimr/cache/file/cache as fcache
 import glimr/cache/file/pool
 import glimr/cache/file_cache
-import glimr/config
+import glimr/config/config
 import simplifile
 
 const test_cache_path = "priv/test/cache"

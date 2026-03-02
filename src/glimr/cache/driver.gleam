@@ -9,7 +9,7 @@
 
 import gleam/dict
 import gleam/list
-import glimr/config
+import glimr/config/config
 import tom
 
 // ------------------------------------------------------------- Public Types

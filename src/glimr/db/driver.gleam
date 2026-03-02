@@ -12,7 +12,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
-import glimr/config
+import glimr/config/config
 import glimr/db/db.{type Config}
 import tom
 

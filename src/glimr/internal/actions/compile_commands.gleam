@@ -13,7 +13,7 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/regexp
 import gleam/string
-import glimr/config
+import glimr/config/config
 import glimr/console/console
 import simplifile
 import tom

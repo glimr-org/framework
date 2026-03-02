@@ -1,4 +1,4 @@
-import glimr/config
+import glimr/config/config
 import glimr/console/command.{type Args, type Command, Flag}
 import glimr/db/db.{type DbPool}
 import glimr/internal/actions/gen_session_table
