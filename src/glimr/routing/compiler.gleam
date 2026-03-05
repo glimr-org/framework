@@ -25,15 +25,8 @@ import simplifile
 
 // ------------------------------------------------------------- Private Constants
 
-/// Developers write `@middleware "auth"` in their annotations,
-/// not the full module path. This prefix turns that short name
-/// into the real import path the generated code needs.
-///
-const middleware_base_path = "app/http/middleware/"
-
-/// Same convention as middleware — `@validator "login"` in an
-/// annotation becomes `app/http/validators/login` in the
-/// generated import.
+/// `@validator "login"` in an annotation becomes
+/// `app/http/validators/login` in the generated import.
 ///
 const validator_base_path = "app/http/validators/"
 
@@ -74,9 +67,9 @@ type ModuleError {
 
 /// The main entry point — takes every controller's parsed
 /// annotations and produces the Gleam code that dispatches
-/// requests. Runs all validation first (paths, middleware,
-/// validators, handler params) so developers get clear errors
-/// before any code is generated.
+/// requests. Runs all validation first (paths, validators,
+/// handler params) so developers get clear errors before any
+/// code is generated.
 ///
 pub fn compile_routes(
   controller_results: List(#(String, ParseResult)),
@@ -96,15 +89,24 @@ pub fn compile_routes(
 
   use _ <- result.try(validate_path_format(routes))
   use _ <- result.try(validate_path_params(routes))
-  use _ <- result.try(validate_group_middleware(controller_results))
-  use _ <- result.try(validate_route_middleware(controller_results))
   use _ <- result.try(validate_validators(controller_results))
   use _ <- result.try(validate_handler_params(routes))
   use _ <- result.try(validate_type_imports(controller_results))
 
+  // Build list of controller aliases that export a middleware() function
+  let middleware_controllers =
+    controller_results
+    |> list.filter_map(fn(entry) {
+      let #(module_path, result) = entry
+      case result.has_middleware_fn {
+        True -> Ok(controller_alias(module_path))
+        False -> Error(Nil)
+      }
+    })
+
   let imports = generate_imports(controller_routes, routes)
   let used_methods = collect_used_methods(routes)
-  let uses_middleware = check_uses_middleware(routes)
+  let uses_middleware = check_uses_middleware(controller_results)
   let uses_validator = check_uses_validator(routes)
   let uses_ctx = check_uses_context(routes)
 
@@ -114,6 +116,7 @@ pub fn compile_routes(
       list.length(imports),
       used_methods != [],
       uses_middleware,
+      middleware_controllers,
     )
 
   Ok(CompileResult(
@@ -255,18 +258,9 @@ pub fn write_compiled_file(
 
 // ------------------------------------------------------------- Private Functions
 
-/// Annotations use short names like `@middleware "auth"` so
-/// developers don't have to write full import paths in every
-/// controller. This expands that short name into the real
-/// module path the generated code needs for its import.
-///
-fn expand_middleware_path(name: String) -> String {
-  middleware_base_path <> name
-}
-
-/// Same idea as expand_middleware_path — `@validator "login"`
-/// in an annotation becomes the full import path so the
-/// generated code can call the validator's functions.
+/// `@validator "login"` in an annotation becomes the full
+/// import path so the generated code can call the validator's
+/// functions.
 ///
 fn expand_validator_path(name: String) -> String {
   validator_base_path <> name
@@ -316,12 +310,11 @@ fn prefix_handler(route: ParsedRoute, module_path: String) -> ParsedRoute {
   let alias = controller_alias(module_path)
 
   case route {
-    ParsedRoute(method:, path:, handler:, middleware:, validator:, params:) ->
+    ParsedRoute(method:, path:, handler:, validator:, params:) ->
       ParsedRoute(
         method:,
         path:,
         handler: alias <> "." <> handler,
-        middleware:,
         validator:,
         params:,
       )
@@ -330,10 +323,10 @@ fn prefix_handler(route: ParsedRoute, module_path: String) -> ParsedRoute {
 }
 
 /// The generated file needs to import every module it
-/// references — controllers, middleware, and validators. Nested
-/// controllers like `api/user` get an `as` alias (since Gleam
-/// would otherwise use just the last segment) and duplicates
-/// are filtered out so each module appears exactly once.
+/// references — controllers and validators. Nested controllers
+/// like `api/user` get an `as` alias (since Gleam would
+/// otherwise use just the last segment) and duplicates are
+/// filtered out so each module appears exactly once.
 ///
 fn generate_imports(
   controller_routes: List(#(String, List(ParsedRoute))),
@@ -353,17 +346,6 @@ fn generate_imports(
       }
     })
 
-  let middleware_imports =
-    routes
-    |> list.flat_map(fn(r) {
-      case r {
-        ParsedRoute(middleware:, ..) -> middleware
-        ParsedRedirect(..) -> []
-      }
-    })
-    |> list.unique
-    |> list.map(fn(m) { "import " <> expand_middleware_path(m) })
-
   let validator_imports =
     routes
     |> list.filter_map(fn(r) {
@@ -375,22 +357,19 @@ fn generate_imports(
     })
     |> list.unique
 
-  list.flatten([controller_imports, middleware_imports, validator_imports])
+  list.flatten([controller_imports, validator_imports])
   |> list.unique
 }
 
-/// Including `import glimr/http/middleware` when no route uses
-/// middleware triggers an unused-import warning from the Gleam
-/// compiler. This check lets us conditionally add the import
-/// only when it's actually needed.
+/// Including `import glimr/http/middleware` when no controller
+/// has a `middleware()` function triggers an unused-import
+/// warning from the Gleam compiler. This check lets us
+/// conditionally add the import only when it's actually needed.
 ///
-fn check_uses_middleware(routes: List(ParsedRoute)) -> Bool {
-  list.any(routes, fn(r) {
-    case r {
-      ParsedRoute(middleware:, ..) -> middleware != []
-      ParsedRedirect(..) -> False
-    }
-  })
+fn check_uses_middleware(
+  controller_results: List(#(String, ParseResult)),
+) -> Bool {
+  list.any(controller_results, fn(entry) { { entry.1 }.has_middleware_fn })
 }
 
 /// Gleam warns on unused variables, so the generated function
@@ -531,7 +510,7 @@ fn find_module_file(base_path: String, name: String) -> Result(String, Nil) {
   }
 }
 
-/// A typo in `@middleware "auht"` would generate code that
+/// A typo in a `@validator` annotation would generate code that
 /// imports a nonexistent module — the Gleam compiler error
 /// would point at the generated file, not the annotation. By
 /// checking the filesystem first, we can say exactly which
@@ -556,121 +535,8 @@ fn check_module(
   }
 }
 
-/// The generated code calls `auth.run(ctx, next)` — if the
-/// middleware module exists but forgot to export `run`, the
-/// Gleam error would be "unknown function" pointing at the
-/// generated file. Checking here lets us say "auth doesn't have
-/// a public run function" instead.
-///
-fn check_middleware(name: String) -> Result(Nil, ModuleError) {
-  check_module(name, middleware_base_path, "run")
-}
-
-/// "Middleware auth doesn't exist" vs "middleware auth doesn't
-/// have a run function" — the fix is completely different
-/// (create a file vs add a function), so the error message
-/// needs to distinguish them.
-///
-fn format_middleware_error(err: ModuleError) -> String {
-  case err {
-    ModuleNotFound(name) -> "Middleware \"" <> name <> "\" doesn't exist"
-    ModuleMissingFunction(name, _) ->
-      "Middleware \"" <> name <> "\" doesn't have a public \"run\" function"
-  }
-}
-
-/// Group-level middleware (set at the top of a controller with
-/// `@group_middleware`) applies to every route in the file. If
-/// it's missing or broken, every route would fail, so we
-/// validate it separately and report the error at the
-/// controller level rather than per-route.
-///
-fn validate_group_middleware(
-  controller_results: List(#(String, ParseResult)),
-) -> Result(Nil, String) {
-  let invalid =
-    controller_results
-    |> list.filter_map(fn(entry) {
-      let #(module_path, result) = entry
-      let alias = controller_alias(module_path)
-      let errors =
-        list.filter_map(result.group_middleware, fn(mw) {
-          case check_middleware(mw) {
-            Ok(_) -> Error(Nil)
-            Error(err) -> Ok(err)
-          }
-        })
-      case errors {
-        [] -> Error(Nil)
-        [err, ..] -> Ok(#(alias, err))
-      }
-    })
-
-  case invalid {
-    [] -> Ok(Nil)
-    [#(controller, err), ..] ->
-      Error(
-        "Invalid group middleware for "
-        <> controller
-        <> "\n"
-        <> format_middleware_error(err),
-      )
-  }
-}
-
-/// Route-level `@middleware` only affects one handler, so the
-/// error points at the specific route rather than the whole
-/// controller. Group middleware is excluded from this check
-/// since validate_group_middleware already handles it.
-///
-fn validate_route_middleware(
-  controller_results: List(#(String, ParseResult)),
-) -> Result(Nil, String) {
-  let invalid =
-    controller_results
-    |> list.flat_map(fn(entry) {
-      let #(module_path, result) = entry
-      let alias = controller_alias(module_path)
-      let group_mw = result.group_middleware
-      list.filter_map(result.routes, fn(r) {
-        case r {
-          ParsedRoute(path:, handler:, middleware:, ..) -> {
-            // Only check route-specific middleware (exclude group middleware)
-            let route_specific =
-              list.filter(middleware, fn(mw) { !list.contains(group_mw, mw) })
-            let errors =
-              list.filter_map(route_specific, fn(mw) {
-                case check_middleware(mw) {
-                  Ok(_) -> Error(Nil)
-                  Error(err) -> Ok(err)
-                }
-              })
-            case errors {
-              [] -> Error(Nil)
-              [err, ..] -> Ok(#(path, alias <> "." <> handler, err))
-            }
-          }
-          ParsedRedirect(..) -> Error(Nil)
-        }
-      })
-    })
-
-  case invalid {
-    [] -> Ok(Nil)
-    [#(path, handler, err), ..] ->
-      Error(
-        "Invalid route '"
-        <> path
-        <> "' for "
-        <> handler
-        <> "\n"
-        <> format_middleware_error(err),
-      )
-  }
-}
-
-/// Same idea as check_middleware but for validators — the
-/// generated code calls `user.validate(ctx)`, so the module
+/// Same idea as check_module but specifically for validators —
+/// the generated code calls `user.validate(ctx)`, so the module
 /// needs to exist and export that function. Checking early
 /// avoids a confusing generated-code error.
 ///
@@ -1026,6 +892,7 @@ fn generate_code(
   import_count: Int,
   uses_methods: Bool,
   uses_middleware: Bool,
+  middleware_controllers: List(String),
 ) -> #(String, Dict(Int, String)) {
   let grouped = group_routes_by_path(routes)
 
@@ -1049,7 +916,13 @@ fn generate_code(
   let start_line = import_count + extra_lines
 
   let #(cases, line_to_route) =
-    generate_path_cases_with_lines(sorted_routes, start_line, [], dict.new())
+    generate_path_cases_with_lines(
+      sorted_routes,
+      start_line,
+      [],
+      dict.new(),
+      middleware_controllers,
+    )
 
   let code =
     "  case path {\n" <> cases <> "\n\n    _ -> response.not_found()\n  }"
@@ -1067,12 +940,13 @@ fn generate_path_cases_with_lines(
   current_line: Int,
   acc_cases: List(String),
   acc_mapping: Dict(Int, String),
+  middleware_controllers: List(String),
 ) -> #(String, Dict(Int, String)) {
   case routes {
     [] -> #(string.join(list.reverse(acc_cases), "\n\n"), acc_mapping)
     [entry, ..rest] -> {
       let #(path, _) = entry
-      let case_code = generate_path_case(entry)
+      let case_code = generate_path_case(entry, middleware_controllers)
       let case_lines = string.split(case_code, "\n") |> list.length
 
       // Map all lines of this case to the route path
@@ -1090,6 +964,7 @@ fn generate_path_cases_with_lines(
         // +1 for blank line between cases
         [case_code, ..acc_cases],
         new_mapping,
+        middleware_controllers,
       )
     }
   }
@@ -1145,10 +1020,13 @@ fn group_routes_by_path(
 /// dispatches by HTTP method. This produces one complete
 /// `["users", id] -> ...` block.
 ///
-fn generate_path_case(entry: #(String, List(ParsedRoute))) -> String {
+fn generate_path_case(
+  entry: #(String, List(ParsedRoute)),
+  middleware_controllers: List(String),
+) -> String {
   let #(path, routes) = entry
   let pattern = path_to_pattern(path)
-  let body = generate_method_cases(routes)
+  let body = generate_method_cases(routes, middleware_controllers)
 
   "    " <> pattern <> " ->\n" <> body
 }
@@ -1212,7 +1090,10 @@ fn extract_param_name(segment: String) -> String {
 /// method { Get -> ... Post -> ... }` block with a 405 fallback
 /// listing the allowed methods.
 ///
-fn generate_method_cases(routes: List(ParsedRoute)) -> String {
+fn generate_method_cases(
+  routes: List(ParsedRoute),
+  middleware_controllers: List(String),
+) -> String {
   let first = list.first(routes)
 
   case first {
@@ -1227,29 +1108,25 @@ fn generate_method_cases(routes: List(ParsedRoute)) -> String {
       let method_routes =
         list.filter_map(routes, fn(r) {
           case r {
-            ParsedRoute(
-              method:,
-              path:,
-              handler:,
-              middleware:,
-              validator:,
-              params:,
-            ) -> Ok(#(method, path, handler, middleware, validator, params))
+            ParsedRoute(method:, path:, handler:, validator:, params:) ->
+              Ok(#(method, path, handler, validator, params))
             ParsedRedirect(..) -> Error(Nil)
           }
         })
 
       case method_routes {
         [] -> "      response.not_found()"
-        [#(method, path, handler, middleware, validator, fn_params)] -> {
+        [#(method, path, handler, validator, fn_params)] -> {
           let method_upper = string.capitalise(method)
           let route_params = extract_params_from_path(path)
+          let controller_mw =
+            resolve_controller_middleware(handler, middleware_controllers)
           let handler_call =
             generate_handler_call(
               handler,
               route_params,
               fn_params,
-              middleware,
+              controller_mw,
               validator,
             )
           "      case method {\n        "
@@ -1267,15 +1144,17 @@ fn generate_method_cases(routes: List(ParsedRoute)) -> String {
 
           let cases =
             list.map(method_routes, fn(r) {
-              let #(method, path, handler, middleware, validator, fn_params) = r
+              let #(method, path, handler, validator, fn_params) = r
               let method_upper = string.capitalise(method)
               let route_params = extract_params_from_path(path)
+              let controller_mw =
+                resolve_controller_middleware(handler, middleware_controllers)
               let handler_call =
                 generate_handler_call(
                   handler,
                   route_params,
                   fn_params,
-                  middleware,
+                  controller_mw,
                   validator,
                 )
               "        " <> method_upper <> " -> " <> handler_call
@@ -1307,15 +1186,16 @@ fn extract_params_from_path(path: String) -> List(String) {
 /// The most complex part of code generation — the handler call
 /// might be bare (`controller.index(ctx)`), wrapped in a
 /// validator (`use validated <- user.validate(ctx)`), or
-/// wrapped in middleware (`use ctx <- middleware.apply(...)`)
-/// or both. The layers nest outward: middleware wraps validator
-/// wraps handler.
+/// wrapped in controller middleware (`use ctx <-
+/// middleware.apply(controller.middleware(), ctx)`) or both.
+/// The layers nest outward: middleware wraps validator wraps
+/// handler.
 ///
 fn generate_handler_call(
   handler: String,
   route_params: List(String),
   fn_params: List(FunctionParam),
-  middleware: List(String),
+  controller_middleware: option.Option(String),
   validator: option.Option(String),
 ) -> String {
   // Build args based on function signature order
@@ -1333,15 +1213,10 @@ fn generate_handler_call(
     option.None -> call
   }
 
-  // Wrap with middleware if present
-  case middleware {
-    [] -> with_validator
-    _ -> {
-      let middleware_calls =
-        middleware
-        |> list.map(middleware_path_to_call)
-        |> string.join(", ")
-      let middleware_list = "[" <> middleware_calls <> "]"
+  // Wrap with controller middleware if present
+  case controller_middleware {
+    option.None -> with_validator
+    option.Some(alias) -> {
       // Check if handler or validator uses ctx to avoid unused warnings
       let handler_uses_ctx = list.any(fn_params, is_context_param)
       let has_validator = option.is_some(validator)
@@ -1352,8 +1227,8 @@ fn generate_handler_call(
       "{\n          use "
       <> mw_ctx
       <> " <- middleware.apply("
-      <> middleware_list
-      <> ", ctx)\n          "
+      <> alias
+      <> ".middleware(), ctx)\n          "
       <> with_validator
       <> "\n        }"
     }
@@ -1429,13 +1304,23 @@ fn is_validator_data_param(
   }
 }
 
-/// `middleware.apply` takes a list of function references like
-/// `[auth.run, rate_limit.run]`. This turns the full module
-/// path into just the last segment plus `.run`, matching how
-/// Gleam references imported functions.
+/// Extracts the controller alias from a qualified handler name
+/// like `admin_controller.dashboard` and checks whether that
+/// controller has a `middleware()` function. Returns
+/// Some(alias) if it does, None otherwise.
 ///
-fn middleware_path_to_call(path: String) -> String {
-  last_segment(path) <> ".run"
+fn resolve_controller_middleware(
+  handler: String,
+  middleware_controllers: List(String),
+) -> option.Option(String) {
+  let alias = case string.split(handler, ".") {
+    [a, _] -> a
+    _ -> handler
+  }
+  case list.contains(middleware_controllers, alias) {
+    True -> option.Some(alias)
+    False -> option.None
+  }
 }
 
 /// Paths come from annotations in various forms — `/users/`,
@@ -1522,14 +1407,22 @@ fn get_specific_error_hint(msg: String) -> String {
   let is_unknown_var = string.contains(msg, "Unknown variable")
   let is_unknown_module = string.contains(msg, "Unknown module")
   let is_not_function = string.contains(msg, "not a function")
+  let is_middleware_type_mismatch =
+    string.contains(msg, "Type mismatch") && string.contains(msg, "middleware")
   let is_wrong_return =
-    string.contains(msg, "Response") && string.contains(msg, "Type mismatch")
+    string.contains(msg, "Response")
+    && string.contains(msg, "Type mismatch")
+    && !is_middleware_type_mismatch
   let is_validated_type_mismatch =
     string.contains(msg, "Type mismatch")
     && string.contains(msg, "validated")
     && !is_wrong_return
+    && !is_middleware_type_mismatch
 
   case Nil {
+    _ if is_middleware_type_mismatch ->
+      "Controller middleware() must return List(Middleware(Context(App))).\n"
+      <> "Each item should be a middleware function"
     _ if is_validated_type_mismatch ->
       "Type mismatch with validated data.\n"
       <> "Ensure your Data type is imported from the validator module."
@@ -1537,7 +1430,7 @@ fn get_specific_error_hint(msg: String) -> String {
       "Handler function has incorrect number of parameters.\n"
       <> "Expected signature: fn(ctx: Context(App)) or fn(ctx: Context(App), ...path_params)"
     _ if is_wrong_return ->
-      "Handler function must return a wisp.Response.\n"
+      "Handler function must return a glimr/http/http.Response.\n"
       <> "Make sure your handler returns a Response type."
     _ if is_unknown_var ->
       "Handler function not found.\n"

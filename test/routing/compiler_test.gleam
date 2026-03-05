@@ -152,60 +152,13 @@ pub fn show(_ctx: Context(App)) {
   |> should.be_true
 }
 
-// ------------------------------------------------------------- Middleware Tests
+// ------------------------------------------------------------- Controller Middleware Tests
 
-pub fn parse_route_with_middleware_test() {
-  let source =
-    "
-/// @get \"/admin\"
-/// @middleware \"auth\"
-///
-pub fn index(_ctx: Context(App)) {
-  wisp.ok()
+pub fn controller_with_middleware_fn_wraps_handlers_test() {
+  let source = standard_imports <> "
+pub fn middleware() {
+  [auth.run]
 }
-"
-
-  let assert Ok(result) =
-    compile_controller("app/http/controllers/admin_controller", source)
-
-  result.uses_middleware
-  |> should.be_true
-
-  result.routes_code
-  |> string.contains("middleware.apply([auth.run], ctx)")
-  |> should.be_true
-}
-
-pub fn parse_route_with_multiple_middleware_test() {
-  let source =
-    "
-/// @get \"/admin\"
-/// @middleware \"auth\"
-/// @middleware \"logging\"
-///
-pub fn index(_ctx: Context(App)) {
-  wisp.ok()
-}
-"
-
-  let assert Ok(result) =
-    compile_controller("app/http/controllers/admin_controller", source)
-
-  result.routes_code
-  |> string.contains("auth.run")
-  |> should.be_true
-
-  result.routes_code
-  |> string.contains("logging.run")
-  |> should.be_true
-}
-
-// ------------------------------------------------------------- Group Middleware Tests
-
-pub fn parse_group_middleware_test() {
-  let source =
-    "
-// @group_middleware \"auth\"
 
 /// @get \"/dashboard\"
 ///
@@ -220,43 +173,52 @@ pub fn settings(_ctx: Context(App)) {
 }
 "
 
-  let assert Ok(result) =
-    compile_controller("app/http/controllers/admin_controller", source)
+  let result = annotation_parser.parse(source)
+  let assert Ok(compiled) =
+    compiler.compile_routes([
+      #("app/http/controllers/admin_controller", result),
+    ])
 
-  result.uses_middleware
+  compiled.uses_middleware
   |> should.be_true
 
-  result.routes_code
+  // Both handlers should be wrapped with controller middleware
+  compiled.routes_code
+  |> string.contains("middleware.apply(admin_controller.middleware(), ctx)")
+  |> should.be_true
+
+  compiled.routes_code
   |> string.contains("[\"dashboard\"] ->")
   |> should.be_true
 
-  result.routes_code
+  compiled.routes_code
   |> string.contains("[\"settings\"] ->")
   |> should.be_true
 }
 
-pub fn parse_group_middleware_combined_with_route_middleware_test() {
+pub fn controller_without_middleware_fn_no_wrapping_test() {
   let source =
     "
-// @group_middleware \"auth\"
-
-/// @get \"/dashboard\"
-/// @middleware \"logging\"
+/// @get \"/users\"
 ///
-pub fn dashboard(_ctx: Context(App)) {
+pub fn index(_ctx: Context(App)) {
   wisp.ok()
 }
 "
 
   let assert Ok(result) =
-    compile_controller("app/http/controllers/admin_controller", source)
+    compile_controller("app/http/controllers/user_controller", source)
+
+  result.uses_middleware
+  |> should.be_false
+
+  // Handler should NOT be wrapped with middleware
+  result.routes_code
+  |> string.contains("middleware.apply")
+  |> should.be_false
 
   result.routes_code
-  |> string.contains("auth.run")
-  |> should.be_true
-
-  result.routes_code
-  |> string.contains("logging.run")
+  |> string.contains("user_controller.index(ctx)")
   |> should.be_true
 }
 
@@ -462,11 +424,12 @@ pub fn store(_ctx: Context(App)) {
   |> should.equal(2)
 }
 
-pub fn annotation_parser_extracts_group_middleware_test() {
+pub fn annotation_parser_detects_middleware_fn_test() {
   let source =
     "
-// @group_middleware \"auth\"
-// @group_middleware \"logging\"
+pub fn middleware() {
+  [auth.run]
+}
 
 /// @get \"/admin\"
 ///
@@ -477,15 +440,14 @@ pub fn index(_ctx: Context(App)) {
 
   let result = annotation_parser.parse(source)
 
-  result.group_middleware
-  |> should.equal(["auth", "logging"])
+  result.has_middleware_fn
+  |> should.be_true
 }
 
-pub fn annotation_parser_extracts_route_middleware_test() {
+pub fn annotation_parser_no_middleware_fn_test() {
   let source =
     "
-/// @get \"/admin\"
-/// @middleware \"auth\"
+/// @get \"/users\"
 ///
 pub fn index(_ctx: Context(App)) {
   wisp.ok()
@@ -494,36 +456,8 @@ pub fn index(_ctx: Context(App)) {
 
   let result = annotation_parser.parse(source)
 
-  case result.routes {
-    [ParsedRoute(middleware: mw, ..)] -> {
-      mw |> should.equal(["auth"])
-    }
-    _ -> should.fail()
-  }
-}
-
-pub fn annotation_parser_combines_group_and_route_middleware_test() {
-  let source =
-    "
-// @group_middleware \"group\"
-
-/// @get \"/admin\"
-/// @middleware \"route\"
-///
-pub fn index(_ctx: Context(App)) {
-  wisp.ok()
-}
-"
-
-  let result = annotation_parser.parse(source)
-
-  case result.routes {
-    [ParsedRoute(middleware: mw, ..)] -> {
-      mw
-      |> should.equal(["group", "route"])
-    }
-    _ -> should.fail()
-  }
+  result.has_middleware_fn
+  |> should.be_false
 }
 
 pub fn annotation_parser_extracts_redirects_test() {
@@ -611,122 +545,6 @@ pub fn show(_ctx: Context(App), ctx: String) {
   }
 }
 
-// ------------------------------------------------------------- Middleware Validation Error Tests
-
-pub fn rejects_invalid_group_middleware_test() {
-  let source =
-    "
-// @group_middleware \"nonexistent\"
-
-/// @get \"/users\"
-///
-pub fn index(_ctx: Context(App)) {
-  wisp.ok()
-}
-"
-
-  let result =
-    compile_controller("app/http/controllers/user_controller", source)
-
-  case result {
-    Error(msg) -> {
-      msg
-      |> string.contains("Invalid group middleware for user_controller")
-      |> should.be_true
-
-      msg
-      |> string.contains("Middleware \"nonexistent\" doesn't exist")
-      |> should.be_true
-    }
-    Ok(_) -> should.fail()
-  }
-}
-
-pub fn rejects_invalid_route_middleware_test() {
-  let source =
-    "
-/// @get \"/users\"
-/// @middleware \"nonexistent\"
-///
-pub fn index(_ctx: Context(App)) {
-  wisp.ok()
-}
-"
-
-  let result =
-    compile_controller("app/http/controllers/user_controller", source)
-
-  case result {
-    Error(msg) -> {
-      msg
-      |> string.contains("Invalid route '/users' for user_controller.index")
-      |> should.be_true
-
-      msg
-      |> string.contains("Middleware \"nonexistent\" doesn't exist")
-      |> should.be_true
-    }
-    Ok(_) -> should.fail()
-  }
-}
-
-pub fn rejects_group_middleware_without_run_test() {
-  let source =
-    "
-// @group_middleware \"no_handle\"
-
-/// @get \"/users\"
-///
-pub fn index(_ctx: Context(App)) {
-  wisp.ok()
-}
-"
-
-  let result =
-    compile_controller("app/http/controllers/user_controller", source)
-
-  case result {
-    Error(msg) -> {
-      msg
-      |> string.contains("Invalid group middleware for user_controller")
-      |> should.be_true
-
-      msg
-      |> string.contains("doesn't have a public \"run\" function")
-      |> should.be_true
-    }
-    Ok(_) -> should.fail()
-  }
-}
-
-pub fn rejects_route_middleware_without_run_test() {
-  let source =
-    "
-/// @get \"/users\"
-/// @middleware \"no_handle\"
-///
-pub fn index(_ctx: Context(App)) {
-  wisp.ok()
-}
-"
-
-  let result =
-    compile_controller("app/http/controllers/user_controller", source)
-
-  case result {
-    Error(msg) -> {
-      msg
-      |> string.contains("Invalid route '/users' for user_controller.index")
-      |> should.be_true
-
-      msg
-      |> string.contains("doesn't have a public \"run\" function")
-      |> should.be_true
-    }
-    Ok(_) -> should.fail()
-  }
-}
-
 // ------------------------------------------------------------- Validator Tests
 
 pub fn parse_route_with_validator_test() {
@@ -780,13 +598,15 @@ pub fn update(_ctx: Context(App), id: String, validated: Data) {
   |> should.be_true
 }
 
-pub fn parse_route_with_validator_and_middleware_test() {
-  let source =
-    "
+pub fn parse_route_with_validator_and_controller_middleware_test() {
+  let source = standard_imports <> "
 import app/http/validators/user_validator.{type Data}
 
+pub fn middleware() {
+  [auth.run]
+}
+
 /// @post \"/users\"
-/// @middleware \"auth\"
 /// @validator \"user_validator\"
 ///
 pub fn store(_ctx: Context(App), validated: Data) {
@@ -794,15 +614,18 @@ pub fn store(_ctx: Context(App), validated: Data) {
 }
 "
 
-  let assert Ok(result) =
-    compile_controller("app/http/controllers/user_controller", source)
+  let result = annotation_parser.parse(source)
+  let assert Ok(compiled) =
+    compiler.compile_routes([
+      #("app/http/controllers/user_controller", result),
+    ])
 
-  // Both middleware and validator should be present
-  result.routes_code
-  |> string.contains("middleware.apply")
+  // Both controller middleware and validator should be present
+  compiled.routes_code
+  |> string.contains("middleware.apply(user_controller.middleware(), ctx)")
   |> should.be_true
 
-  result.routes_code
+  compiled.routes_code
   |> string.contains("user_validator.validate(ctx)")
   |> should.be_true
 }

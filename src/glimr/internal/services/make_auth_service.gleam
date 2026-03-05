@@ -97,8 +97,9 @@ pub fn create_load_middleware(
 
 /// Protected pages need to bounce unauthenticated visitors to
 /// the login page. This middleware handles that redirect so
-/// controllers don't need to check auth status themselves —
-/// just attach `@middleware "auth/{model}"` to the route.
+/// controllers don't need to check auth status themselves — add
+/// it to the controller's `middleware()` function or use
+/// `middleware.apply` in individual routes.
 ///
 pub fn create_auth_middleware(model_name: String) -> Nil {
   let file_path = "src/app/http/middleware/auth/" <> model_name <> ".gleam"
