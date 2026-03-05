@@ -36,7 +36,6 @@ pub type ParsedRoute {
     method: String,
     path: String,
     handler: String,
-    validator: Option(String),
     params: List(FunctionParam),
   )
   ParsedRedirect(from: String, to: String, status: Int)
@@ -54,23 +53,21 @@ pub type ParseResult {
     routes: List(ParsedRoute),
     has_context_import: Bool,
     has_middleware_fn: Bool,
-    validator_data_imports: List(String),
   )
 }
 
 // ------------------------------------------------------------- Private Types
 
 /// A route's annotations can span several doc comment lines —
-/// method, path, validator, redirects — and they all need to be
-/// collected before we hit the `pub fn` that ties them
-/// together. This state bag accumulates everything until the
-/// function declaration finalizes it.
+/// method, path, redirects — and they all need to be collected
+/// before we hit the `pub fn` that ties them together. This
+/// state bag accumulates everything until the function
+/// declaration finalizes it.
 ///
 type AnnotationState {
   AnnotationState(
     method: Option(String),
     path: Option(String),
-    validator: Option(String),
     redirects: List(#(String, Int)),
   )
 }
@@ -88,14 +85,8 @@ pub fn parse(content: String) -> ParseResult {
   let routes = extract_routes(content)
   let has_context_import = check_context_import(content)
   let has_middleware_fn = check_middleware_fn(content)
-  let validator_data_imports = extract_validator_data_imports(content)
 
-  ParseResult(
-    routes:,
-    has_context_import:,
-    has_middleware_fn:,
-    validator_data_imports:,
-  )
+  ParseResult(routes:, has_context_import:, has_middleware_fn:)
 }
 
 // ------------------------------------------------------------- Private Functions
@@ -151,13 +142,7 @@ fn parse_lines(
         True -> {
           let state = case current {
             Some(s) -> s
-            None ->
-              AnnotationState(
-                method: None,
-                path: None,
-                validator: None,
-                redirects: [],
-              )
+            None -> AnnotationState(method: None, path: None, redirects: [])
           }
           let new_state = parse_annotation_line(trimmed, state)
           parse_lines(rest, Some(new_state), acc)
@@ -224,8 +209,8 @@ fn collect_signature(
   }
 }
 
-/// A doc comment line might be `@get "/users"`, `@validator
-/// "login"`, or just regular prose. We try each annotation
+/// A doc comment line might be `@get "/users"`, `@redirect
+/// "/old"`, or just regular prose. We try each annotation
 /// parser in sequence and take the first match — if none match,
 /// the line is ignored and the existing state carries through
 /// unchanged.
@@ -237,7 +222,6 @@ fn parse_annotation_line(
   let content = string.drop_start(line, 3) |> string.trim_start
 
   try_parse_method(content, state)
-  |> result.lazy_or(fn() { try_parse_validator(content, state) })
   |> result.lazy_or(fn() { try_parse_redirect(content, state) })
   |> result.unwrap(state)
 }
@@ -265,25 +249,6 @@ fn try_parse_method(
       False -> Error(Nil)
     }
   })
-}
-
-/// Attaching a `@validator` to a route tells the compiled
-/// dispatcher to parse and validate form data before the
-/// handler runs. The handler then receives typed, validated
-/// data instead of raw form values — so a login handler gets
-/// `LoginData` with guaranteed non-empty fields rather than
-/// digging through key-value pairs.
-///
-fn try_parse_validator(
-  content: String,
-  state: AnnotationState,
-) -> Result(AnnotationState, Nil) {
-  case string.starts_with(content, "@validator ") {
-    True ->
-      extract_quoted_arg(content, "@validator ")
-      |> result.map(fn(v) { AnnotationState(..state, validator: Some(v)) })
-    False -> Error(Nil)
-  }
 }
 
 /// When you rename a URL — say `/settings` becomes
@@ -442,14 +407,7 @@ fn create_routes_from_state(
 ) -> List(ParsedRoute) {
   case state.method, state.path {
     Some(method), Some(path) -> {
-      let main_route =
-        ParsedRoute(
-          method:,
-          path:,
-          handler: fn_name,
-          validator: state.validator,
-          params:,
-        )
+      let main_route = ParsedRoute(method:, path:, handler: fn_name, params:)
 
       // Create redirect routes (reverse since accumulated via prepending)
       let redirect_routes =
@@ -499,41 +457,6 @@ fn import_contains_type(line: String, type_name: String) -> Bool {
       }
     Error(_) -> False
   }
-}
-
-/// When a handler uses `@validator "login"`, its `Data`
-/// parameter type comes from the validator module. We need to
-/// know which validator modules have `Data` imported so the
-/// route compiler can generate the right import — and so we can
-/// warn if the import is missing.
-///
-fn extract_validator_data_imports(content: String) -> List(String) {
-  content
-  |> string.split("\n")
-  |> list.filter_map(fn(line) {
-    let trimmed = string.trim(line)
-    case string.starts_with(trimmed, "//") {
-      True -> Error(Nil)
-      False ->
-        case
-          string.starts_with(trimmed, "import ")
-          && string.contains(trimmed, "/validators/")
-          && string.contains(trimmed, ".{")
-          && import_contains_type(trimmed, "Data")
-        {
-          True ->
-            case string.split_once(trimmed, "/validators/") {
-              Ok(#(_, after_validators)) ->
-                case string.split_once(after_validators, ".{") {
-                  Ok(#(validator_name, _)) -> Ok(validator_name)
-                  Error(_) -> Error(Nil)
-                }
-              Error(_) -> Error(Nil)
-            }
-          False -> Error(Nil)
-        }
-    }
-  })
 }
 
 /// Controllers can define a `pub fn middleware()` function to

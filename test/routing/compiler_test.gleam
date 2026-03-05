@@ -1,8 +1,7 @@
 import gleam/list
-import gleam/option
 import gleam/string
 import gleeunit/should
-import glimr/routing/annotation_parser.{ParsedRedirect, ParsedRoute}
+import glimr/routing/annotation_parser.{ParsedRedirect}
 import glimr/routing/compiler
 
 // Standard imports for test sources
@@ -545,149 +544,14 @@ pub fn show(_ctx: Context(App), ctx: String) {
   }
 }
 
-// ------------------------------------------------------------- Validator Tests
-
-pub fn parse_route_with_validator_test() {
-  let source =
-    "
-import app/http/validators/user_validator.{type Data}
-
-/// @post \"/users\"
-/// @validator \"user_validator\"
-///
-pub fn store(_ctx: Context(App), validated: Data) {
-  wisp.ok()
-}
-"
-
-  let assert Ok(result) =
-    compile_controller("app/http/controllers/user_controller", source)
-
-  result.routes_code
-  |> string.contains("user_validator.validate(ctx)")
-  |> should.be_true
-
-  result.routes_code
-  |> string.contains("user_controller.store(ctx, validated)")
-  |> should.be_true
-}
-
-pub fn parse_route_with_validator_and_path_params_test() {
-  let source =
-    "
-import app/http/validators/user_validator.{type Data}
-
-/// @post \"/users/:id\"
-/// @validator \"user_validator\"
-///
-pub fn update(_ctx: Context(App), id: String, validated: Data) {
-  wisp.ok()
-}
-"
-
-  let assert Ok(result) =
-    compile_controller("app/http/controllers/user_controller", source)
-
-  result.routes_code
-  |> string.contains("user_validator.validate(ctx)")
-  |> should.be_true
-
-  // Path params come before validated
-  result.routes_code
-  |> string.contains("user_controller.update(ctx, id, validated)")
-  |> should.be_true
-}
-
-pub fn parse_route_with_validator_and_controller_middleware_test() {
-  let source = standard_imports <> "
-import app/http/validators/user_validator.{type Data}
-
-pub fn middleware() {
-  [auth.run]
-}
-
-/// @post \"/users\"
-/// @validator \"user_validator\"
-///
-pub fn store(_ctx: Context(App), validated: Data) {
-  wisp.ok()
-}
-"
-
-  let result = annotation_parser.parse(source)
-  let assert Ok(compiled) =
-    compiler.compile_routes([
-      #("app/http/controllers/user_controller", result),
-    ])
-
-  // Both controller middleware and validator should be present
-  compiled.routes_code
-  |> string.contains("middleware.apply(user_controller.middleware(), ctx)")
-  |> should.be_true
-
-  compiled.routes_code
-  |> string.contains("user_validator.validate(ctx)")
-  |> should.be_true
-}
-
-pub fn rejects_invalid_validator_test() {
-  let source =
-    "
-/// @post \"/users\"
-/// @validator \"nonexistent\"
-///
-pub fn store(_ctx: Context(App), validated: Data) {
-  wisp.ok()
-}
-"
-
-  let result =
-    compile_controller("app/http/controllers/user_controller", source)
-
-  case result {
-    Error(msg) -> {
-      msg
-      |> string.contains("Invalid route '/users' for user_controller.store")
-      |> should.be_true
-
-      msg
-      |> string.contains("Validator \"nonexistent\" doesn't exist")
-      |> should.be_true
-    }
-    Ok(_) -> should.fail()
-  }
-}
-
-pub fn annotation_parser_extracts_validator_test() {
-  let source =
-    "
-/// @post \"/users\"
-/// @validator \"user_validator\"
-///
-pub fn store(_ctx: Context(App), validated: Data) {
-  wisp.ok()
-}
-"
-
-  let result = annotation_parser.parse(source)
-
-  case result.routes {
-    [ParsedRoute(validator: option.Some(v), ..)] -> {
-      v |> should.equal("user_validator")
-    }
-    _ -> should.fail()
-  }
-}
-
 // ------------------------------------------------------------- Flexible Parameter Ordering Tests
 
-pub fn flexible_params_validated_first_test() {
+pub fn flexible_params_id_before_ctx_test() {
   let source =
     "
-/// @post \"/users/:id\"
-/// @validator \"user_validator\"
+/// @get \"/users/:id\"
 ///
-pub fn update(validated: user_validator.Data, id: String, ctx: Context(App)) {
+pub fn show(id: String, ctx: Context(App)) {
   wisp.ok()
 }
 "
@@ -697,7 +561,7 @@ pub fn update(validated: user_validator.Data, id: String, ctx: Context(App)) {
 
   // Args should be in the function's param order
   result.routes_code
-  |> string.contains("user_controller.update(validated, id, ctx)")
+  |> string.contains("user_controller.show(id, ctx)")
   |> should.be_true
 }
 
@@ -812,34 +676,6 @@ pub fn show(ctx: Context(App), id: String, name: String) {
   }
 }
 
-pub fn rejects_missing_validator_data_param_test() {
-  let source =
-    "
-/// @post \"/users\"
-/// @validator \"user_validator\"
-///
-pub fn store(ctx: Context(App)) {
-  wisp.ok()
-}
-"
-
-  let result =
-    compile_controller("app/http/controllers/user_controller", source)
-
-  case result {
-    Error(msg) -> {
-      msg
-      |> string.contains("uses @validator \"user_validator\"")
-      |> should.be_true
-
-      msg
-      |> string.contains("has no Data parameter")
-      |> should.be_true
-    }
-    Ok(_) -> should.fail()
-  }
-}
-
 pub fn rejects_untyped_ctx_param_test() {
   let source =
     "
@@ -861,72 +697,6 @@ pub fn index(ctx) {
 
       msg
       |> string.contains("Please specify the type: ctx: Context(App)")
-      |> should.be_true
-    }
-    Ok(_) -> should.fail()
-  }
-}
-
-pub fn hints_about_data_type_for_validated_param_test() {
-  let source =
-    "
-/// @post \"/users\"
-/// @validator \"user_validator\"
-///
-pub fn store(ctx: Context(App), validated) {
-  wisp.ok()
-}
-"
-
-  let result =
-    compile_controller("app/http/controllers/user_controller", source)
-
-  case result {
-    Error(msg) -> {
-      // Should show the extra param error with a hint
-      msg
-      |> string.contains("has parameter 'validated' but route")
-      |> should.be_true
-
-      msg
-      |> string.contains("If this is meant to be validated data")
-      |> should.be_true
-
-      msg
-      |> string.contains("validated: user_validator.Data")
-      |> should.be_true
-    }
-    Ok(_) -> should.fail()
-  }
-}
-
-pub fn hints_about_data_type_for_data_param_test() {
-  let source =
-    "
-/// @post \"/users\"
-/// @validator \"user_validator\"
-///
-pub fn store(ctx: Context(App), data) {
-  wisp.ok()
-}
-"
-
-  let result =
-    compile_controller("app/http/controllers/user_controller", source)
-
-  case result {
-    Error(msg) -> {
-      // Should show the extra param error with a hint
-      msg
-      |> string.contains("has parameter 'data' but route")
-      |> should.be_true
-
-      msg
-      |> string.contains("If this is meant to be validated data")
-      |> should.be_true
-
-      msg
-      |> string.contains("data: user_validator.Data")
       |> should.be_true
     }
     Ok(_) -> should.fail()

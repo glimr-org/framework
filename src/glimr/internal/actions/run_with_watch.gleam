@@ -74,12 +74,6 @@ fn watch_loop(
           string.contains(f, "src/app/http/controllers/")
         })
 
-      let validator_changed =
-        list.any(files, fn(f) {
-          string.contains(f, "src/app/http/validators/")
-          && string.ends_with(f, ".gleam")
-        })
-
       let middleware_changed =
         list.any(files, fn(f) {
           string.contains(f, "src/app/http/middleware/")
@@ -114,8 +108,7 @@ fn watch_loop(
       let only_compiled_files =
         list.all(files, fn(f) { string.contains(f, "src/compiled/") })
 
-      let routes_trigger =
-        controller_changed || validator_changed || middleware_changed
+      let routes_trigger = controller_changed || middleware_changed
 
       case
         routes_trigger,
@@ -129,7 +122,6 @@ fn watch_loop(
               let route_related_files =
                 list.filter(files, fn(f) {
                   string.contains(f, "src/app/http/controllers/")
-                  || string.contains(f, "src/app/http/validators/")
                   || string.contains(f, "src/app/http/middleware/")
                 })
 

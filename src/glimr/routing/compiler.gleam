@@ -3,10 +3,10 @@
 //// Turns controller annotations into a generated Gleam file
 //// with a big case expression that dispatches requests by path
 //// and method. This is the heart of the route system — it
-//// validates everything (middleware exists, validators have
-//// the right exports, handler params match route segments)
-//// before generating code, so developers get clear errors at
-//// compile time instead of runtime crashes.
+//// validates everything (handler params match route segments,
+//// required imports exist) before generating code, so
+//// developers get clear errors at compile time instead of
+//// runtime crashes.
 
 import gleam/dict.{type Dict}
 import gleam/int
@@ -23,13 +23,6 @@ import glimr/routing/annotation_parser.{
 import shellout
 import simplifile
 
-// ------------------------------------------------------------- Private Constants
-
-/// `@validator "login"` in an annotation becomes
-/// `app/http/validators/login` in the generated import.
-///
-const validator_base_path = "app/http/validators/"
-
 // ------------------------------------------------------------- Public Types
 
 /// Everything write_compiled_file needs to assemble the final
@@ -44,32 +37,18 @@ pub type CompileResult {
     routes_code: String,
     used_methods: List(String),
     uses_middleware: Bool,
-    uses_validator: Bool,
     uses_ctx: Bool,
     line_to_route: Dict(Int, String),
   )
-}
-
-// ------------------------------------------------------------- Private Types
-
-/// Validation can fail in two distinct ways — the module
-/// doesn't exist at all, or it exists but forgot to export the
-/// required function. The error messages need to be different
-/// for each case so developers know whether to create a file or
-/// add a function.
-///
-type ModuleError {
-  ModuleNotFound(name: String)
-  ModuleMissingFunction(name: String, function: String)
 }
 
 // ------------------------------------------------------------- Public Functions
 
 /// The main entry point — takes every controller's parsed
 /// annotations and produces the Gleam code that dispatches
-/// requests. Runs all validation first (paths, validators,
-/// handler params) so developers get clear errors before any
-/// code is generated.
+/// requests. Runs all validation first (paths, handler params,
+/// imports) so developers get clear errors before any code is
+/// generated.
 ///
 pub fn compile_routes(
   controller_results: List(#(String, ParseResult)),
@@ -89,7 +68,6 @@ pub fn compile_routes(
 
   use _ <- result.try(validate_path_format(routes))
   use _ <- result.try(validate_path_params(routes))
-  use _ <- result.try(validate_validators(controller_results))
   use _ <- result.try(validate_handler_params(routes))
   use _ <- result.try(validate_type_imports(controller_results))
 
@@ -104,10 +82,9 @@ pub fn compile_routes(
       }
     })
 
-  let imports = generate_imports(controller_routes, routes)
+  let imports = generate_imports(controller_routes)
   let used_methods = collect_used_methods(routes)
   let uses_middleware = check_uses_middleware(controller_results)
-  let uses_validator = check_uses_validator(routes)
   let uses_ctx = check_uses_context(routes)
 
   let #(routes_code, line_to_route) =
@@ -124,7 +101,6 @@ pub fn compile_routes(
     routes_code:,
     used_methods:,
     uses_middleware:,
-    uses_validator:,
     uses_ctx:,
     line_to_route:,
   ))
@@ -164,11 +140,8 @@ pub fn write_compiled_file(
     False -> ""
   }
 
-  // Middleware and validators need ctx even if handlers don't use it directly
-  let needs_ctx =
-    compile_result.uses_ctx
-    || compile_result.uses_middleware
-    || compile_result.uses_validator
+  // Middleware needs ctx even if handlers don't use it directly
+  let needs_ctx = compile_result.uses_ctx || compile_result.uses_middleware
   let ctx_arg = case needs_ctx {
     True -> "ctx"
     False -> "_ctx"
@@ -258,33 +231,16 @@ pub fn write_compiled_file(
 
 // ------------------------------------------------------------- Private Functions
 
-/// `@validator "login"` in an annotation becomes the full
-/// import path so the generated code can call the validator's
-/// functions.
-///
-fn expand_validator_path(name: String) -> String {
-  validator_base_path <> name
-}
-
 /// Gleam uses the last path segment as the module name in code
-/// — `import app/http/validators/user` lets you call
-/// `user.validate()`. Several places need just that last
-/// segment for generating function calls and aliases.
+/// — `import app/http/controllers/api/user` lets you call
+/// `user.index()`. Several places need just that last segment
+/// for generating function calls and aliases.
 ///
 fn last_segment(path: String) -> String {
   case string.split(path, "/") |> list.last {
     Ok(name) -> name
     Error(_) -> path
   }
-}
-
-/// The generated code calls `user.validate(ctx)`, not
-/// `app/http/validators/user.validate(ctx)` — Gleam imports use
-/// the last path segment as the module name. This pulls that
-/// segment out so we can build the right function call.
-///
-fn validator_module_name(validator: String) -> String {
-  last_segment(validator)
 }
 
 /// Two controllers can share a module name — `web/user` and
@@ -310,54 +266,33 @@ fn prefix_handler(route: ParsedRoute, module_path: String) -> ParsedRoute {
   let alias = controller_alias(module_path)
 
   case route {
-    ParsedRoute(method:, path:, handler:, validator:, params:) ->
-      ParsedRoute(
-        method:,
-        path:,
-        handler: alias <> "." <> handler,
-        validator:,
-        params:,
-      )
+    ParsedRoute(method:, path:, handler:, params:) ->
+      ParsedRoute(method:, path:, handler: alias <> "." <> handler, params:)
     ParsedRedirect(..) -> route
   }
 }
 
-/// The generated file needs to import every module it
-/// references — controllers and validators. Nested controllers
-/// like `api/user` get an `as` alias (since Gleam would
-/// otherwise use just the last segment) and duplicates are
-/// filtered out so each module appears exactly once.
+/// The generated file needs to import every controller it
+/// references. Nested controllers like `api/user` get an `as`
+/// alias (since Gleam would otherwise use just the last
+/// segment) and duplicates are filtered out so each module
+/// appears exactly once.
 ///
 fn generate_imports(
   controller_routes: List(#(String, List(ParsedRoute))),
-  routes: List(ParsedRoute),
 ) -> List(String) {
-  let controller_imports =
-    controller_routes
-    |> list.filter(fn(entry) { !list.is_empty(entry.1) })
-    |> list.map(fn(entry) {
-      let module_path = entry.0
-      let alias = controller_alias(module_path)
-      let default_name = last_segment(module_path)
-      // Use `as` alias when the alias differs from the default module name
-      case alias == default_name {
-        True -> "import " <> module_path
-        False -> "import " <> module_path <> " as " <> alias
-      }
-    })
-
-  let validator_imports =
-    routes
-    |> list.filter_map(fn(r) {
-      case r {
-        ParsedRoute(validator: option.Some(v), ..) ->
-          Ok("import " <> expand_validator_path(v))
-        _ -> Error(Nil)
-      }
-    })
-    |> list.unique
-
-  list.flatten([controller_imports, validator_imports])
+  controller_routes
+  |> list.filter(fn(entry) { !list.is_empty(entry.1) })
+  |> list.map(fn(entry) {
+    let module_path = entry.0
+    let alias = controller_alias(module_path)
+    let default_name = last_segment(module_path)
+    // Use `as` alias when the alias differs from the default module name
+    case alias == default_name {
+      True -> "import " <> module_path
+      False -> "import " <> module_path <> " as " <> alias
+    }
+  })
   |> list.unique
 }
 
@@ -382,20 +317,6 @@ fn check_uses_context(routes: List(ParsedRoute)) -> Bool {
     case r {
       ParsedRoute(params:, ..) -> list.any(params, is_context_param)
       ParsedRedirect(..) -> False
-    }
-  })
-}
-
-/// Validators call `validate(ctx)` internally, so even if no
-/// handler directly accepts a Context param, the generated
-/// function still needs `ctx` (not `_ctx`) when validators are
-/// in play. This check catches that indirect dependency.
-///
-fn check_uses_validator(routes: List(ParsedRoute)) -> Bool {
-  list.any(routes, fn(r) {
-    case r {
-      ParsedRoute(validator: option.Some(_), ..) -> True
-      _ -> False
     }
   })
 }
@@ -490,113 +411,6 @@ fn validate_path_params(routes: List(ParsedRoute)) -> Result(Nil, String) {
   }
 }
 
-/// Tests use fixture middleware and validators under
-/// `test/fixtures/` rather than the real `src/` modules.
-/// Without checking both locations, the compiler would reject
-/// perfectly valid test setups as "module not found".
-///
-fn find_module_file(base_path: String, name: String) -> Result(String, Nil) {
-  let full_path = base_path <> name
-  let src_path = "src/" <> full_path <> ".gleam"
-  let test_path = "test/fixtures/" <> full_path <> ".gleam"
-
-  case simplifile.is_file(src_path) {
-    Ok(True) -> Ok(src_path)
-    _ ->
-      case simplifile.is_file(test_path) {
-        Ok(True) -> Ok(test_path)
-        _ -> Error(Nil)
-      }
-  }
-}
-
-/// A typo in a `@validator` annotation would generate code that
-/// imports a nonexistent module — the Gleam compiler error
-/// would point at the generated file, not the annotation. By
-/// checking the filesystem first, we can say exactly which
-/// annotation has the problem.
-///
-fn check_module(
-  name: String,
-  base_path: String,
-  required_function: String,
-) -> Result(Nil, ModuleError) {
-  case find_module_file(base_path, name) {
-    Ok(path) ->
-      case simplifile.read(path) {
-        Ok(content) ->
-          case string.contains(content, "pub fn " <> required_function <> "(") {
-            True -> Ok(Nil)
-            False -> Error(ModuleMissingFunction(name, required_function))
-          }
-        Error(_) -> Error(ModuleNotFound(name))
-      }
-    Error(_) -> Error(ModuleNotFound(name))
-  }
-}
-
-/// Same idea as check_module but specifically for validators —
-/// the generated code calls `user.validate(ctx)`, so the module
-/// needs to exist and export that function. Checking early
-/// avoids a confusing generated-code error.
-///
-fn check_validator(name: String) -> Result(Nil, ModuleError) {
-  check_module(name, validator_base_path, "validate")
-}
-
-/// Mirror of format_middleware_error for validators —
-/// "validator user doesn't exist" tells you to create the file,
-/// "doesn't have a validate function" tells you to add the
-/// export.
-///
-fn format_validator_error(err: ModuleError) -> String {
-  case err {
-    ModuleNotFound(name) -> "Validator \"" <> name <> "\" doesn't exist"
-    ModuleMissingFunction(name, _) ->
-      "Validator \"" <> name <> "\" doesn't have a public \"validate\" function"
-  }
-}
-
-/// Walks every route that has a `@validator` annotation and
-/// checks that the referenced module exists with a `validate`
-/// export. Reports the specific route so the developer knows
-/// exactly which annotation to fix.
-///
-fn validate_validators(
-  controller_results: List(#(String, ParseResult)),
-) -> Result(Nil, String) {
-  let invalid =
-    controller_results
-    |> list.flat_map(fn(entry) {
-      let #(module_path, result) = entry
-      let alias = controller_alias(module_path)
-      list.filter_map(result.routes, fn(r) {
-        case r {
-          ParsedRoute(path:, handler:, validator: option.Some(v), ..) -> {
-            case check_validator(v) {
-              Ok(_) -> Error(Nil)
-              Error(err) -> Ok(#(path, alias <> "." <> handler, err))
-            }
-          }
-          _ -> Error(Nil)
-        }
-      })
-    })
-
-  case invalid {
-    [] -> Ok(Nil)
-    [#(path, handler, err), ..] ->
-      Error(
-        "Invalid route '"
-        <> path
-        <> "' for "
-        <> handler
-        <> "\n"
-        <> format_validator_error(err),
-      )
-  }
-}
-
 /// Gleam requires explicit imports for unqualified types —
 /// writing `ctx: Context(App)` without importing `Context`
 /// compiles the generated file fine but then errors in the
@@ -615,53 +429,19 @@ fn validate_type_imports(
       result.routes
       |> list.filter_map(fn(r) {
         case r {
-          ParsedRoute(path:, handler:, params:, validator:, ..) -> {
+          ParsedRoute(path:, handler:, params:, ..) -> {
             // Check for unqualified Context type without proper import
             let has_unqualified_context =
               list.any(params, fn(p) { p.param_type == "Context" })
-            let context_error = case
-              has_unqualified_context && !result.has_context_import
-            {
+            case has_unqualified_context && !result.has_context_import {
               True ->
-                option.Some(#(
+                Ok(#(
                   path,
                   alias <> "." <> handler,
                   "Context type requires import: `import glimr/http/context.{type Context}`\n"
                     <> "Or use fully qualified type: `ctx: context.Context(App)`",
                 ))
-              False -> option.None
-            }
-
-            // Check for unqualified Data type without proper import
-            let data_error = case validator {
-              option.Some(v) -> {
-                let validator_name = validator_module_name(v)
-                let has_unqualified_data =
-                  list.any(params, fn(p) { p.param_type == "Data" })
-                let has_valid_import =
-                  list.contains(result.validator_data_imports, validator_name)
-                case has_unqualified_data && !has_valid_import {
-                  True ->
-                    option.Some(#(
-                      path,
-                      alias <> "." <> handler,
-                      "Data type requires import: `import app/http/validators/"
-                        <> validator_name
-                        <> ".{type Data}`\n"
-                        <> "Or use fully qualified type: `data: "
-                        <> validator_name
-                        <> ".Data`",
-                    ))
-                  False -> option.None
-                }
-              }
-              option.None -> option.None
-            }
-
-            case context_error, data_error {
-              option.Some(err), _ -> Ok(err)
-              _, option.Some(err) -> Ok(err)
-              option.None, option.None -> Error(Nil)
+              False -> Error(Nil)
             }
           }
           ParsedRedirect(..) -> Error(Nil)
@@ -679,18 +459,18 @@ fn validate_type_imports(
 /// If a route defines `:id` but the handler doesn't accept an
 /// `id` parameter, the generated code would pass an argument
 /// the function doesn't expect. Catching mismatches here —
-/// missing params, extra params, missing Data for validators —
-/// produces much better errors than letting the Gleam compiler
-/// figure it out from generated code.
+/// missing params, extra params — produces much better errors
+/// than letting the Gleam compiler figure it out from generated
+/// code.
 ///
 fn validate_handler_params(routes: List(ParsedRoute)) -> Result(Nil, String) {
   let errors =
     routes
     |> list.filter_map(fn(r) {
       case r {
-        ParsedRoute(path:, handler:, validator:, params:, ..) -> {
+        ParsedRoute(path:, handler:, params:, ..) -> {
           let route_params = extract_params_from_path(path)
-          check_handler_params(path, handler, route_params, params, validator)
+          check_handler_params(path, handler, route_params, params)
         }
         ParsedRedirect(..) -> Error(Nil)
       }
@@ -706,14 +486,13 @@ fn validate_handler_params(routes: List(ParsedRoute)) -> Result(Nil, String) {
 /// validate_handler_params so the error can include the
 /// specific route path and handler name. Checks cascade:
 /// untyped ctx params first, then missing route params, then
-/// extra params, then missing validator Data.
+/// extra params.
 ///
 fn check_handler_params(
   path: String,
   handler: String,
   route_params: List(String),
   fn_params: List(FunctionParam),
-  validator: option.Option(String),
 ) -> Result(String, Nil) {
   // First check for ctx params without type annotations
   let untyped_ctx =
@@ -737,8 +516,8 @@ fn check_handler_params(
       )
     }
     Error(_) -> {
-      // Get non-special params (not Context or Data)
-      let handler_route_params = get_route_param_names(fn_params, validator)
+      // Get non-special params (not Context)
+      let handler_route_params = get_route_param_names(fn_params)
 
       // Check for missing route params (route has :id but handler doesn't have id)
       let missing =
@@ -765,9 +544,7 @@ fn check_handler_params(
                 True -> string.drop_start(p.name, 1)
                 False -> p.name
               }
-              !is_context_param(p)
-              && !is_validator_data_param(p, validator)
-              && !list.contains(route_params, clean_name)
+              !is_context_param(p) && !list.contains(route_params, clean_name)
             })
 
           case extra_params {
@@ -776,50 +553,17 @@ fn check_handler_params(
                 True -> string.drop_start(param.name, 1)
                 False -> param.name
               }
-              let base_error =
+              Ok(
                 "Handler "
                 <> handler
                 <> " has parameter '"
                 <> clean_name
                 <> "' but route '"
                 <> path
-                <> "' has no matching segment"
-
-              // Add hint for validated/data params
-              let lower_name = string.lowercase(clean_name)
-              let hint = case lower_name, validator {
-                "validated", option.Some(v) | "data", option.Some(v) ->
-                  "\nIf this is meant to be validated data, specify the type: "
-                  <> param.name
-                  <> ": "
-                  <> validator_module_name(v)
-                  <> ".Data"
-                _, _ -> ""
-              }
-
-              Ok(base_error <> hint)
+                <> "' has no matching segment",
+              )
             }
-            [] -> {
-              // Check for missing validator Data param
-              case validator {
-                option.Some(v) -> {
-                  case has_validator_data_param(fn_params, v) {
-                    True -> Error(Nil)
-                    False ->
-                      Ok(
-                        "Route '"
-                        <> path
-                        <> "' uses @validator \""
-                        <> v
-                        <> "\" but handler "
-                        <> handler
-                        <> " has no Data parameter",
-                      )
-                  }
-                }
-                option.None -> Error(Nil)
-              }
-            }
+            [] -> Error(Nil)
           }
         }
       }
@@ -829,39 +573,18 @@ fn check_handler_params(
 
 /// When comparing handler params to route params, we only care
 /// about the path-segment params (like `id` from `:id`).
-/// Context and validator Data are framework-injected and don't
-/// correspond to URL segments, so they're filtered out before
-/// the comparison.
+/// Context is framework-injected and doesn't correspond to URL
+/// segments, so it's filtered out before the comparison.
 ///
-fn get_route_param_names(
-  fn_params: List(FunctionParam),
-  validator: option.Option(String),
-) -> List(String) {
+fn get_route_param_names(fn_params: List(FunctionParam)) -> List(String) {
   fn_params
-  |> list.filter(fn(p) {
-    !is_context_param(p) && !is_validator_data_param(p, validator)
-  })
+  |> list.filter(fn(p) { !is_context_param(p) })
   |> list.map(fn(p) {
     // Strip leading underscore if present
     case string.starts_with(p.name, "_") {
       True -> string.drop_start(p.name, 1)
       False -> p.name
     }
-  })
-}
-
-/// A `@validator` annotation means the generated code calls
-/// `validate(ctx)` and passes the result to the handler. If the
-/// handler doesn't have a Data param to receive it, the
-/// validated data goes nowhere — almost certainly a bug the
-/// developer should know about immediately.
-///
-fn has_validator_data_param(
-  fn_params: List(FunctionParam),
-  validator: String,
-) -> Bool {
-  list.any(fn_params, fn(p) {
-    is_validator_data_param(p, option.Some(validator))
   })
 }
 
@@ -1108,15 +831,15 @@ fn generate_method_cases(
       let method_routes =
         list.filter_map(routes, fn(r) {
           case r {
-            ParsedRoute(method:, path:, handler:, validator:, params:) ->
-              Ok(#(method, path, handler, validator, params))
+            ParsedRoute(method:, path:, handler:, params:) ->
+              Ok(#(method, path, handler, params))
             ParsedRedirect(..) -> Error(Nil)
           }
         })
 
       case method_routes {
         [] -> "      response.not_found()"
-        [#(method, path, handler, validator, fn_params)] -> {
+        [#(method, path, handler, fn_params)] -> {
           let method_upper = string.capitalise(method)
           let route_params = extract_params_from_path(path)
           let controller_mw =
@@ -1127,7 +850,6 @@ fn generate_method_cases(
               route_params,
               fn_params,
               controller_mw,
-              validator,
             )
           "      case method {\n        "
           <> method_upper
@@ -1144,7 +866,7 @@ fn generate_method_cases(
 
           let cases =
             list.map(method_routes, fn(r) {
-              let #(method, path, handler, validator, fn_params) = r
+              let #(method, path, handler, fn_params) = r
               let method_upper = string.capitalise(method)
               let route_params = extract_params_from_path(path)
               let controller_mw =
@@ -1155,7 +877,6 @@ fn generate_method_cases(
                   route_params,
                   fn_params,
                   controller_mw,
-                  validator,
                 )
               "        " <> method_upper <> " -> " <> handler_call
             })
@@ -1183,44 +904,26 @@ fn extract_params_from_path(path: String) -> List(String) {
   |> list.map(extract_param_name)
 }
 
-/// The most complex part of code generation — the handler call
-/// might be bare (`controller.index(ctx)`), wrapped in a
-/// validator (`use validated <- user.validate(ctx)`), or
-/// wrapped in controller middleware (`use ctx <-
-/// middleware.apply(controller.middleware(), ctx)`) or both.
-/// The layers nest outward: middleware wraps validator wraps
-/// handler.
+/// Generates the handler call expression, optionally wrapped in
+/// controller middleware. Middleware wraps the handler call so
+/// `use ctx <- middleware.apply(...)` runs before the handler.
 ///
 fn generate_handler_call(
   handler: String,
   route_params: List(String),
   fn_params: List(FunctionParam),
   controller_middleware: option.Option(String),
-  validator: option.Option(String),
 ) -> String {
   // Build args based on function signature order
-  let args = build_handler_args(fn_params, route_params, validator)
+  let args = build_handler_args(fn_params, route_params)
   let call = handler <> "(" <> string.join(args, ", ") <> ")"
-
-  // Wrap with validator if present
-  let with_validator = case validator {
-    option.Some(v) ->
-      "{\n          use validated <- "
-      <> validator_module_name(v)
-      <> ".validate(ctx)\n          "
-      <> call
-      <> "\n        }"
-    option.None -> call
-  }
 
   // Wrap with controller middleware if present
   case controller_middleware {
-    option.None -> with_validator
+    option.None -> call
     option.Some(alias) -> {
-      // Check if handler or validator uses ctx to avoid unused warnings
       let handler_uses_ctx = list.any(fn_params, is_context_param)
-      let has_validator = option.is_some(validator)
-      let mw_ctx = case handler_uses_ctx || has_validator {
+      let mw_ctx = case handler_uses_ctx {
         True -> "ctx"
         False -> "_ctx"
       }
@@ -1229,7 +932,7 @@ fn generate_handler_call(
       <> " <- middleware.apply("
       <> alias
       <> ".middleware(), ctx)\n          "
-      <> with_validator
+      <> call
       <> "\n        }"
     }
   }
@@ -1238,39 +941,28 @@ fn generate_handler_call(
 /// Arguments must appear in the same order as the handler's
 /// function signature — not the order they appear in the route
 /// path. Walking the parsed params in declaration order and
-/// mapping each one to `ctx`, `validated`, or the route param
-/// variable ensures the generated call matches.
+/// mapping each one to `ctx` or the route param variable
+/// ensures the generated call matches.
 ///
 fn build_handler_args(
   fn_params: List(FunctionParam),
   route_params: List(String),
-  validator: option.Option(String),
 ) -> List(String) {
-  list.map(fn_params, fn(param) { param_to_arg(param, route_params, validator) })
+  list.map(fn_params, fn(param) { param_to_arg(param, route_params) })
 }
 
 /// Each param type maps to a different source: Context params
-/// get `ctx` (from the dispatch function), Data params get
-/// `validated` (from the validator's `use` callback), and
-/// everything else is a route param bound by the pattern match.
-/// The type annotation drives this decision, not the param
-/// name.
+/// get `ctx` (from the dispatch function), and everything else
+/// is a route param bound by the pattern match. The type
+/// annotation drives this decision, not the param name.
 ///
-fn param_to_arg(
-  param: FunctionParam,
-  _route_params: List(String),
-  validator: option.Option(String),
-) -> String {
+fn param_to_arg(param: FunctionParam, _route_params: List(String)) -> String {
   case is_context_param(param) {
     True -> "ctx"
     False ->
-      case is_validator_data_param(param, validator) {
-        True -> "validated"
-        False ->
-          case string.starts_with(param.name, "_") {
-            True -> string.drop_start(param.name, 1)
-            False -> param.name
-          }
+      case string.starts_with(param.name, "_") {
+        True -> string.drop_start(param.name, 1)
+        False -> param.name
       }
   }
 }
@@ -1283,25 +975,6 @@ fn param_to_arg(
 fn is_context_param(param: FunctionParam) -> Bool {
   string.starts_with(param.param_type, "Context(")
   || string.starts_with(param.param_type, "context.Context(")
-}
-
-/// Like context params, validator data can be written as bare
-/// `Data` (with an import) or `login.Data` (qualified). Either
-/// way, the generated code should pass `validated` — the value
-/// produced by the `use validated <-` callback.
-///
-fn is_validator_data_param(
-  param: FunctionParam,
-  validator: option.Option(String),
-) -> Bool {
-  case validator {
-    option.Some(v) -> {
-      let validator_name = validator_module_name(v)
-      param.param_type == "Data"
-      || param.param_type == validator_name <> ".Data"
-    }
-    option.None -> False
-  }
 }
 
 /// Extracts the controller alias from a qualified handler name
@@ -1413,19 +1086,11 @@ fn get_specific_error_hint(msg: String) -> String {
     string.contains(msg, "Response")
     && string.contains(msg, "Type mismatch")
     && !is_middleware_type_mismatch
-  let is_validated_type_mismatch =
-    string.contains(msg, "Type mismatch")
-    && string.contains(msg, "validated")
-    && !is_wrong_return
-    && !is_middleware_type_mismatch
 
   case Nil {
     _ if is_middleware_type_mismatch ->
       "Controller middleware() must return List(Middleware(Context(App))).\n"
       <> "Each item should be a middleware function"
-    _ if is_validated_type_mismatch ->
-      "Type mismatch with validated data.\n"
-      <> "Ensure your Data type is imported from the validator module."
     _ if is_arity_error ->
       "Handler function has incorrect number of parameters.\n"
       <> "Expected signature: fn(ctx: Context(App)) or fn(ctx: Context(App), ...path_params)"
