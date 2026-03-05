@@ -203,53 +203,49 @@ pub fn handle() {
   should.equal(import_count, 2)
 }
 
-// ------------------------------------------------------------- Context: Field Injection (Typed Model)
+// ------------------------------------------------------------- App: Field Injection (Typed Model)
 
-pub fn adds_typed_field_to_context_test() {
+pub fn adds_typed_field_to_app_test() {
   let input =
     "import gleam/option.{type Option}
-import glimr/session/session.{type Session}
 
-pub type Context {
-  Context(
-    session: Session,
+pub type App {
+  App(
+    db: DbPool,
   )
 }"
 
-  let result = make_auth_service.inject_into_context(input, "user", "main")
+  let result = make_auth_service.inject_into_app(input, "user", "main")
 
   should.be_true(has_line(result, "user: Option(user.User),"))
 }
 
-pub fn context_adds_repository_import_test() {
+pub fn app_adds_repository_import_test() {
   let input =
     "import gleam/option.{type Option}
-import glimr/session/session.{type Session}
 
-pub type Context {
-  Context(
-    session: Session,
+pub type App {
+  App(
+    db: DbPool,
   )
 }"
 
-  let result = make_auth_service.inject_into_context(input, "user", "main")
+  let result = make_auth_service.inject_into_app(input, "user", "main")
 
   should.be_true(has_line(result, "import database/main/models/user/gen/user"))
 }
 
-pub fn context_field_injection_with_custom_model_test() {
+pub fn app_field_injection_with_custom_model_test() {
   let input =
     "import gleam/option.{type Option}
-import glimr/session/session.{type Session}
 
-pub type Context {
-  Context(
-    session: Session,
+pub type App {
+  App(
+    db: DbPool,
   )
 }"
 
-  let result =
-    make_auth_service.inject_into_context(input, "customer", "postgres")
+  let result = make_auth_service.inject_into_app(input, "customer", "postgres")
 
   should.be_true(has_line(result, "customer: Option(customer.Customer),"))
   should.be_true(has_line(
@@ -258,166 +254,158 @@ pub type Context {
   ))
 }
 
-pub fn context_field_added_after_last_existing_field_test() {
+pub fn app_field_added_after_last_existing_field_test() {
   let input =
     "import gleam/option.{type Option}
-import glimr/session/session.{type Session}
 
-pub type Context {
-  Context(
-    cache: CacheContext,
-    db: DbContext,
-    session: Session,
+pub type App {
+  App(
+    cache: CachePool,
+    db: DbPool,
   )
 }"
 
-  let result = make_auth_service.inject_into_context(input, "user", "main")
+  let result = make_auth_service.inject_into_app(input, "user", "main")
   let lines = string.split(result, "\n")
 
-  let session_idx = find_line_index(lines, "session: Session,", 0)
+  let db_idx = find_line_index(lines, "db: DbPool,", 0)
   let user_idx = find_line_index(lines, "user: Option(user.User),", 0)
 
-  // user field should come right after session field
-  should.be_true(user_idx == session_idx + 1)
+  // user field should come right after db field
+  should.be_true(user_idx == db_idx + 1)
 }
 
-pub fn context_adds_option_import_when_missing_test() {
+pub fn app_adds_option_import_when_missing_test() {
   let input =
-    "import glimr/session/session.{type Session}
-
-pub type Context {
-  Context(
-    session: Session,
+    "pub type App {
+  App(
+    db: DbPool,
   )
 }"
 
-  let result = make_auth_service.inject_into_context(input, "user", "main")
+  let result = make_auth_service.inject_into_app(input, "user", "main")
 
   should.be_true(has_line(result, "import gleam/option.{type Option}"))
   should.be_true(has_line(result, "user: Option(user.User),"))
 }
 
-pub fn context_preserves_existing_option_import_test() {
+pub fn app_preserves_existing_option_import_test() {
   let input =
     "import gleam/option.{type Option}
-import glimr/session/session.{type Session}
 
-pub type Context {
-  Context(
-    session: Session,
+pub type App {
+  App(
+    db: DbPool,
   )
 }"
 
-  let result = make_auth_service.inject_into_context(input, "user", "main")
+  let result = make_auth_service.inject_into_app(input, "user", "main")
 
   // Should have exactly one Option import
   let count = count_occurrences(result, "import gleam/option")
   should.equal(count, 1)
 }
 
-// ------------------------------------------------------------- Context: Single-Line Constructor
+// ------------------------------------------------------------- App: Single-Line Constructor
 
-pub fn context_injection_works_on_single_line_constructor_test() {
+pub fn app_injection_works_on_single_line_constructor_test() {
   let input =
     "import gleam/option.{type Option}
-import glimr/session/session.{type Session}
 
-pub type Context {
-  Context(cache: CacheContext, db: DbContext, session: Session)
+pub type App {
+  App(cache: CachePool, db: DbPool)
 }"
 
-  let result = make_auth_service.inject_into_context(input, "user", "main")
+  let result = make_auth_service.inject_into_app(input, "user", "main")
 
   should.be_true(has_line(result, "user: Option(user.User),"))
 }
 
-// ------------------------------------------------------------- Ctx Provider: Field Injection
+// ------------------------------------------------------------- App Start: Field Injection
 
-pub fn adds_none_field_to_ctx_provider_test() {
+pub fn adds_none_field_to_app_start_test() {
   let input =
-    "import app/http/context/ctx.{type Context}
-import app/http/context/ctx_db
+    "import app/app
 
-pub fn register() -> Context {
-  let db = ctx_db.load()
+pub fn start() -> app.App {
+  let db = postgres.start(\"main\")
 
-  ctx.Context(
+  app.App(
     db: db,
     // ...
   )
 }"
 
-  let result = make_auth_service.inject_into_ctx_provider(input, "user")
+  let result = make_auth_service.inject_into_app_start(input, "user")
 
   should.be_true(has_line(result, "user: option.None,"))
 }
 
-pub fn ctx_provider_adds_option_import_when_missing_test() {
+pub fn app_start_adds_option_import_when_missing_test() {
   let input =
-    "import app/http/context/ctx.{type Context}
+    "import app/app
 
-pub fn register() -> Context {
-  ctx.Context(
+pub fn start() -> app.App {
+  app.App(
     db: db,
     // ...
   )
 }"
 
-  let result = make_auth_service.inject_into_ctx_provider(input, "user")
+  let result = make_auth_service.inject_into_app_start(input, "user")
 
   should.be_true(has_line(result, "import gleam/option"))
 }
 
-pub fn ctx_provider_preserves_existing_option_import_test() {
+pub fn app_start_preserves_existing_option_import_test() {
   let input =
-    "import app/http/context/ctx.{type Context}
+    "import app/app
 import gleam/option
 
-pub fn register() -> Context {
-  ctx.Context(
+pub fn start() -> app.App {
+  app.App(
     db: db,
     // ...
   )
 }"
 
-  let result = make_auth_service.inject_into_ctx_provider(input, "user")
+  let result = make_auth_service.inject_into_app_start(input, "user")
 
   let count = count_occurrences(result, "import gleam/option")
   should.equal(count, 1)
 }
 
-pub fn ctx_provider_field_after_last_field_test() {
+pub fn app_start_field_after_last_field_test() {
   let input =
-    "import app/http/context/ctx.{type Context}
+    "import app/app
 
-pub fn register() -> Context {
-  ctx.Context(
+pub fn start() -> app.App {
+  app.App(
     cache: cache,
     db: db,
-    session: session,
     // ...
   )
 }"
 
-  let result = make_auth_service.inject_into_ctx_provider(input, "user")
+  let result = make_auth_service.inject_into_app_start(input, "user")
   let lines = string.split(result, "\n")
 
-  let session_idx = find_line_index(lines, "session: session,", 0)
+  let db_idx = find_line_index(lines, "db: db,", 0)
   let user_idx = find_line_index(lines, "user: option.None,", 0)
 
-  should.be_true(user_idx == session_idx + 1)
+  should.be_true(user_idx == db_idx + 1)
 }
 
-pub fn ctx_provider_works_on_single_line_constructor_test() {
+pub fn app_start_works_on_single_line_constructor_test() {
   let input =
-    "import app/http/context/ctx.{type Context}
+    "import app/app
 
-pub fn register() -> Context {
-  let db = ctx_db.load()
-  ctx.Context(cache: cache, db: db, session: session)
+pub fn start() -> app.App {
+  let db = postgres.start(\"main\")
+  app.App(cache: cache, db: db)
 }"
 
-  let result = make_auth_service.inject_into_ctx_provider(input, "user")
+  let result = make_auth_service.inject_into_app_start(input, "user")
 
   should.be_true(has_line(result, "user: option.None,"))
 }

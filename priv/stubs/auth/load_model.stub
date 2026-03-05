@@ -1,5 +1,5 @@
 import app/app.{type App, App}
-import data/@{{ connection }}/models/@{{ model }}/gen/@{{ model }}
+import database/@{{ connection }}/models/@{{ model }}/gen/@{{ model }}
 import gleam/int
 import gleam/option
 import gleam/result

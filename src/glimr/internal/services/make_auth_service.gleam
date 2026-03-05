@@ -162,19 +162,19 @@ pub fn register_in_kernel(model_name: String) -> Nil {
   }
 }
 
-/// Controllers access the current user via `ctx.user`, which
-/// means the Context type needs a field for it. Adding the
-/// field and its import automatically means the developer
-/// doesn't have to manually wire up types across files.
+/// Controllers access the current user via `app.user`, which
+/// means the App type needs a field for it. Adding the field
+/// and its import automatically means the developer doesn't
+/// have to manually wire up types across files.
 ///
-pub fn register_in_context(model_name: String, connection: String) -> Nil {
-  let ctx_path = "src/app/http/context/ctx.gleam"
+pub fn register_in_app(model_name: String, connection: String) -> Nil {
+  let app_path = "src/app/app.gleam"
 
-  case simplifile.read(ctx_path) {
+  case simplifile.read(app_path) {
     Error(_) -> {
       console.output()
       |> console.line_error(
-        "Could not read " <> ctx_path <> " — does it exist?",
+        "Could not read " <> app_path <> " — does it exist?",
       )
       |> console.print()
     }
@@ -185,7 +185,7 @@ pub fn register_in_context(model_name: String, connection: String) -> Nil {
           console.output()
           |> console.line_warning(
             "Skipped: "
-            <> ctx_path
+            <> app_path
             <> " ("
             <> model_name
             <> " field already exists)",
@@ -193,27 +193,27 @@ pub fn register_in_context(model_name: String, connection: String) -> Nil {
           |> console.print()
         }
         False -> {
-          let modified = inject_into_context(content, model_name, connection)
-          write_and_format(ctx_path, original: content, modified: modified)
+          let modified = inject_into_app(content, model_name, connection)
+          write_and_format(app_path, original: content, modified: modified)
         }
       }
     }
   }
 }
 
-/// The ctx_provider creates the initial Context value with all
-/// fields set. Without this patch, the new auth field would be
-/// missing from the constructor and every request would crash
-/// with a missing field error.
+/// The bootstrap app module creates the initial App value with
+/// all fields set. Without this patch, the new auth field would
+/// be missing from the constructor and every request would
+/// crash with a missing field error.
 ///
-pub fn register_in_ctx_provider(model_name: String) -> Nil {
-  let provider_path = "src/app/providers/ctx_provider.gleam"
+pub fn register_in_app_start(model_name: String) -> Nil {
+  let bootstrap_path = "src/bootstrap/app.gleam"
 
-  case simplifile.read(provider_path) {
+  case simplifile.read(bootstrap_path) {
     Error(_) -> {
       console.output()
       |> console.line_error(
-        "Could not read " <> provider_path <> " — does it exist?",
+        "Could not read " <> bootstrap_path <> " — does it exist?",
       )
       |> console.print()
     }
@@ -224,7 +224,7 @@ pub fn register_in_ctx_provider(model_name: String) -> Nil {
           console.output()
           |> console.line_warning(
             "Skipped: "
-            <> provider_path
+            <> bootstrap_path
             <> " ("
             <> model_name
             <> " already initialized)",
@@ -232,8 +232,12 @@ pub fn register_in_ctx_provider(model_name: String) -> Nil {
           |> console.print()
         }
         False -> {
-          let modified = inject_into_ctx_provider(content, model_name)
-          write_and_format(provider_path, original: content, modified: modified)
+          let modified = inject_into_app_start(content, model_name)
+          write_and_format(
+            bootstrap_path,
+            original: content,
+            modified: modified,
+          )
         }
       }
     }
@@ -259,9 +263,9 @@ pub fn inject_into_kernel(content: String, model_name: String) -> String {
 /// Same pattern as inject_into_kernel — pure string transform
 /// that the test suite can exercise without file I/O. Adds the
 /// import for the generated repository module and inserts the
-/// typed Option field into the Context constructor.
+/// typed Option field into the App constructor.
 ///
-pub fn inject_into_context(
+pub fn inject_into_app(
   content: String,
   model_name: String,
   connection: String,
@@ -297,11 +301,11 @@ pub fn inject_into_context(
 }
 
 /// Completes the trio of inject functions — this one handles
-/// the ctx_provider where Context values are first constructed.
-/// Inserts `{model}: option.None` so the new field has a valid
-/// default value.
+/// the bootstrap app module where App values are first
+/// constructed. Inserts `{model}: option.None` so the new
+/// field has a valid default value.
 ///
-pub fn inject_into_ctx_provider(content: String, model_name: String) -> String {
+pub fn inject_into_app_start(content: String, model_name: String) -> String {
   let lines = string.split(content, "\n")
 
   // Ensure the option import is present

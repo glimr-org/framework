@@ -60,11 +60,11 @@ fn run(args: Args, pool: DbPool) -> Nil {
   // 7. Patch kernel with load middleware
   make_auth_service.register_in_kernel(model_name)
 
-  // 8. Patch context with typed model field
-  make_auth_service.register_in_context(model_name, connection)
+  // 8. Patch App type with typed model field
+  make_auth_service.register_in_app(model_name, connection)
 
-  // 9. Patch ctx_provider with option.None initializer
-  make_auth_service.register_in_ctx_provider(model_name)
+  // 9. Patch App constructor with option.None initializer
+  make_auth_service.register_in_app_start(model_name)
 
   // 10. Optionally run migrations
   case should_migrate {
