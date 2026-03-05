@@ -295,6 +295,74 @@ pub fn query_with(
   typed_query_fn(conn.handle, converted_sql, params, decoder)
 }
 
+/// Most queries expect exactly one row — looking up a user by
+/// ID, fetching a config setting. Writing `case` over the
+/// result list every time gets tedious and error-prone. This
+/// wraps that pattern: one row is Ok, zero is NotFound, more
+/// than one is a bug worth surfacing as QueryError.
+///
+pub fn query_one(
+  pool: DbPool,
+  sql: String,
+  params: List(Value),
+  decoder: Decoder(a),
+) -> Result(a, DbError) {
+  use conn <- get_connection(pool)
+  query_one_wc(conn, sql, params, decoder)
+}
+
+/// Same single-row semantics as query_one but for use inside
+/// transactions where you already have a checked-out
+/// connection. Using query_one here would check out a second
+/// connection that isn't part of the transaction, silently
+/// reading uncommitted state.
+///
+pub fn query_one_wc(
+  conn: Connection,
+  sql: String,
+  params: List(Value),
+  decoder: Decoder(a),
+) -> Result(a, DbError) {
+  case query_with(conn, sql, params, decoder) {
+    Ok(QueryResult(_, [row])) -> Ok(row)
+    Ok(QueryResult(_, [])) -> Error(NotFound)
+    Ok(_) -> Error(QueryError("Expected single row"))
+    Error(e) -> Error(e)
+  }
+}
+
+/// When you want every matching row — listing all users,
+/// fetching all comments for a post. Unwraps the QueryResult to
+/// just the rows list since the affected-count isn't meaningful
+/// for SELECT queries.
+///
+pub fn query_all(
+  pool: DbPool,
+  sql: String,
+  params: List(Value),
+  decoder: Decoder(a),
+) -> Result(List(a), DbError) {
+  use conn <- get_connection(pool)
+  query_all_wc(conn, sql, params, decoder)
+}
+
+/// Transaction-safe version of query_all — uses a
+/// pre-checked-out connection so the query runs within the
+/// caller's transaction and sees uncommitted writes from
+/// earlier in the same transaction.
+///
+pub fn query_all_wc(
+  conn: Connection,
+  sql: String,
+  params: List(Value),
+  decoder: Decoder(a),
+) -> Result(List(a), DbError) {
+  case query_with(conn, sql, params, decoder) {
+    Ok(QueryResult(_, rows)) -> Ok(rows)
+    Error(e) -> Error(e)
+  }
+}
+
 /// For one-off write operations (INSERT, UPDATE, DELETE) where
 /// you don't need to hold the connection. Checks out a
 /// connection, executes, returns the affected row count, and

@@ -10,12 +10,14 @@
 //// for checks like uniqueness without coupling the validator
 //// to a specific database or config.
 
+import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
 import gleam/regexp
 import gleam/result
 import gleam/string
+import glimr/db/db.{type DbPool}
 import glimr/forms/form.{type UploadedFile}
 import glimr/http/context.{type Context}
 import glimr/http/http.{type Response}
@@ -39,9 +41,10 @@ pub type ValidationError {
 
 /// An enum of built-in rules covers the most common validation
 /// needs so validators stay declarative — no inline functions
-/// for simple checks like Required or MinLength. The Custom
-/// variant is the escape hatch for app-specific logic like
-/// uniqueness checks that need database access via ctx.
+/// for simple checks like Required or MinLength. Exists and
+/// Unique handle the most common database checks directly,
+/// while the Custom variant is the escape hatch for anything
+/// more complex that needs the full app context.
 ///
 pub type StringRule(ctx) {
   Required
@@ -69,6 +72,8 @@ pub type StringRule(ctx) {
   Date
   Uuid
   Ip
+  Exists(DbPool, String)
+  Unique(DbPool, String)
   Custom(CustomValidation(ctx))
 }
 
@@ -391,6 +396,8 @@ fn apply_rule(
     Date -> validate_date(field, value)
     Uuid -> validate_uuid(field, value)
     Ip -> validate_ip(field, value)
+    Exists(pool, table) -> validate_exists(field, value, pool, table)
+    Unique(pool, table) -> validate_unique(field, value, pool, table)
     Custom(custom_validation) ->
       validate_custom(custom_validation, field, value, data, ctx)
   }
@@ -921,6 +928,62 @@ fn validate_ip(field: String, value: String) -> Result(Nil, String) {
       case regexp.check(ipv4_re, value) || regexp.check(ipv6_re, value) {
         True -> Ok(Nil)
         False -> Error(field <> " must be a valid IP address")
+      }
+    }
+  }
+}
+
+/// Foreign key references need to point at real rows —
+/// submitting a `category_id` that doesn't exist would pass all
+/// other validation but blow up on insert. Checking the
+/// database here catches it with a friendly "does not exist"
+/// message instead of a constraint error. Empty values pass
+/// through since Required handles that.
+///
+fn validate_exists(
+  field: String,
+  value: String,
+  pool: DbPool,
+  table: String,
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let sql =
+        "SELECT 1 FROM " <> table <> " WHERE " <> field <> " = $1 LIMIT 1"
+
+      case db.query(pool, sql, [db.string(value)], decode.at([0], decode.int)) {
+        Ok(db.QueryResult(_, [])) -> Error(field <> " does not exist")
+        Ok(_) -> Ok(Nil)
+        Error(_) -> Error(field <> " could not be validated")
+      }
+    }
+  }
+}
+
+/// Registration forms, profile updates — anywhere a value must
+/// be unique in the database. Checking at validation time means
+/// the user sees "email already exists" on the form instead of
+/// hitting a database constraint error that the app has to
+/// catch and translate. Empty values pass through since
+/// Required handles that separately.
+///
+fn validate_unique(
+  field: String,
+  value: String,
+  pool: DbPool,
+  table: String,
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let sql =
+        "SELECT 1 FROM " <> table <> " WHERE " <> field <> " = $1 LIMIT 1"
+
+      case db.query(pool, sql, [db.string(value)], decode.at([0], decode.int)) {
+        Ok(db.QueryResult(_, [])) -> Ok(Nil)
+        Ok(_) -> Error(field <> " already exists")
+        Error(_) -> Error(field <> " could not be validated")
       }
     }
   }
