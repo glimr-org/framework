@@ -143,9 +143,9 @@ fn group_routes_by_prefix(
             Ok(#(
               module,
               annotation_parser.ParseResult(
-                group_middleware: parse_result.group_middleware,
                 routes: matching_routes,
                 has_context_import: parse_result.has_context_import,
+                has_middleware_fn: parse_result.has_middleware_fn,
                 validator_data_imports: parse_result.validator_data_imports,
               ),
             ))

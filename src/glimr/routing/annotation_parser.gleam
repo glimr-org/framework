@@ -36,7 +36,6 @@ pub type ParsedRoute {
     method: String,
     path: String,
     handler: String,
-    middleware: List(String),
     validator: Option(String),
     params: List(FunctionParam),
   )
@@ -44,17 +43,17 @@ pub type ParsedRoute {
 }
 
 /// Everything the route compiler needs from a single controller
-/// file — the routes themselves, group-level middleware, and
-/// import flags. The import check lets us catch a missing
-/// `Context` import early with a helpful error instead of
-/// letting the Gleam compiler produce a confusing "unknown
-/// type" message.
+/// file — the routes themselves, whether it exports a
+/// `middleware()` function, and import flags. The import check
+/// lets us catch a missing `Context` import early with a
+/// helpful error instead of letting the Gleam compiler produce
+/// a confusing "unknown type" message.
 ///
 pub type ParseResult {
   ParseResult(
-    group_middleware: List(String),
     routes: List(ParsedRoute),
     has_context_import: Bool,
+    has_middleware_fn: Bool,
     validator_data_imports: List(String),
   )
 }
@@ -62,16 +61,15 @@ pub type ParseResult {
 // ------------------------------------------------------------- Private Types
 
 /// A route's annotations can span several doc comment lines —
-/// method, path, middleware, validator, redirects — and they
-/// all need to be collected before we hit the `pub fn` that
-/// ties them together. This state bag accumulates everything
-/// until the function declaration finalizes it.
+/// method, path, validator, redirects — and they all need to be
+/// collected before we hit the `pub fn` that ties them
+/// together. This state bag accumulates everything until the
+/// function declaration finalizes it.
 ///
 type AnnotationState {
   AnnotationState(
     method: Option(String),
     path: Option(String),
-    middleware: List(String),
     validator: Option(String),
     redirects: List(#(String, Int)),
   )
@@ -81,61 +79,34 @@ type AnnotationState {
 
 /// The main entry point — takes the raw source of a controller
 /// file and returns everything the route compiler needs to
-/// generate dispatch code. Group middleware comes from
-/// file-level comments, individual routes from the doc comments
-/// above each handler function.
+/// generate dispatch code. Routes come from the doc comments
+/// above each handler function, and we detect whether the
+/// controller exports a `middleware()` function so the compiler
+/// can wrap handlers automatically.
 ///
 pub fn parse(content: String) -> ParseResult {
-  let group_middleware = extract_group_middleware(content)
-  let routes = extract_routes(content, group_middleware)
+  let routes = extract_routes(content)
   let has_context_import = check_context_import(content)
+  let has_middleware_fn = check_middleware_fn(content)
   let validator_data_imports = extract_validator_data_imports(content)
 
   ParseResult(
-    group_middleware:,
     routes:,
     has_context_import:,
+    has_middleware_fn:,
     validator_data_imports:,
   )
 }
 
 // ------------------------------------------------------------- Private Functions
 
-/// If every route in a controller needs auth middleware,
-/// annotating each one individually is tedious and error-prone
-/// — miss one and you've got an unprotected endpoint. Group
-/// middleware declared at the file level applies to everything,
-/// so `// @group_middleware "auth"` at the top covers all
-/// routes automatically.
-///
-fn extract_group_middleware(content: String) -> List(String) {
-  content
-  |> string.split("\n")
-  |> list.take_while(fn(line) {
-    let trimmed = string.trim(line)
-    !string.starts_with(trimmed, "pub fn")
-    && !string.starts_with(trimmed, "fn ")
-  })
-  |> list.filter_map(fn(line) {
-    let trimmed = string.trim(line)
-    case string.starts_with(trimmed, "// @group_middleware ") {
-      True -> extract_quoted_arg(trimmed, "// @group_middleware ")
-      False -> Error(Nil)
-    }
-  })
-}
-
 /// Splits the file into lines and kicks off the recursive
-/// line-by-line parser. Group middleware is passed through so
-/// it can be merged with per-route middleware when each route
-/// is finalized.
+/// line-by-line parser that extracts routes from doc comment
+/// annotations above handler functions.
 ///
-fn extract_routes(
-  content: String,
-  group_middleware: List(String),
-) -> List(ParsedRoute) {
+fn extract_routes(content: String) -> List(ParsedRoute) {
   let lines = string.split(content, "\n")
-  parse_lines(lines, group_middleware, None, [])
+  parse_lines(lines, None, [])
 }
 
 /// Route paths like `"/users/:id"` are quoted in annotations so
@@ -167,7 +138,6 @@ fn extract_quoted_arg(line: String, prefix: String) -> Result(String, Nil) {
 ///
 fn parse_lines(
   lines: List(String),
-  group_middleware: List(String),
   current: Option(AnnotationState),
   acc: List(ParsedRoute),
 ) -> List(ParsedRoute) {
@@ -185,13 +155,12 @@ fn parse_lines(
               AnnotationState(
                 method: None,
                 path: None,
-                middleware: [],
                 validator: None,
                 redirects: [],
               )
           }
           let new_state = parse_annotation_line(trimmed, state)
-          parse_lines(rest, group_middleware, Some(new_state), acc)
+          parse_lines(rest, Some(new_state), acc)
         }
         False -> {
           // Check if this is a pub fn declaration
@@ -205,28 +174,22 @@ fn parse_lines(
                     collect_signature(line, rest, "")
                   let params = extract_fn_params(signature)
                   let new_routes =
-                    create_routes_from_state(
-                      state,
-                      fn_name,
-                      params,
-                      group_middleware,
-                    )
+                    create_routes_from_state(state, fn_name, params)
                   parse_lines(
                     remaining,
-                    group_middleware,
                     None,
                     list.append(list.reverse(new_routes), acc),
                   )
                 }
-                None -> parse_lines(rest, group_middleware, None, acc)
+                None -> parse_lines(rest, None, acc)
               }
             }
             False -> {
               // Not a doc comment or pub fn, reset state if we hit
               // non-empty non-comment line
               case trimmed == "" || string.starts_with(trimmed, "//") {
-                True -> parse_lines(rest, group_middleware, current, acc)
-                False -> parse_lines(rest, group_middleware, None, acc)
+                True -> parse_lines(rest, current, acc)
+                False -> parse_lines(rest, None, acc)
               }
             }
           }
@@ -261,11 +224,11 @@ fn collect_signature(
   }
 }
 
-/// A doc comment line might be `@get "/users"`, `@middleware
-/// "auth"`, `@validator "login"`, or just regular prose. We try
-/// each annotation parser in sequence and take the first match
-/// — if none match, the line is ignored and the existing state
-/// carries through unchanged.
+/// A doc comment line might be `@get "/users"`, `@validator
+/// "login"`, or just regular prose. We try each annotation
+/// parser in sequence and take the first match — if none match,
+/// the line is ignored and the existing state carries through
+/// unchanged.
 ///
 fn parse_annotation_line(
   line: String,
@@ -274,7 +237,6 @@ fn parse_annotation_line(
   let content = string.drop_start(line, 3) |> string.trim_start
 
   try_parse_method(content, state)
-  |> result.lazy_or(fn() { try_parse_middleware(content, state) })
   |> result.lazy_or(fn() { try_parse_validator(content, state) })
   |> result.lazy_or(fn() { try_parse_redirect(content, state) })
   |> result.unwrap(state)
@@ -303,25 +265,6 @@ fn try_parse_method(
       False -> Error(Nil)
     }
   })
-}
-
-/// Sometimes only one or two routes in a controller need extra
-/// middleware — rate limiting on a login endpoint, or caching
-/// on a public page. Per-route `@middleware` lets you add those
-/// without affecting every other handler in the file.
-///
-fn try_parse_middleware(
-  content: String,
-  state: AnnotationState,
-) -> Result(AnnotationState, Nil) {
-  case string.starts_with(content, "@middleware ") {
-    True ->
-      extract_quoted_arg(content, "@middleware ")
-      |> result.map(fn(mw) {
-        AnnotationState(..state, middleware: [mw, ..state.middleware])
-      })
-    False -> Error(Nil)
-  }
 }
 
 /// Attaching a `@validator` to a route tells the compiled
@@ -488,28 +431,22 @@ fn parse_single_param(param: String) -> Result(FunctionParam, Nil) {
 }
 
 /// When we finally hit the `pub fn`, all the annotations above
-/// it are ready to be assembled into a route. Group middleware
-/// goes first (so auth runs before route-specific middleware
-/// like rate limiting), then we generate redirect routes that
-/// point at this handler's path.
+/// it are ready to be assembled into a route. We generate the
+/// main route plus any redirect routes that point at this
+/// handler's path.
 ///
 fn create_routes_from_state(
   state: AnnotationState,
   fn_name: String,
   params: List(FunctionParam),
-  group_middleware: List(String),
 ) -> List(ParsedRoute) {
   case state.method, state.path {
     Some(method), Some(path) -> {
-      // Reverse middleware since it was accumulated via prepending
-      let route_middleware = list.reverse(state.middleware)
-      let all_middleware = list.append(group_middleware, route_middleware)
       let main_route =
         ParsedRoute(
           method:,
           path:,
           handler: fn_name,
-          middleware: all_middleware,
           validator: state.validator,
           params:,
         )
@@ -596,6 +533,20 @@ fn extract_validator_data_imports(content: String) -> List(String) {
           False -> Error(Nil)
         }
     }
+  })
+}
+
+/// Controllers can define a `pub fn middleware()` function to
+/// apply middleware to all their routes. The route compiler
+/// detects this and wraps every handler call with
+/// `middleware.apply(controller.middleware(), ctx)`.
+///
+fn check_middleware_fn(content: String) -> Bool {
+  content
+  |> string.split("\n")
+  |> list.any(fn(line) {
+    let trimmed = string.trim(line)
+    string.starts_with(trimmed, "pub fn middleware(")
   })
 }
 
