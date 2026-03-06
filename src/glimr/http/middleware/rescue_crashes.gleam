@@ -12,6 +12,7 @@
 import glimr/http/context.{type Context}
 import glimr/http/fail
 import glimr/http/http.{type Response}
+import glimr/http/kernel.{type Next}
 import glimr/response/response
 import wisp
 
@@ -26,7 +27,7 @@ import wisp
 /// rescue_crashes first and become 500s, so users never see raw
 /// crash output regardless of what goes wrong.
 ///
-pub fn run(ctx: Context(app), next: fn(Context(app)) -> Response) -> Response {
+pub fn run(ctx: Context(app), next: Next(app)) -> Response {
   use <- wisp.rescue_crashes
 
   case fail.rescue(fn() { next(ctx) }) {

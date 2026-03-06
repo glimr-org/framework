@@ -9,6 +9,7 @@
 import glimr/http/context.{type Context, Context}
 import glimr/http/error_handler
 import glimr/http/http.{type Response}
+import glimr/http/kernel.{type Next}
 import glimr/response/response
 
 // ------------------------------------------------------------- Public Functions
@@ -16,7 +17,7 @@ import glimr/response/response
 /// Sets the response format to JSON for this request and wraps
 /// the handler with JSON error responses.
 ///
-pub fn run(ctx: Context(app), next: fn(Context(app)) -> Response) -> Response {
+pub fn run(ctx: Context(app), next: Next(app)) -> Response {
   let ctx = Context(..ctx, response_format: response.JSON)
   use <- error_handler.default_responses(response.JSON)
 

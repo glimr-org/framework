@@ -1089,7 +1089,7 @@ fn get_specific_error_hint(msg: String) -> String {
 
   case Nil {
     _ if is_middleware_type_mismatch ->
-      "Controller middleware() must return List(Middleware(Context(App))).\n"
+      "Controller middleware() must return List(Middleware(App)).\n"
       <> "Each item should be a middleware function"
     _ if is_arity_error ->
       "Handler function has incorrect number of parameters.\n"

@@ -2,11 +2,12 @@
 ////
 //// The framework's middleware types and middleware group
 //// definitions. Controllers, middleware, and the route
-//// compiler reference the Next and Middleware types from
-//// here, while the raw Request and Response aliases live
-//// in glimr/http/http — the leaf module that wraps wisp.
+//// compiler reference the Next and Middleware types from here,
+//// while the raw Request and Response aliases live in
+//// glimr/http/http — the leaf module that wraps wisp.
 ////
 
+import glimr/http/context.{type Context}
 import glimr/http/http.{type Response}
 import wisp
 
@@ -14,22 +15,20 @@ import wisp
 
 /// Middleware functions receive a `next` callback they can call
 /// to continue the chain. Naming this signature avoids
-/// repeating `fn(context) -> Response` in every middleware
+/// repeating `fn(Context(app)) -> Response` in every middleware
 /// definition and makes it clear what `next` actually is when
-/// you're reading middleware code. Typically `context` is
-/// `Context(App)` from glimr/http/context.
+/// you're reading middleware code.
 ///
-pub type Next(context) =
-  fn(context) -> Response
+pub type Next(app) =
+  fn(Context(app)) -> Response
 
-/// The shape of a middleware function — takes a context and
-/// the next handler in the chain. Having a named type for this
+/// The shape of a middleware function — takes a context and the
+/// next handler in the chain. Having a named type for this
 /// means the route compiler can generate middleware wiring code
 /// without spelling out the full function signature every time.
-/// Typically `context` is `Context(App)` from glimr/http/context.
 ///
-pub type Middleware(context) =
-  fn(context, Next(context)) -> Response
+pub type Middleware(app) =
+  fn(Context(app), Next(app)) -> Response
 
 /// Web routes need HTML error pages and static file serving,
 /// API routes need JSON errors and CORS headers — lumping them

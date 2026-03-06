@@ -17,6 +17,7 @@ import gleam/option
 import glimr/config/config
 import glimr/http/context.{type Context, Context}
 import glimr/http/http.{type Request, type Response} as _glimr_http
+import glimr/http/kernel.{type Next}
 import glimr/session/session
 import glimr/session/store
 import wisp
@@ -36,7 +37,7 @@ import wisp
 /// |> middleware.apply(ctx, router)
 /// ```
 ///
-pub fn run(ctx: Context(app), next: fn(Context(app)) -> Response) -> Response {
+pub fn run(ctx: Context(app), next: Next(app)) -> Response {
   let req = ctx.req
   let cookie_name = config.get_string("session.cookie")
   let lifetime = config.get_int("session.lifetime")

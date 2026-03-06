@@ -11,6 +11,7 @@
 
 import glimr/http/context.{type Context, Context}
 import glimr/http/http.{type Response}
+import glimr/http/kernel.{type Next}
 import wisp
 
 // ------------------------------------------------------------- Public Functions
@@ -22,7 +23,7 @@ import wisp
 /// other headers remain accurate from the original GET
 /// response.
 ///
-pub fn run(ctx: Context(app), next: fn(Context(app)) -> Response) -> Response {
+pub fn run(ctx: Context(app), next: Next(app)) -> Response {
   use req <- wisp.handle_head(ctx.req)
 
   next(Context(..ctx, req: req))
