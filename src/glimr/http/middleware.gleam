@@ -30,7 +30,7 @@ import glimr/http/kernel.{type Middleware}
 /// ```
 ///
 pub fn apply(
-  middleware_list: List(Middleware(Context(app))),
+  middleware_list: List(Middleware(app)),
   ctx: Context(app),
   next: fn(Context(app)) -> Response,
 ) -> Response {
@@ -46,7 +46,7 @@ pub fn apply(
 /// handler — useful for timing, logging, or cleanup.
 ///
 fn do_apply(
-  middleware_list: List(Middleware(Context(app))),
+  middleware_list: List(Middleware(app)),
   ctx: Context(app),
   next: fn(Context(app)) -> Response,
 ) -> Response {

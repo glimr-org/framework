@@ -11,6 +11,7 @@
 import glimr/config/config
 import glimr/http/context.{type Context}
 import glimr/http/http.{type Response}
+import glimr/http/kernel.{type Next}
 import wisp
 
 // ------------------------------------------------------------- Public Functions
@@ -21,7 +22,7 @@ import wisp
 /// session parsing, CSRF validation, and other downstream
 /// middleware that only applies to dynamic routes.
 ///
-pub fn run(ctx: Context(app), next: fn(Context(app)) -> Response) -> Response {
+pub fn run(ctx: Context(app), next: Next(app)) -> Response {
   let static_directory = config.get_string("app.static.directory")
 
   use <- wisp.serve_static(
