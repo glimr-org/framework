@@ -8,11 +8,9 @@ import glimr/http/http.{type Response}
 import glimr/http/kernel.{type Next}
 import glimr_auth/auth
 
-pub const session_key = "@{{ session_key }}"
-
 pub fn run(ctx: Context(App), next: Next(App)) -> Response {
   let @{{ model }} =
-    auth.id(ctx.session, session_key)
+    auth.id(ctx.session, @{{ model }}.session_key)
     |> result.try(int.parse)
     |> result.try(fn(id) { @{{ model }}.find(ctx.app.@{{ ctx_db_name }}, id) |> result.replace_error(Nil) })
     |> option.from_result

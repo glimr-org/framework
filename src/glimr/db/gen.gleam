@@ -177,7 +177,8 @@ fn process_model(models_path: String, model_name: String, verbose: Bool) -> Nil 
             False -> Nil
           }
 
-          let generated = generator.generate(model_name, table, queries)
+          let generated =
+            generator.generate(model_name, table, queries, schema_content)
 
           let _ = simplifile.create_directory_all(gen_path)
 

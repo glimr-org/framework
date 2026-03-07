@@ -6,6 +6,7 @@ import glimr/http/http.{type Response}
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#views--responses
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#redirects
 
+/// @get "/@{{ route }}"
 pub fn index(_ctx: Context(App)) -> Response {
   todo
 }

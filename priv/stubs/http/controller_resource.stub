@@ -6,26 +6,32 @@ import glimr/http/http.{type Response}
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#views--responses
 // docs: https://github.com/glimr-org/glimr?tab=readme-ov-file#redirects
 
+/// @get "/@{{ index_route }}"
 pub fn index(ctx: Context(App)) -> Response {
   todo
 }
 
-pub fn show(ctx: Context(App)) -> Response {
+/// @get "/@{{ show_route }}"
+pub fn show(ctx: Context(App), @{{ model }}: String) -> Response {
   todo
 }
 
+/// @post "/@{{ store_route }}"
 pub fn store(ctx: Context(App)) -> Response {
   todo
 }
 
-pub fn edit(ctx: Context(App), id: String) -> Response {
+/// @get "/@{{ edit_route }}"
+pub fn edit(ctx: Context(App), @{{ model }}: String) -> Response {
   todo
 }
 
-pub fn update(ctx: Context(App), id: String) -> Response {
+/// @patch "/@{{ update_route }}"
+pub fn update(ctx: Context(App), @{{ model }}: String) -> Response {
   todo
 }
 
-pub fn destroy(ctx: Context(App), id: String) -> Response {
+/// @delete "/@{{ destroy_route }}"
+pub fn destroy(ctx: Context(App), @{{ model }}: String) -> Response {
   todo
 }

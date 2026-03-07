@@ -6,7 +6,7 @@ import glimr/http/kernel.{type Next}
 import glimr/response/redirect
 
 /// Where to redirect unauthenticated users.
-const guest_redirect = "/login"
+pub const guest_redirect = "@{{ guest_redirect }}"
 
 pub fn run(ctx: Context(App), next: Next(App)) -> Response {
   case ctx.app.@{{ model }} {

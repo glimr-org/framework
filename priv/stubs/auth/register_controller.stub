@@ -1,0 +1,12 @@
+import glimr/http/http.{type Response}
+import glimr/response/response
+
+/// @get "@{{ route_prefix }}/register"
+pub fn show() -> Response {
+  response.empty(200)
+}
+
+/// @post "@{{ route_prefix }}/register"
+pub fn store() -> Response {
+  response.empty(200)
+}

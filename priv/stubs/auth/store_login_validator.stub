@@ -1,0 +1,32 @@
+import app/app.{type App}
+import glimr/forms/validator.{type FormData, type Rule}
+import glimr/http/context.{type Context}
+import glimr/http/http.{type Response}
+
+pub type Data {
+  Data(email: String, password: String)
+}
+
+fn rules() -> List(Rule(Context(App))) {
+  [
+    validator.for("email", [
+      validator.Required,
+      validator.Email,
+      validator.MaxLength(255),
+    ]),
+    validator.for("password", [
+      validator.Required,
+      validator.MinLength(8),
+    ]),
+  ]
+}
+
+fn data(data: FormData) -> Data {
+  Data(email: data.get("email"), password: data.get("password"))
+}
+
+pub fn validate(ctx: Context(App), next: fn(Data) -> Response) {
+  use validated <- validator.run(ctx, rules, data)
+
+  next(validated)
+}

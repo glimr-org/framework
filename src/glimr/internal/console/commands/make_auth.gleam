@@ -1,6 +1,7 @@
 import gleam/option.{Some}
 import gleam/string
 import glimr/console/command.{type Args, type Command, Argument, Flag, Option}
+import glimr/console/console
 import glimr/db/db.{type DbPool}
 import glimr/db/gen as db_gen
 import glimr/db/gen/migrate as gen_migrate
@@ -22,6 +23,11 @@ pub fn command() -> Command {
       short: "m",
       description: "Run migrations after generating",
     ),
+    Flag(
+      name: "scoped",
+      short: "s",
+      description: "Scope middleware and routes to the model name",
+    ),
     Option(
       name: "ctx-db-name",
       description: "Context field name for the database pool",
@@ -38,35 +44,114 @@ fn run(args: Args, pool: DbPool) -> Nil {
   let connection = command.get_option(args, "database")
   let ctx_db_name = command.get_option(args, "ctx-db-name")
   let should_migrate = command.has_flag(args, "migrate")
+  let scoped = command.has_flag(args, "scoped")
 
-  // 1. Generate model files (schema + queries)
+  // 1. Check for existing unscoped auth (if not scoped)
+  case scoped {
+    False -> {
+      case make_auth_service.check_existing_unscoped_auth(model_name) {
+        Error(existing_model) -> {
+          console.output()
+          |> console.line_warning(
+            "Warning: Unscoped auth already exists for \""
+            <> existing_model
+            <> "\".",
+          )
+          |> console.line_warning(
+            "This will overwrite it with \"" <> model_name <> "\".",
+          )
+          |> console.blank_line(1)
+          |> console.line("To add a second auth model, use --scoped:")
+          |> console.line("  ./glimr make_auth " <> model_name <> " --scoped")
+          |> console.print()
+
+          Nil
+        }
+        Ok(_) ->
+          run_steps(
+            model_name,
+            connection,
+            ctx_db_name,
+            scoped,
+            should_migrate,
+            pool,
+          )
+      }
+    }
+    True ->
+      run_steps(
+        model_name,
+        connection,
+        ctx_db_name,
+        scoped,
+        should_migrate,
+        pool,
+      )
+  }
+}
+
+/// The actual scaffolding sequence — separated from `run` so
+/// the unscoped-auth safety check can bail out early without
+/// nesting the entire 15-step pipeline inside a case branch.
+///
+fn run_steps(
+  model_name: String,
+  connection: String,
+  ctx_db_name: String,
+  scoped: Bool,
+  should_migrate: Bool,
+  pool: DbPool,
+) -> Nil {
+  // 2. Generate model files (schema + queries)
   make_auth_service.create_model(model_name, connection)
 
-  // 2. Generate migration from schema
+  // 3. Generate migration from schema
   gen_migrate.run(connection, Some([model_name]), False)
 
-  // 3. Generate repository from schema + queries
+  // 4. Generate repository from schema + queries
   db_gen.run(connection, Some([model_name]), False)
 
-  // 4. Generate load middleware (queries DB for full model)
+  // 5. Generate load middleware (queries DB for full model)
   make_auth_service.create_load_middleware(model_name, connection, ctx_db_name)
 
-  // 5. Generate auth guard middleware
-  make_auth_service.create_auth_middleware(model_name)
+  // 6. Generate auth guard middleware
+  make_auth_service.create_auth_middleware(model_name, scoped)
 
-  // 6. Generate guest guard middleware
-  make_auth_service.create_guest_middleware(model_name)
+  // 7. Generate guest guard middleware
+  make_auth_service.create_guest_middleware(model_name, scoped)
 
-  // 7. Patch kernel with load middleware
+  // 8. Generate login validator
+  make_auth_service.create_login_validator(scoped, model_name)
+
+  // 9. Generate login controller
+  make_auth_service.create_login_controller(
+    model_name,
+    connection,
+    ctx_db_name,
+    scoped,
+  )
+
+  // 10. Generate logout controller
+  make_auth_service.create_logout_controller(model_name, scoped)
+
+  // 11. Generate register controller
+  make_auth_service.create_register_controller(
+    model_name,
+    connection,
+    ctx_db_name,
+    scoped,
+  )
+
+  // 12. Patch kernel with load middleware
   make_auth_service.register_in_kernel(model_name)
 
-  // 8. Patch App type with typed model field
+  // 13. Patch App type with typed model field
   make_auth_service.register_in_app(model_name, connection)
 
-  // 9. Patch App constructor with option.None initializer
+  // 14. Patch App constructor with option.None initializer
   make_auth_service.register_in_app_start(model_name)
 
-  // 10. Optionally run migrations
+  // 15. Optionally run migrations
   case should_migrate {
     True -> run_migrate.run(pool, connection)
     False -> Nil
