@@ -2,6 +2,7 @@ import gleam/string
 import glimr/console/command.{type Args, type Command, Argument, Flag}
 import glimr/console/console
 import glimr/filesystem/filesystem
+import glimr/utils/string as glimr_string
 
 /// The console command description.
 const description = "Create a new controller"
@@ -36,6 +37,25 @@ fn run(args: Args) -> Nil {
     False -> "controller.stub"
   }
 
+  let model_name = case string.ends_with(module_name, "_controller") {
+    True -> string.drop_end(module_name, string.length("_controller"))
+    False -> module_name
+  }
+
+  let plural = glimr_string.pluralize(model_name)
+  let param = ":" <> model_name
+
+  let variables = [
+    #("model", model_name),
+    #("route", plural),
+    #("index_route", plural),
+    #("show_route", plural <> "/" <> param),
+    #("store_route", plural),
+    #("edit_route", plural <> "/" <> param <> "/edit"),
+    #("update_route", plural <> "/" <> param),
+    #("destroy_route", plural <> "/" <> param),
+  ]
+
   let assert Ok(file_exists) = filesystem.file_exists(file_path)
 
   case file_exists {
@@ -46,9 +66,13 @@ fn run(args: Args) -> Nil {
       |> console.print()
     }
     False -> {
-      let assert Ok(_) = {
-        filesystem.write_from_stub("glimr", "http/" <> stub_name, file_path)
-      }
+      let assert Ok(_) =
+        filesystem.write_from_stub_with_variables(
+          package: "glimr",
+          stub_path: "http/" <> stub_name,
+          dest_path: file_path,
+          variables: variables,
+        )
 
       console.output()
       |> console.line_success("Controller created successfully!")

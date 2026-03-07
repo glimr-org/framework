@@ -20,6 +20,30 @@ pub fn auth_schema_stub_exists_test() {
   should.be_ok(result)
 }
 
+// ------------------------------------------------------------- Controller: Stub Files Exist
+
+pub fn login_controller_stub_exists_test() {
+  let result = filesystem.read_stub("glimr", "auth/login_controller.stub")
+  should.be_ok(result)
+}
+
+pub fn logout_controller_stub_exists_test() {
+  let result = filesystem.read_stub("glimr", "auth/logout_controller.stub")
+  should.be_ok(result)
+}
+
+pub fn register_controller_stub_exists_test() {
+  let result = filesystem.read_stub("glimr", "auth/register_controller.stub")
+  should.be_ok(result)
+}
+
+// ------------------------------------------------------------- Overwrite Detection
+
+pub fn check_existing_unscoped_auth_returns_ok_when_no_file_test() {
+  let result = make_auth_service.check_existing_unscoped_auth("user")
+  should.be_ok(result)
+}
+
 // ------------------------------------------------------------- Kernel: Import Injection
 
 pub fn adds_import_after_last_import_line_test() {

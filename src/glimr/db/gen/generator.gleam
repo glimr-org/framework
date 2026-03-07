@@ -30,15 +30,27 @@ pub fn generate(
   model_name: String,
   table: Table,
   queries: List(#(String, String, ParsedQuery)),
+  schema_content: String,
 ) -> String {
+  let authenticatable = is_authenticatable(schema_content)
   let header = generate_header(model_name)
-  let imports = generate_imports(table)
+  let imports = generate_imports(table, authenticatable)
   let enum_types = generate_enum_types(table)
   let model_type = generate_model_type(model_name, table)
   let model_row_decoder = generate_model_decoder(model_name, table)
   let model_encoder = generate_model_encoder(model_name, table)
   let model_decoder = generate_model_json_decoder(model_name, table)
   let query_code = generate_queries(model_name, table, queries)
+  let max_login_attempts =
+    parse_schema_int(schema_content, "max_login_attempts", 5)
+  let lockout_seconds = parse_schema_int(schema_content, "lockout_seconds", 60)
+  let auth_code =
+    generate_auth(
+      model_name,
+      authenticatable,
+      max_login_attempts,
+      lockout_seconds,
+    )
 
   [
     header,
@@ -49,6 +61,7 @@ pub fn generate(
     model_encoder,
     model_decoder,
     query_code,
+    auth_code,
   ]
   |> list.filter(fn(s) { s != "" })
   |> string.join("\n\n")
@@ -74,7 +87,7 @@ fn generate_header(model_name: String) -> String {
 /// actually has nullable or boolean columns before adding those
 /// imports keeps the generated output warning-free.
 ///
-fn generate_imports(table: Table) -> String {
+fn generate_imports(table: Table, authenticatable: Bool) -> String {
   let columns = schema_parser.columns(table)
   let has_boolean =
     list.any(columns, fn(col) { col.column_type == schema_parser.Boolean })
@@ -108,12 +121,22 @@ fn generate_imports(table: Table) -> String {
 
   let db_import = "\nimport glimr/db/db"
 
+  let auth_imports = case authenticatable {
+    True ->
+      "\nimport gleam/int"
+      <> "\nimport glimr/session/session.{type Session}"
+      <> "\nimport glimr_auth/auth"
+      <> "\nimport glimr_auth/hash"
+    False -> ""
+  }
+
   base_imports
   <> bit_array_import
   <> result_import
   <> option_import
   <> glimr_decode_import
   <> db_import
+  <> auth_imports
 }
 
 /// For each Enum column in the table, generates a Gleam custom
@@ -1342,5 +1365,121 @@ fn collapse_whitespace(sql: String) -> String {
   case collapsed == sql {
     True -> string.trim(sql)
     False -> collapse_whitespace(collapsed)
+  }
+}
+
+/// Schemas opt into auth by declaring `pub const
+/// authenticatable = True`. Checking the raw source text
+/// instead of importing the schema means the generator doesn't
+/// need a compile-time dependency on user code.
+///
+fn is_authenticatable(schema_content: String) -> Bool {
+  string.contains(schema_content, "pub const authenticatable = True")
+}
+
+/// Auth settings like `max_login_attempts` and
+/// `lockout_seconds` live as constants in the schema file.
+/// Parsing them from source text lets the generator embed the
+/// values directly into the generated auth code without needing
+/// the schema to be compiled first.
+///
+fn parse_schema_int(schema_content: String, name: String, default: Int) -> Int {
+  let prefix = "pub const " <> name <> " = "
+  case string.split_once(schema_content, prefix) {
+    Error(_) -> default
+    Ok(#(_, rest)) -> {
+      case string.split_once(rest, "\n") {
+        Error(_) -> int.parse(string.trim(rest)) |> unwrap_or(default)
+        Ok(#(value, _)) -> int.parse(string.trim(value)) |> unwrap_or(default)
+      }
+    }
+  }
+}
+
+/// Gleam's stdlib doesn't have a simple unwrap-with-default for
+/// Result. This avoids a `case` expression at every call site
+/// where a parse failure should just fall back to a sensible
+/// default.
+///
+fn unwrap_or(result: Result(a, b), default: a) -> a {
+  case result {
+    Ok(value) -> value
+    Error(_) -> default
+  }
+}
+
+/// When a schema is authenticatable, the generated repo gets a
+/// full `authenticate` function with login throttling, password
+/// hashing, and session management baked in. This means
+/// `make_auth` produces a working login flow out of the box —
+/// developers just call `user.authenticate()` from their login
+/// controller.
+///
+fn generate_auth(
+  model_name: String,
+  authenticatable: Bool,
+  max_login_attempts: Int,
+  lockout_seconds: Int,
+) -> String {
+  case authenticatable {
+    False -> ""
+    True -> {
+      let type_name = pascal_case(model_name)
+      let session_key = "\"_auth_" <> model_name <> "_id\""
+      let max_str = int.to_string(max_login_attempts)
+      let lockout_str = int.to_string(lockout_seconds)
+
+      "pub const session_key = "
+      <> session_key
+      <> "\n\n"
+      <> "pub const max_login_attempts = "
+      <> max_str
+      <> "\n\n"
+      <> "pub const lockout_seconds = "
+      <> lockout_str
+      <> "\n\n"
+      <> "pub fn authenticate(\n"
+      <> "  session session: Session,\n"
+      <> "  pool pool: db.DbPool,\n"
+      <> "  email email: String,\n"
+      <> "  password password: String,\n"
+      <> ") -> Result("
+      <> type_name
+      <> ", auth.AuthError) {\n"
+      <> "  case auth.check_throttle(session, session_key) {\n"
+      <> "    Error(err) -> Error(err)\n"
+      <> "    Ok(_) -> {\n"
+      <> "      case by_email(pool: pool, email: email) {\n"
+      <> "        Error(_) -> {\n"
+      <> "          hash.dummy_verify(password)\n"
+      <> "          auth.record_failure(session, session_key, max_login_attempts, lockout_seconds)\n"
+      <> "          Error(auth.InvalidCredentials)\n"
+      <> "        }\n"
+      <> "        Ok("
+      <> model_name
+      <> ") -> {\n"
+      <> "          case hash.verify(password, "
+      <> model_name
+      <> ".password) {\n"
+      <> "            False -> {\n"
+      <> "              auth.record_failure(session, session_key, max_login_attempts, lockout_seconds)\n"
+      <> "              Error(auth.InvalidCredentials)\n"
+      <> "            }\n"
+      <> "            True -> {\n"
+      <> "              auth.clear_throttle(session, session_key)\n"
+      <> "              auth.login(session, int.to_string("
+      <> model_name
+      <> ".id), session_key)\n"
+      <> "              Ok("
+      <> model_name
+      <> ")\n"
+      <> "            }\n"
+      <> "          }\n"
+      <> "        }\n"
+      <> "      }\n"
+      <> "    }\n"
+      <> "  }\n"
+      <> "}"
+    }
   }
 }

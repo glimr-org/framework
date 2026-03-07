@@ -101,11 +101,17 @@ pub fn create_load_middleware(
 /// it to the controller's `middleware()` function or use
 /// `middleware.apply` in individual routes.
 ///
-pub fn create_auth_middleware(model_name: String) -> Nil {
-  let file_path = "src/app/http/middleware/auth/" <> model_name <> ".gleam"
+pub fn create_auth_middleware(model_name: String, scoped: Bool) -> Nil {
+  let file_path = "src/app/http/middleware/auth_" <> model_name <> ".gleam"
+
+  let guest_redirect = case scoped {
+    False -> "/login"
+    True -> "/" <> model_name <> "/login"
+  }
 
   scaffold_file(file_path, "auth/auth_model.stub", [
     #("model", model_name),
+    #("guest_redirect", guest_redirect),
   ])
 }
 
@@ -114,12 +120,158 @@ pub fn create_auth_middleware(model_name: String) -> Nil {
 /// they're already signed in is confusing. This middleware
 /// redirects them away.
 ///
-pub fn create_guest_middleware(model_name: String) -> Nil {
-  let file_path = "src/app/http/middleware/guest/" <> model_name <> ".gleam"
+pub fn create_guest_middleware(model_name: String, _scoped: Bool) -> Nil {
+  let file_path = "src/app/http/middleware/guest_" <> model_name <> ".gleam"
 
   scaffold_file(file_path, "auth/guest_model.stub", [
     #("model", model_name),
   ])
+}
+
+/// A working login page needs both a GET route (show the form)
+/// and a POST route (handle submission), plus guest middleware
+/// to redirect already-logged-in users. Generating all of this
+/// from a stub means `make_auth` produces a functional login
+/// flow without the developer writing any controller code.
+///
+pub fn create_login_controller(
+  model_name: String,
+  connection: String,
+  ctx_db_name: String,
+  scoped: Bool,
+) -> Nil {
+  let file_path = case scoped {
+    False -> "src/app/http/controllers/auth/login_controller.gleam"
+    True ->
+      "src/app/http/controllers/auth/"
+      <> model_name
+      <> "_login_controller.gleam"
+  }
+
+  let route_prefix = case scoped {
+    False -> ""
+    True -> "/" <> model_name
+  }
+
+  let guest_middleware = "guest_" <> model_name
+
+  let validator = case scoped {
+    False -> "store_login"
+    True -> "store_" <> model_name <> "_login"
+  }
+
+  scaffold_file(file_path, "auth/login_controller.stub", [
+    #("model", model_name),
+    #("route_prefix", route_prefix),
+    #("connection", connection),
+    #("ctx_db_name", ctx_db_name),
+    #("guest_middleware", guest_middleware),
+    #("validator", validator),
+  ])
+}
+
+/// Logout needs to be POST-only (GET logout links are a CSRF
+/// risk — any page could embed an image tag pointing at your
+/// logout URL). The generated controller clears the session and
+/// redirects, with auth middleware to ensure only logged-in
+/// users can hit it.
+///
+pub fn create_logout_controller(model_name: String, scoped: Bool) -> Nil {
+  let file_path = case scoped {
+    False -> "src/app/http/controllers/auth/logout_controller.gleam"
+    True ->
+      "src/app/http/controllers/auth/"
+      <> model_name
+      <> "_logout_controller.gleam"
+  }
+
+  let route_prefix = case scoped {
+    False -> ""
+    True -> "/" <> model_name
+  }
+
+  let auth_middleware = "auth_" <> model_name
+
+  scaffold_file(file_path, "auth/logout_controller.stub", [
+    #("model", model_name),
+    #("route_prefix", route_prefix),
+    #("auth_middleware", auth_middleware),
+  ])
+}
+
+/// Registration mirrors the login controller pattern — GET
+/// shows the form, POST creates the account. The stub includes
+/// password hashing and automatic login after successful
+/// registration so the developer gets a complete signup flow
+/// they can customise.
+///
+pub fn create_register_controller(
+  model_name: String,
+  connection: String,
+  ctx_db_name: String,
+  scoped: Bool,
+) -> Nil {
+  let file_path = case scoped {
+    False -> "src/app/http/controllers/auth/register_controller.gleam"
+    True ->
+      "src/app/http/controllers/auth/"
+      <> model_name
+      <> "_register_controller.gleam"
+  }
+
+  let route_prefix = case scoped {
+    False -> ""
+    True -> "/" <> model_name
+  }
+
+  scaffold_file(file_path, "auth/register_controller.stub", [
+    #("model", model_name),
+    #("route_prefix", route_prefix),
+    #("connection", connection),
+    #("ctx_db_name", ctx_db_name),
+  ])
+}
+
+/// The login form needs to reject empty submissions before they
+/// even hit the database. Generating a validator with Required
+/// rules for email and password gives the login controller
+/// immediate form validation without the developer having to
+/// write boilerplate.
+///
+pub fn create_login_validator(scoped: Bool, model_name: String) -> Nil {
+  let file_name = case scoped {
+    False -> "store_login"
+    True -> "store_" <> model_name <> "_login"
+  }
+
+  let file_path = "src/app/http/validators/" <> file_name <> ".gleam"
+
+  scaffold_file(file_path, "auth/store_login_validator.stub", [])
+}
+
+/// Running `make_auth admin` after already running `make_auth
+/// user` (without --scoped) would silently overwrite the user
+/// auth controllers since unscoped auth uses generic filenames
+/// like `login_controller.gleam`. This check catches that
+/// situation and warns the developer to use --scoped instead.
+///
+pub fn check_existing_unscoped_auth(model_name: String) -> Result(Nil, String) {
+  let controller_path = "src/app/http/controllers/auth/login_controller.gleam"
+
+  case simplifile.read(controller_path) {
+    Error(_) -> Ok(Nil)
+    Ok(content) -> {
+      case extract_auth_model(content) {
+        Error(_) -> Ok(Nil)
+        Ok(existing_model) -> {
+          case existing_model == model_name {
+            True -> Ok(Nil)
+            False -> Error(existing_model)
+          }
+        }
+      }
+    }
+  }
 }
 
 /// The loader middleware needs to be registered in the HTTP
@@ -302,8 +454,8 @@ pub fn inject_into_app(
 
 /// Completes the trio of inject functions — this one handles
 /// the bootstrap app module where App values are first
-/// constructed. Inserts `{model}: option.None` so the new
-/// field has a valid default value.
+/// constructed. Inserts `{model}: option.None` so the new field
+/// has a valid default value.
 ///
 pub fn inject_into_app_start(content: String, model_name: String) -> String {
   let lines = string.split(content, "\n")
@@ -330,6 +482,30 @@ pub fn auth_query_stubs() -> List(String) {
 }
 
 // ------------------------------------------------------------- Private Functions
+
+/// The unscoped login controller references the model via
+/// `ctx.app.user` (or whatever the model name is). Parsing that
+/// out of the file lets check_existing_unscoped_auth figure out
+/// which model currently "owns" the unscoped auth routes
+/// without needing a manifest or config file.
+///
+fn extract_auth_model(content: String) -> Result(String, Nil) {
+  case string.split_once(content, "ctx.app.") {
+    Error(_) -> Error(Nil)
+    Ok(#(_, after)) -> {
+      let model =
+        after
+        |> string.to_graphemes()
+        |> list.take_while(fn(c) { c != "," && c != ")" && c != "\n" })
+        |> string.join("")
+        |> string.trim()
+      case model {
+        "" -> Error(Nil)
+        name -> Ok(name)
+      }
+    }
+  }
+}
 
 /// Checking for existing files before writing prevents the
 /// command from destroying customizations when a developer runs

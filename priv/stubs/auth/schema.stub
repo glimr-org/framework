@@ -2,6 +2,12 @@ import glimr/db/schema
 
 pub const table_name = "@{{ table_name }}"
 
+pub const authenticatable = True
+
+pub const max_login_attempts = 5
+
+pub const lockout_seconds = 60
+
 pub fn definition() {
   schema.table(table_name, [
     schema.id(),
