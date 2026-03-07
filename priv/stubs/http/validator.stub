@@ -14,7 +14,7 @@ pub type Data {
 
 /// Define your form's validation rules
 ///
-fn rules() -> List(Rule(Context(App))) {
+fn rules(_ctx: Context(App)) -> List(Rule(Context(App))) {
   [
     // validator.for("name", [validator.Required]),
     todo

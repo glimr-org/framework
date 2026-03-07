@@ -158,7 +158,7 @@ type CustomFileValidation(ctx) =
 ///   Data(name: String, email: String)
 /// }
 ///
-/// fn rules() {
+/// fn rules(_ctx) {
 ///   [
 ///     validator.for("name", [Required, MinLength(2)]),
 ///     validator.for("email", [Required, Email]),
@@ -181,7 +181,7 @@ type CustomFileValidation(ctx) =
 ///
 pub fn run(
   ctx: Context(app),
-  rules: fn() -> List(Rule(Context(app))),
+  rules: fn(Context(app)) -> List(Rule(Context(app))),
   data_fn: fn(FormData) -> typed_form,
   on_valid: fn(typed_form) -> Response,
 ) -> Response {
@@ -189,7 +189,7 @@ pub fn run(
 
   let data = form_data(wisp_form_data)
 
-  case start(rules(), data, ctx) {
+  case start(rules(ctx), data, ctx) {
     Ok(_) -> {
       on_valid(data_fn(data))
     }

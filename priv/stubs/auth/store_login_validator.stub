@@ -7,7 +7,7 @@ pub type Data {
   Data(email: String, password: String)
 }
 
-fn rules() -> List(Rule(Context(App))) {
+fn rules(_ctx: Context(App)) -> List(Rule(Context(App))) {
   [
     validator.for("email", [
       validator.Required,
