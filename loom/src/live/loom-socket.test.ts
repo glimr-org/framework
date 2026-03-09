@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach } from "bun:test";
+import { describe, expect, test, beforeEach } from "vitest";
 import { Window } from "happy-dom";
 import { LoomSocket } from "@/live/loom-socket";
 
