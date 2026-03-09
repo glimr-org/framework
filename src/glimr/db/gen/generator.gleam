@@ -47,6 +47,7 @@ pub fn generate(
   let auth_code =
     generate_auth(
       model_name,
+      table,
       authenticatable,
       max_login_attempts,
       lockout_seconds,
@@ -104,7 +105,7 @@ fn generate_imports(table: Table, authenticatable: Bool) -> String {
     False -> ""
   }
 
-  let result_import = case has_enum {
+  let result_import = case has_enum || authenticatable {
     True -> "\nimport gleam/result"
     False -> ""
   }
@@ -122,11 +123,17 @@ fn generate_imports(table: Table, authenticatable: Bool) -> String {
   let db_import = "\nimport glimr/db/db"
 
   let auth_imports = case authenticatable {
-    True ->
-      "\nimport gleam/int"
+    True -> {
+      let #(_, needs_int) = find_primary_key(table)
+      let int_import = case needs_int {
+        True -> "\nimport gleam/int"
+        False -> ""
+      }
+      int_import
       <> "\nimport glimr/session/session.{type Session}"
       <> "\nimport glimr_auth/auth"
       <> "\nimport glimr_auth/hash"
+    }
     False -> ""
   }
 
@@ -1408,6 +1415,31 @@ fn unwrap_or(result: Result(a, b), default: a) -> a {
   }
 }
 
+/// Sessions store user IDs as strings, but integer primary keys
+/// need `int.to_string` wrapping while UUIDs are already
+/// strings. Detecting the PK type here lets generate_auth emit
+/// the right expression — `int.to_string(user.id)` vs just
+/// `user.id` — so the generated code compiles without the
+/// developer touching it.
+///
+fn find_primary_key(table: Table) -> #(String, Bool) {
+  let columns = schema_parser.columns(table)
+  case list.find(columns, fn(col) { col.column_type == schema_parser.Id }) {
+    Ok(col) -> #(col.name, True)
+    Error(_) ->
+      case
+        list.find(columns, fn(col) { col.column_type == schema_parser.Uuid })
+      {
+        Ok(col) -> #(col.name, False)
+        Error(_) ->
+          case columns {
+            [col, ..] -> #(col.name, False)
+            [] -> #("id", True)
+          }
+      }
+  }
+}
+
 /// When a schema is authenticatable, the generated repo gets a
 /// full `authenticate` function with login throttling, password
 /// hashing, and session management baked in. This means
@@ -1417,6 +1449,7 @@ fn unwrap_or(result: Result(a, b), default: a) -> a {
 ///
 fn generate_auth(
   model_name: String,
+  table: Table,
   authenticatable: Bool,
   max_login_attempts: Int,
   lockout_seconds: Int,
@@ -1428,6 +1461,11 @@ fn generate_auth(
       let session_key = "\"_auth_" <> model_name <> "_id\""
       let max_str = int.to_string(max_login_attempts)
       let lockout_str = int.to_string(lockout_seconds)
+      let #(pk_name, needs_int_to_string) = find_primary_key(table)
+      let login_id_expr = case needs_int_to_string {
+        True -> "int.to_string(" <> model_name <> "." <> pk_name <> ")"
+        False -> model_name <> "." <> pk_name
+      }
 
       "pub const session_key = "
       <> session_key
@@ -1446,38 +1484,74 @@ fn generate_auth(
       <> ") -> Result("
       <> type_name
       <> ", auth.AuthError) {\n"
-      <> "  case auth.check_throttle(session, session_key) {\n"
-      <> "    Error(err) -> Error(err)\n"
-      <> "    Ok(_) -> {\n"
-      <> "      case by_email(pool: pool, email: email) {\n"
-      <> "        Error(_) -> {\n"
-      <> "          hash.dummy_verify(password)\n"
-      <> "          auth.record_failure(session, session_key, max_login_attempts, lockout_seconds)\n"
-      <> "          Error(auth.InvalidCredentials)\n"
-      <> "        }\n"
-      <> "        Ok("
+      <> "  use _ <- result.try(auth.check_throttle(session, session_key))\n"
+      <> "\n"
+      <> "  let "
+      <> model_name
+      <> "_result = by_email(pool: pool, email: email)\n"
+      <> "\n"
+      <> "  let verified = case "
+      <> model_name
+      <> "_result {\n"
+      <> "    Error(_) -> {\n"
+      <> "      hash.dummy_verify(password)\n"
+      <> "      False\n"
+      <> "    }\n"
+      <> "    Ok("
+      <> model_name
+      <> ") -> hash.verify(password, "
+      <> model_name
+      <> ".password)\n"
+      <> "  }\n"
+      <> "\n"
+      <> "  case verified, "
+      <> model_name
+      <> "_result {\n"
+      <> "    True, Ok("
       <> model_name
       <> ") -> {\n"
-      <> "          case hash.verify(password, "
-      <> model_name
-      <> ".password) {\n"
-      <> "            False -> {\n"
-      <> "              auth.record_failure(session, session_key, max_login_attempts, lockout_seconds)\n"
-      <> "              Error(auth.InvalidCredentials)\n"
-      <> "            }\n"
-      <> "            True -> {\n"
-      <> "              auth.clear_throttle(session, session_key)\n"
-      <> "              auth.login(session, int.to_string("
-      <> model_name
-      <> ".id), session_key)\n"
-      <> "              Ok("
+      <> "      auth.clear_throttle(session, session_key)\n"
+      <> "      auth.login(session, "
+      <> login_id_expr
+      <> ", session_key)\n"
+      <> "      Ok("
       <> model_name
       <> ")\n"
-      <> "            }\n"
-      <> "          }\n"
-      <> "        }\n"
-      <> "      }\n"
       <> "    }\n"
+      <> "    _, _ -> {\n"
+      <> "      auth.record_failure(\n"
+      <> "        session,\n"
+      <> "        session_key,\n"
+      <> "        max_login_attempts,\n"
+      <> "        lockout_seconds,\n"
+      <> "      )\n"
+      <> "      Error(auth.InvalidCredentials)\n"
+      <> "    }\n"
+      <> "  }\n"
+      <> "}\n\n"
+      <> "pub fn register(\n"
+      <> "  session session: Session,\n"
+      <> "  pool pool: db.DbPool,\n"
+      <> "  password password: String,\n"
+      <> "  create create_fn: fn(db.DbPool, String) -> Result("
+      <> type_name
+      <> ", db.DbError),\n"
+      <> ") -> Result("
+      <> type_name
+      <> ", db.DbError) {\n"
+      <> "  let hashed = hash.make(password)\n"
+      <> "  case create_fn(pool, hashed) {\n"
+      <> "    Ok("
+      <> model_name
+      <> ") -> {\n"
+      <> "      auth.login(session, "
+      <> login_id_expr
+      <> ", session_key)\n"
+      <> "      Ok("
+      <> model_name
+      <> ")\n"
+      <> "    }\n"
+      <> "    Error(err) -> Error(err)\n"
       <> "  }\n"
       <> "}"
     }

@@ -851,7 +851,9 @@ pub fn generate_authenticatable_check_throttle_test() {
   let result = generator.generate("user", auth_table(), [], auth_schema)
 
   result
-  |> string.contains("auth.check_throttle(session, session_key)")
+  |> string.contains(
+    "use _ <- result.try(auth.check_throttle(session, session_key))",
+  )
   |> should.be_true()
 }
 
@@ -918,9 +920,15 @@ pub fn generate_authenticatable_record_failure_passes_throttle_constants_test() 
   let result = generator.generate("user", auth_table(), [], auth_schema)
 
   result
-  |> string.contains(
-    "auth.record_failure(session, session_key, max_login_attempts, lockout_seconds)",
-  )
+  |> string.contains("auth.record_failure(")
+  |> should.be_true()
+
+  result
+  |> string.contains("max_login_attempts,")
+  |> should.be_true()
+
+  result
+  |> string.contains("lockout_seconds,")
   |> should.be_true()
 }
 
@@ -930,9 +938,11 @@ pub fn generate_authenticatable_record_failure_custom_throttle_test() {
 
   // The function body references the constants by name (not inlined values)
   result
-  |> string.contains(
-    "auth.record_failure(session, session_key, max_login_attempts, lockout_seconds)",
-  )
+  |> string.contains("auth.record_failure(")
+  |> should.be_true()
+
+  result
+  |> string.contains("session_key,")
   |> should.be_true()
 
   // But the constant declarations use the custom values
@@ -1036,6 +1046,14 @@ pub fn generate_authenticatable_imports_int_test() {
   |> should.be_true()
 }
 
+pub fn generate_authenticatable_imports_result_test() {
+  let result = generator.generate("user", auth_table(), [], auth_schema)
+
+  result
+  |> string.contains("import gleam/result")
+  |> should.be_true()
+}
+
 // ---- Schema content parsing edge cases
 
 pub fn generate_authenticatable_false_not_triggered_test() {
@@ -1086,4 +1104,201 @@ pub const lockout_seconds = 300"
   result
   |> string.contains("pub const lockout_seconds = 300")
   |> should.be_true()
+}
+
+// ------------------------------------------------------------- Register Function
+
+pub fn generate_authenticatable_register_function_signature_test() {
+  let result = generator.generate("user", auth_table(), [], auth_schema)
+
+  result
+  |> string.contains("pub fn register(")
+  |> should.be_true()
+}
+
+pub fn generate_authenticatable_register_labeled_params_test() {
+  let result = generator.generate("user", auth_table(), [], auth_schema)
+
+  result
+  |> string.contains("session session: Session,")
+  |> should.be_true()
+
+  result
+  |> string.contains("pool pool: db.DbPool,")
+  |> should.be_true()
+
+  result
+  |> string.contains("password password: String,")
+  |> should.be_true()
+
+  result
+  |> string.contains(
+    "create create_fn: fn(db.DbPool, String) -> Result(User, db.DbError),",
+  )
+  |> should.be_true()
+}
+
+pub fn generate_authenticatable_register_return_type_test() {
+  let result = generator.generate("user", auth_table(), [], auth_schema)
+
+  result
+  |> string.contains(") -> Result(User, db.DbError) {")
+  |> should.be_true()
+}
+
+pub fn generate_authenticatable_register_hashes_password_test() {
+  let result = generator.generate("user", auth_table(), [], auth_schema)
+
+  result
+  |> string.contains("hash.make(password)")
+  |> should.be_true()
+}
+
+pub fn generate_authenticatable_register_calls_callback_test() {
+  let result = generator.generate("user", auth_table(), [], auth_schema)
+
+  result
+  |> string.contains("create_fn(pool, hashed)")
+  |> should.be_true()
+}
+
+pub fn generate_authenticatable_register_login_on_success_test() {
+  let result = generator.generate("user", auth_table(), [], auth_schema)
+
+  result
+  |> string.contains("auth.login(session, int.to_string(user.id), session_key)")
+  |> should.be_true()
+}
+
+pub fn generate_authenticatable_register_returns_model_test() {
+  let result = generator.generate("user", auth_table(), [], auth_schema)
+
+  result
+  |> string.contains("Ok(user)")
+  |> should.be_true()
+}
+
+pub fn generate_authenticatable_register_uses_model_name_test() {
+  let table =
+    Table(
+      name: "customers",
+      columns: [
+        Column("id", schema_parser.Id, False, None, None),
+        Column("email", schema_parser.String, False, None, None),
+        Column("password", schema_parser.String, False, None, None),
+      ],
+      indexes: [],
+    )
+
+  let result = generator.generate("customer", table, [], auth_schema)
+
+  result
+  |> string.contains(
+    "create create_fn: fn(db.DbPool, String) -> Result(Customer, db.DbError),",
+  )
+  |> should.be_true()
+
+  result
+  |> string.contains(") -> Result(Customer, db.DbError) {")
+  |> should.be_true()
+
+  result
+  |> string.contains(
+    "auth.login(session, int.to_string(customer.id), session_key)",
+  )
+  |> should.be_true()
+
+  result
+  |> string.contains("Ok(customer)")
+  |> should.be_true()
+}
+
+pub fn generate_non_authenticatable_no_register_test() {
+  let result = generator.generate("user", auth_table(), [], "")
+
+  result
+  |> string.contains("pub fn register")
+  |> should.be_false()
+}
+
+// ------------------------------------------------------------- UUID Auth
+
+fn auth_table_uuid() -> schema_parser.Table {
+  Table(
+    name: "users",
+    columns: [
+      Column("uid", schema_parser.Uuid, False, None, None),
+      Column("email", schema_parser.String, False, None, None),
+      Column("password", schema_parser.String, False, None, None),
+    ],
+    indexes: [],
+  )
+}
+
+pub fn generate_uuid_auth_authenticate_uses_pk_directly_test() {
+  let result = generator.generate("user", auth_table_uuid(), [], auth_schema)
+
+  result
+  |> string.contains("auth.login(session, user.uid, session_key)")
+  |> should.be_true()
+}
+
+pub fn generate_uuid_auth_register_uses_pk_directly_test() {
+  let result = generator.generate("user", auth_table_uuid(), [], auth_schema)
+
+  result
+  |> string.contains("auth.login(session, user.uid, session_key)")
+  |> should.be_true()
+
+  // Should NOT contain int.to_string wrapping
+  result
+  |> string.contains("int.to_string(user.uid)")
+  |> should.be_false()
+}
+
+pub fn generate_uuid_auth_does_not_import_gleam_int_test() {
+  let result = generator.generate("user", auth_table_uuid(), [], auth_schema)
+
+  result
+  |> string.contains("import gleam/int")
+  |> should.be_false()
+}
+
+pub fn generate_uuid_auth_still_imports_auth_deps_test() {
+  let result = generator.generate("user", auth_table_uuid(), [], auth_schema)
+
+  result
+  |> string.contains("import glimr_auth/auth")
+  |> should.be_true()
+
+  result
+  |> string.contains("import glimr_auth/hash")
+  |> should.be_true()
+
+  result
+  |> string.contains("import glimr/session/session.{type Session}")
+  |> should.be_true()
+}
+
+pub fn generate_uuid_auth_customer_model_uses_pk_name_test() {
+  let table =
+    Table(
+      name: "customers",
+      columns: [
+        Column("uid", schema_parser.Uuid, False, None, None),
+        Column("email", schema_parser.String, False, None, None),
+        Column("password", schema_parser.String, False, None, None),
+      ],
+      indexes: [],
+    )
+
+  let result = generator.generate("customer", table, [], auth_schema)
+
+  result
+  |> string.contains("auth.login(session, customer.uid, session_key)")
+  |> should.be_true()
+
+  result
+  |> string.contains("int.to_string")
+  |> should.be_false()
 }
