@@ -12,7 +12,6 @@ pub fn destroy(ctx: Context(App)) -> Response {
   // Ensure only authenticated users reach this endpoint.
   use ctx <- middleware.apply([@{{ auth_middleware }}.run], ctx)
 
-  // Log out user and invalidate session.
   auth.logout(ctx.session)
 
   session.flash(ctx.session, "message", "You have been logged out.")

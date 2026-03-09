@@ -123,7 +123,10 @@ fn run_steps(
   // 8. Generate login validator
   make_auth_service.create_login_validator(scoped, model_name)
 
-  // 9. Generate login controller
+  // 9. Generate register validator
+  make_auth_service.create_register_validator(scoped, model_name)
+
+  // 10. Generate login controller
   make_auth_service.create_login_controller(
     model_name,
     connection,
@@ -131,10 +134,10 @@ fn run_steps(
     scoped,
   )
 
-  // 10. Generate logout controller
+  // 11. Generate logout controller
   make_auth_service.create_logout_controller(model_name, scoped)
 
-  // 11. Generate register controller
+  // 12. Generate register controller
   make_auth_service.create_register_controller(
     model_name,
     connection,
@@ -142,16 +145,16 @@ fn run_steps(
     scoped,
   )
 
-  // 12. Patch kernel with load middleware
+  // 13. Patch kernel with load middleware
   make_auth_service.register_in_kernel(model_name)
 
-  // 13. Patch App type with typed model field
+  // 14. Patch App type with typed model field
   make_auth_service.register_in_app(model_name, connection)
 
-  // 14. Patch App constructor with option.None initializer
+  // 15. Patch App constructor with option.None initializer
   make_auth_service.register_in_app_start(model_name)
 
-  // 15. Optionally run migrations
+  // 16. Optionally run migrations
   case should_migrate {
     True -> run_migrate.run(pool, connection)
     False -> Nil

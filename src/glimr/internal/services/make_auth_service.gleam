@@ -224,11 +224,20 @@ pub fn create_register_controller(
     True -> "/" <> model_name
   }
 
+  let guest_middleware = "guest_" <> model_name
+
+  let validator = case scoped {
+    False -> "store_register"
+    True -> "store_" <> model_name <> "_register"
+  }
+
   scaffold_file(file_path, "auth/register_controller.stub", [
     #("model", model_name),
     #("route_prefix", route_prefix),
     #("connection", connection),
     #("ctx_db_name", ctx_db_name),
+    #("guest_middleware", guest_middleware),
+    #("validator", validator),
   ])
 }
 
@@ -247,6 +256,22 @@ pub fn create_login_validator(scoped: Bool, model_name: String) -> Nil {
   let file_path = "src/app/http/validators/" <> file_name <> ".gleam"
 
   scaffold_file(file_path, "auth/store_login_validator.stub", [])
+}
+
+/// The registration form needs password confirmation and
+/// stricter rules than login. Generating a validator with
+/// Required, MinLength, and Confirmed rules gives the register
+/// controller immediate form validation.
+///
+pub fn create_register_validator(scoped: Bool, model_name: String) -> Nil {
+  let file_name = case scoped {
+    False -> "store_register"
+    True -> "store_" <> model_name <> "_register"
+  }
+
+  let file_path = "src/app/http/validators/" <> file_name <> ".gleam"
+
+  scaffold_file(file_path, "auth/store_register_validator.stub", [])
 }
 
 /// Running `make_auth admin` after already running `make_auth
