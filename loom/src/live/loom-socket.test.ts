@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach } from "vitest";
 import { Window } from "happy-dom";
-import { LoomSocket } from "@/live/loom-socket";
+import { LoomSocket } from "~/live/loom-socket";
 
 let window: Window;
 let capturedWs: any;

@@ -1,5 +1,5 @@
-import { CONFIG } from "@/config";
-import type { NavCacheEntry, NavHistoryState } from "@/types";
+import { CONFIG } from "~/config";
+import type { NavCacheEntry, NavHistoryState } from "~/types";
 
 /**
  * Full page reloads tear down the WebSocket, destroy all live

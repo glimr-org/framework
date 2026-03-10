@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "vitest";
 import { Window } from "happy-dom";
-import { LoomNav } from "@/live/loom-nav";
-import { CONFIG } from "@/config";
+import { LoomNav } from "~/live/loom-nav";
+import { CONFIG } from "~/config";
 
 let window: Window;
 let document: Document;
@@ -214,7 +214,7 @@ describe("shouldInterceptForm", () => {
 // ------------------------------------------------------------- Cache
 
 describe("cache", () => {
-  const makeEntry = (overrides?: Partial<import("@/types").NavCacheEntry>) => ({
+  const makeEntry = (overrides?: Partial<import("~/types").NavCacheEntry>) => ({
     html: "<p>test</p>",
     title: "Test",
     headMeta: [],

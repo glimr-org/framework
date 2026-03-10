@@ -290,6 +290,7 @@ fn watch_loop(
               stop_port(port)
               let new_port = start_gleam_run()
               start_output_reader(new_port)
+              signal_browser_reload()
               watch_loop(current_mtimes, new_port, False)
             }
           }
@@ -297,6 +298,15 @@ fn watch_loop(
       }
     }
   }
+}
+
+/// Touches a trigger file that Vite's dev server watches. When
+/// the file changes, a Vite plugin sends a full-reload signal
+/// to the browser through the HMR WebSocket.
+///
+fn signal_browser_reload() -> Nil {
+  let _ = simplifile.write("priv/static/.reload", "")
+  Nil
 }
 
 // ------------------------------------------------------------- FFI Bindings

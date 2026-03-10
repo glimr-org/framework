@@ -1,5 +1,5 @@
-import { CONFIG } from "@/config";
-import type { FocusState, Modifiers, SpecialVars } from "@/types";
+import { CONFIG } from "~/config";
+import type { FocusState, Modifiers, SpecialVars } from "~/types";
 
 /**
  * The WebSocket URL must match the page's protocol and host to

@@ -38,6 +38,14 @@ glimr_run() {
         return 1
     fi
 
+    # Start Vite dev server alongside the run command
+    if [ "$CMD" = "run" ] && [ -f "package.json" ]; then
+        npm run dev &
+        VITE_PID=$!
+        trap "kill $VITE_PID 2>/dev/null; wait $VITE_PID 2>/dev/null" EXIT
+        sleep 0.5
+    fi
+
     echo ""
     gleam run --no-print-progress -m "$MODULE" -- "_c_name=$CMD" "$@"
     echo ""

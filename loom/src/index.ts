@@ -14,10 +14,10 @@
  * load.
  */
 
-import { CONFIG } from "@/config";
-import { LoomSocket } from "@/live/loom-socket";
-import { LoomLive } from "@/live/loom-live";
-import { LoomNav } from "@/live/loom-nav";
+import { CONFIG } from "~/config";
+import { LoomSocket } from "~/live/loom-socket";
+import { LoomLive } from "~/live/loom-live";
+import { LoomNav } from "~/live/loom-nav";
 
 let sharedSocket: LoomSocket | null = null;
 let activeLiveInstances: LoomLive[] = [];

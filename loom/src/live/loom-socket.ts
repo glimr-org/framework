@@ -1,6 +1,6 @@
-import { CONFIG } from "@/config";
-import type { ClientMessage, ServerMessage } from "@/types";
-import { buildWsUrl } from "@/live/utils";
+import { CONFIG } from "~/config";
+import type { ClientMessage, ServerMessage } from "~/types";
+import { buildWsUrl } from "~/live/utils";
 
 /**
  * Opening a WebSocket per live component would waste connections

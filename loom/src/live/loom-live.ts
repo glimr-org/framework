@@ -1,15 +1,15 @@
 import morphdom from "morphdom";
-import { EVENT_TYPES } from "@/config";
-import type { EventPayload, Modifiers, ServerMessage } from "@/types";
-import type { LoomSocket } from "@/live/loom-socket";
+import { EVENT_TYPES } from "~/config";
+import type { EventPayload, Modifiers, ServerMessage } from "~/types";
+import type { LoomSocket } from "~/live/loom-socket";
 import {
   collectSpecialVars,
   getNodeKey,
   parseModifiers,
   restoreFocus,
   saveFocus,
-} from "@/live/utils";
-import { applyDiff, reconstruct } from "@/live/tree";
+} from "~/live/utils";
+import { applyDiff, reconstruct } from "~/live/tree";
 
 /**
  * Debounce timers are stored per-element in a WeakMap so that
