@@ -40,6 +40,7 @@ pub fn run() -> Nil {
   let app_port = config.app_port()
   let dev_proxy_port = config.dev_proxy_port()
 
+  io.println("")
   dev_proxy.start(app_port, dev_proxy_port)
 
   let initial_mtimes = get_watched_file_mtimes("src")

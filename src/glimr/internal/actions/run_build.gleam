@@ -17,6 +17,7 @@ import shellout
 ///
 pub fn run() -> Result(Nil, String) {
   console.output()
+  |> console.blank_line(1)
   |> console.line_warning("Building application...")
   |> console.print()
 
@@ -24,10 +25,6 @@ pub fn run() -> Result(Nil, String) {
     shellout.command("gleam", ["build"], in: ".", opt: [shellout.LetBeStdout])
   {
     Ok(_) -> {
-      console.output()
-      |> console.line_success("Build complete! ✨")
-      |> console.print()
-
       Ok(Nil)
     }
     Error(#(_, _)) -> {
