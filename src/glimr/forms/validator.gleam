@@ -203,6 +203,7 @@ pub fn run(
               [] -> Nil
             }
           })
+          flash_old_input(ctx.session, rules(ctx), data)
           redirect.back(ctx)
         }
         JSON -> {
@@ -1161,5 +1162,53 @@ fn validate_file_custom(
   case file {
     Error(_) -> Ok(Nil)
     Ok(uploaded_file) -> custom_validation(field, uploaded_file, data, ctx)
+  }
+}
+
+/// Nobody wants to retype their email, name, and bio because
+/// they got one field wrong. This stashes the submitted values
+/// as flash data so the form can repopulate them after the
+/// redirect. Passwords and other sensitive fields are skipped
+/// so they never end up in the session or the HTML source.
+///
+fn flash_old_input(
+  sess: session.Session,
+  rule_list: List(Rule(ctx)),
+  data: FormData,
+) -> Nil {
+  list.each(rule_list, fn(rule) {
+    case rule {
+      FieldRule(field_name:, rules: field_rules) -> {
+        case is_sensitive_field(field_name, field_rules) {
+          True -> Nil
+          False ->
+            session.flash(sess, "old." <> field_name, data.get(field_name))
+        }
+      }
+      FileFieldRule(_, _) -> Nil
+    }
+  })
+}
+
+/// Flashing a password back into the session would store it in
+/// plaintext where it could leak via session inspection or show
+/// up in the HTML source. Checking both the field name and the
+/// Confirmed rule catches password fields regardless of what
+/// the developer named them.
+///
+fn is_sensitive_field(name: String, rules: List(StringRule(ctx))) -> Bool {
+  case
+    string.contains(name, "password")
+    || string.contains(name, "secret")
+    || string.contains(name, "token")
+  {
+    True -> True
+    False ->
+      list.any(rules, fn(rule) {
+        case rule {
+          Confirmed(_) -> True
+          _ -> False
+        }
+      })
   }
 }

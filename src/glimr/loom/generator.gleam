@@ -1837,9 +1837,14 @@ fn generate_node_code_with_loop_vars(
 
     parser.ElementNode(tag, attributes, children) -> {
       let attrs_code = generate_element_attrs_code(attributes, handler_lookup)
+
+      // Extract AttributesNode from children (injected by inject_attributes)
+      // so it renders before the closing > of the opening tag
+      let #(attributes_code, remaining_children) =
+        extract_attributes_node(children, pad)
       let children_code =
         generate_nodes_code_with_loop_vars(
-          children,
+          remaining_children,
           indent,
           component_data,
           component_slots,
@@ -1859,6 +1864,7 @@ fn generate_node_code_with_loop_vars(
               <> tag
               <> "\"\n"
               <> attrs_code
+              <> attributes_code
               <> pad
               <> "<> \" />\"\n"
             False ->
@@ -1867,6 +1873,7 @@ fn generate_node_code_with_loop_vars(
               <> tag
               <> "\"\n"
               <> attrs_code
+              <> attributes_code
               <> pad
               <> "<> \">\"\n"
               <> children_code
@@ -2490,6 +2497,34 @@ fn generate_base_attrs_code(attrs: List(lexer.ComponentAttr)) -> String {
   "[" <> string.join(items, ", ") <> "]"
 }
 
+/// Spread attributes like `class` and `id` passed to a
+/// component need to appear inside the opening tag (`<div
+/// class="...">`), not as child content after the `>`. Pulling
+/// the AttributesNode out of the children list lets
+/// generate_node emit it in the right position.
+///
+fn extract_attributes_node(
+  children: List(Node),
+  pad: String,
+) -> #(String, List(Node)) {
+  case children {
+    [parser.AttributesNode(base_attrs), ..rest] -> {
+      let code = case base_attrs {
+        [] -> pad <> "<> \" \" <> runtime.render_attributes(attributes)\n"
+        _ -> {
+          let base_attrs_code = generate_base_attrs_code(base_attrs)
+          pad
+          <> "<> \" \" <> runtime.render_attributes(runtime.merge_attributes("
+          <> base_attrs_code
+          <> ", attributes))\n"
+        }
+      }
+      #(code, rest)
+    }
+    _ -> #("", children)
+  }
+}
+
 /// Components without an explicit @attributes directive get
 /// automatic injection into the root element. Checking for
 /// existing directives first prevents double injection when the
@@ -2957,8 +2992,13 @@ fn transform_list_chars(
       )
     }
     True, ["\"", ..rest] -> {
-      // End of string
-      transform_list_chars(rest, wrapper, depth, False, current <> "\"", result)
+      // End of string — close wrapper if one was opened
+      let closed = current <> "\""
+      let closed = case string.starts_with(closed, wrapper <> "(") {
+        True -> closed <> ")"
+        False -> closed
+      }
+      transform_list_chars(rest, wrapper, depth, False, closed, result)
     }
     True, [c, ..rest] -> {
       // Inside string - just accumulate
@@ -3002,19 +3042,14 @@ fn transform_list_chars(
       )
     }
     False, ["]", ..rest] -> {
-      // Check if we need to close the wrapper before ]
-      let needs_close =
-        depth == 1 && string.starts_with(current, wrapper <> "(")
-      let new_current = case needs_close {
-        True -> current <> ")"
-        False -> current
-      }
+      // Flush current item before closing ]
+      let flushed = wrap_if_expression(current, wrapper, depth)
       transform_list_chars(
         rest,
         wrapper,
         depth - 1,
         False,
-        new_current <> "]",
+        flushed <> "]",
         result,
       )
     }
@@ -3038,26 +3073,70 @@ fn transform_list_chars(
         result,
       )
     }
+    False, ["{", ..rest] -> {
+      transform_list_chars(
+        rest,
+        wrapper,
+        depth + 1,
+        False,
+        current <> "{",
+        result,
+      )
+    }
+    False, ["}", ..rest] -> {
+      transform_list_chars(
+        rest,
+        wrapper,
+        depth - 1,
+        False,
+        current <> "}",
+        result,
+      )
+    }
     False, [",", ..rest] -> {
-      // Comma at depth 1 means end of list item - flush and check if wrapper needed
-      let needs_close =
-        depth == 1 && string.starts_with(current, wrapper <> "(")
-      let new_current = case needs_close {
-        True -> current <> ")"
-        False -> current
-      }
+      // Flush current item at comma
+      let flushed = wrap_if_expression(current, wrapper, depth)
       transform_list_chars(
         rest,
         wrapper,
         depth,
         False,
         "",
-        result <> new_current <> ",",
+        result <> flushed <> ",",
       )
     }
     False, [c, ..rest] -> {
       transform_list_chars(rest, wrapper, depth, False, current <> c, result)
     }
+  }
+}
+
+/// Case expressions inside list literals need wrapping with the
+/// display function so they produce strings, but string
+/// literals and tuples are already the right type. This only
+/// wraps at depth 1 (top-level list items) to avoid
+/// double-wrapping nested expressions.
+///
+fn wrap_if_expression(current: String, wrapper: String, depth: Int) -> String {
+  case depth {
+    1 -> {
+      let trimmed = string.trim(current)
+      case
+        trimmed != ""
+        && !string.starts_with(trimmed, wrapper <> "(")
+        && !string.starts_with(trimmed, "#(")
+        && string.starts_with(trimmed, "case ")
+      {
+        True -> {
+          // Replace the trimmed content with wrapped version,
+          // preserving leading whitespace
+          let leading = string.replace(current, trimmed, "")
+          leading <> wrapper <> "(" <> trimmed <> ")"
+        }
+        False -> current
+      }
+    }
+    _ -> current
   }
 }
 

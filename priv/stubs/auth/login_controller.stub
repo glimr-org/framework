@@ -1,6 +1,7 @@
 import app/app.{type App}
 import app/http/middleware/@{{ guest_middleware }}
 import app/http/validators/@{{ validator }}
+import compiled/loom/@{{ view_path }}
 import database/@{{ connection }}/models/@{{ model }}/gen/@{{ model }}
 import glimr/http/context.{type Context}
 import glimr/http/http.{type Response}
@@ -15,8 +16,8 @@ pub fn middleware() -> List(Middleware(App)) {
 }
 
 /// @get "@{{ route_prefix }}/login"
-pub fn show() -> Response {
-  response.empty(200)
+pub fn show(ctx: Context(App)) -> Response {
+  response.html(login.render(ctx: ctx), 200)
 }
 
 /// @post "@{{ route_prefix }}/login"

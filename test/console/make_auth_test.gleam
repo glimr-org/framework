@@ -37,6 +37,50 @@ pub fn register_controller_stub_exists_test() {
   should.be_ok(result)
 }
 
+// ------------------------------------------------------------- Loom Views: Stub Files Exist
+
+pub fn login_view_stub_exists_test() {
+  let result = filesystem.read_stub("glimr", "auth/views/login.loom.html.stub")
+  should.be_ok(result)
+}
+
+pub fn register_view_stub_exists_test() {
+  let result =
+    filesystem.read_stub("glimr", "auth/views/register.loom.html.stub")
+  should.be_ok(result)
+}
+
+pub fn input_component_stub_exists_test() {
+  let result =
+    filesystem.read_stub("glimr", "auth/views/components/input.loom.html.stub")
+  should.be_ok(result)
+}
+
+pub fn button_component_stub_exists_test() {
+  let result =
+    filesystem.read_stub("glimr", "auth/views/components/button.loom.html.stub")
+  should.be_ok(result)
+}
+
+pub fn link_component_stub_exists_test() {
+  let result =
+    filesystem.read_stub("glimr", "auth/views/components/link.loom.html.stub")
+  should.be_ok(result)
+}
+
+// ------------------------------------------------------------- Dashboard: Stub Files Exist
+
+pub fn dashboard_controller_stub_exists_test() {
+  let result = filesystem.read_stub("glimr", "auth/dashboard_controller.stub")
+  should.be_ok(result)
+}
+
+pub fn dashboard_view_stub_exists_test() {
+  let result =
+    filesystem.read_stub("glimr", "auth/views/dashboard.loom.html.stub")
+  should.be_ok(result)
+}
+
 // ------------------------------------------------------------- Overwrite Detection
 
 pub fn check_existing_unscoped_auth_returns_ok_when_no_file_test() {

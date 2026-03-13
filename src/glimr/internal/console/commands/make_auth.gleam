@@ -145,16 +145,22 @@ fn run_steps(
     scoped,
   )
 
-  // 13. Patch kernel with load middleware
+  // 13. Generate dashboard controller
+  make_auth_service.create_dashboard_controller(model_name, scoped)
+
+  // 14. Generate loom views (login, register, dashboard, components)
+  make_auth_service.create_loom_views(scoped, model_name, connection)
+
+  // 15. Patch kernel with load middleware
   make_auth_service.register_in_kernel(model_name)
 
-  // 14. Patch App type with typed model field
+  // 16. Patch App type with typed model field
   make_auth_service.register_in_app(model_name, connection)
 
-  // 15. Patch App constructor with option.None initializer
+  // 17. Patch App constructor with option.None initializer
   make_auth_service.register_in_app_start(model_name)
 
-  // 16. Optionally run migrations
+  // 18. Optionally run migrations
   case should_migrate {
     True -> run_migrate.run(pool, connection)
     False -> Nil

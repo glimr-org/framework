@@ -97,7 +97,7 @@ pub fn pipeline_conditional_test() {
 pub fn l_for_and_l_if_on_same_element_test() {
   // l-for should introduce loop variables before l-if is evaluated
   let template =
-    "@props(items: List(Item))\n<span l-for=\"item in items, loop\" l-if=\"item.active\">{{ item.name }}</span>"
+    "---\nprops(items: List(Item))\n---\n<span l-for=\"item in items, loop\" l-if=\"item.active\">{{ item.name }}</span>"
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
 
@@ -137,11 +137,7 @@ pub fn nested_elements_same_tag_parses_correctly_test() {
 pub fn nested_elements_same_tag_in_loop_test() {
   // Nested elements of the same type should not confuse the parser
   let template =
-    "@props(items: List(Item))
-<span l-for=\"item in items\">
-  <span>{{ item.name }}</span>
-  <span>{{ item.job }}</span>
-</span>"
+    "---\nprops(items: List(Item))\n---\n<span l-for=\"item in items\">\n  <span>{{ item.name }}</span>\n  <span>{{ item.job }}</span>\n</span>"
   let assert Ok(tokens) = lexer.tokenize(template)
   let assert Ok(parsed) = parser.parse(tokens)
 
@@ -589,6 +585,52 @@ pub fn compile_component_with_attributes_test() {
   // Should render attributes at the explicit @attributes location (direct argument)
   generated.code
   |> string.contains("runtime.render_attributes(attributes)")
+  |> should.be_true
+}
+
+pub fn attributes_directive_on_dynamic_element_test() {
+  // @attributes on a dynamic element (one with :expr attrs) must be
+  // recognized as the attributes directive, not treated as a boolean attr
+  let template =
+    "<input @attributes :id=\"name\" :value=\"val\" class=\"input\" />"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+  let generated =
+    generator.generate(parsed, "input", True, dict.new(), dict.new())
+
+  // Should NOT contain @attributes as a literal attribute name
+  generated.code
+  |> string.contains("\"@attributes\"")
+  |> should.be_false
+
+  // Should render attributes via runtime.render_attributes
+  generated.code
+  |> string.contains("runtime.render_attributes(attributes)")
+  |> should.be_true
+}
+
+pub fn attributes_on_dynamic_element_renders_before_closing_angle_test() {
+  // When @attributes is on a dynamic element (one with :class),
+  // the attributes must render BEFORE the >, not after it.
+  // Bug: was producing <button> class="..." instead of <button class="...">
+  let template =
+    "---\nprops(variant: String)\n---\n<button :class=\"['btn', case variant { 'primary' -> 'bg-pink' _ -> 'bg-gray' }]\">click</button>"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+  let generated =
+    generator.generate(parsed, "button", True, dict.new(), dict.new())
+
+  // The tag must NOT close with > before render_attributes
+  // Bug pattern: <> "<button" <> ">" <> " " <> runtime.render_attributes(...)
+  generated.code
+  |> string.contains("<> \"<button\"\n  <> \">\"")
+  |> should.be_false
+
+  // Attributes must be rendered before the >
+  generated.code
+  |> string.contains("runtime.render_attributes")
   |> should.be_true
 }
 
@@ -1097,7 +1139,9 @@ pub fn two_separate_l_if_blocks_both_preserved_test() {
   // two separate IfNodes. The first one must not be silently dropped
   // when the second l-if starts a new pending chain.
   let template =
-    "@props(items: List(String))
+    "---
+props(items: List(String))
+---
 <ul l-if=\"items != []\">
   <li l-for=\"item in items\">{{ item }}</li>
 </ul>

@@ -160,6 +160,11 @@ pub fn create_login_controller(
     True -> "store_" <> model_name <> "_login"
   }
 
+  let view_path = case scoped {
+    False -> "auth/login"
+    True -> "auth/" <> model_name <> "/login"
+  }
+
   scaffold_file(file_path, "auth/login_controller.stub", [
     #("model", model_name),
     #("route_prefix", route_prefix),
@@ -167,6 +172,7 @@ pub fn create_login_controller(
     #("ctx_db_name", ctx_db_name),
     #("guest_middleware", guest_middleware),
     #("validator", validator),
+    #("view_path", view_path),
   ])
 }
 
@@ -231,6 +237,11 @@ pub fn create_register_controller(
     True -> "store_" <> model_name <> "_register"
   }
 
+  let view_path = case scoped {
+    False -> "auth/register"
+    True -> "auth/" <> model_name <> "/register"
+  }
+
   scaffold_file(file_path, "auth/register_controller.stub", [
     #("model", model_name),
     #("route_prefix", route_prefix),
@@ -238,6 +249,7 @@ pub fn create_register_controller(
     #("ctx_db_name", ctx_db_name),
     #("guest_middleware", guest_middleware),
     #("validator", validator),
+    #("view_path", view_path),
   ])
 }
 
@@ -272,6 +284,109 @@ pub fn create_register_validator(scoped: Bool, model_name: String) -> Nil {
   let file_path = "src/app/http/validators/" <> file_name <> ".gleam"
 
   scaffold_file(file_path, "auth/store_register_validator.stub", [])
+}
+
+/// A generated controller isn't much use without pages to
+/// render. This scaffolds the full set of loom templates
+/// (login, register, dashboard) plus reusable form components
+/// (input, button, link) so `make_auth` produces a working UI
+/// out of the box. Scoped models get their own view
+/// subdirectory so multiple auth models don't collide.
+///
+pub fn create_loom_views(
+  scoped: Bool,
+  model_name: String,
+  connection: String,
+) -> Nil {
+  let route_prefix = case scoped {
+    False -> ""
+    True -> "/" <> model_name
+  }
+
+  let model_type = pascal_case(model_name)
+
+  let auth_dir = case scoped {
+    False -> "src/resources/views/auth/"
+    True -> "src/resources/views/auth/" <> model_name <> "/"
+  }
+
+  let dashboard_dir = case scoped {
+    False -> "src/resources/views/"
+    True -> "src/resources/views/" <> model_name <> "/"
+  }
+
+  // Components (shared, no variables)
+  scaffold_file(
+    "src/resources/views/components/input.loom.html",
+    "auth/views/components/input.loom.html.stub",
+    [],
+  )
+  scaffold_file(
+    "src/resources/views/components/button.loom.html",
+    "auth/views/components/button.loom.html.stub",
+    [],
+  )
+  scaffold_file(
+    "src/resources/views/components/link.loom.html",
+    "auth/views/components/link.loom.html.stub",
+    [],
+  )
+
+  // Auth views (with route_prefix for form actions and links)
+  scaffold_file(
+    auth_dir <> "login.loom.html",
+    "auth/views/login.loom.html.stub",
+    [#("route_prefix", route_prefix)],
+  )
+  scaffold_file(
+    auth_dir <> "register.loom.html",
+    "auth/views/register.loom.html.stub",
+    [#("route_prefix", route_prefix)],
+  )
+
+  // Dashboard view
+  scaffold_file(
+    dashboard_dir <> "dashboard.loom.html",
+    "auth/views/dashboard.loom.html.stub",
+    [
+      #("model", model_name),
+      #("model_type", model_type),
+      #("connection", connection),
+      #("route_prefix", route_prefix),
+    ],
+  )
+}
+
+/// The dashboard is the first page a user sees after logging
+/// in. Generating it with auth middleware already applied means
+/// `make_auth` produces a complete login-to-dashboard flow out
+/// of the box.
+///
+pub fn create_dashboard_controller(model_name: String, scoped: Bool) -> Nil {
+  let file_path = case scoped {
+    False -> "src/app/http/controllers/dashboard_controller.gleam"
+    True ->
+      "src/app/http/controllers/" <> model_name <> "_dashboard_controller.gleam"
+  }
+
+  let route_prefix = case scoped {
+    False -> ""
+    True -> "/" <> model_name
+  }
+
+  let auth_middleware = "auth_" <> model_name
+
+  let view_path = case scoped {
+    False -> "dashboard"
+    True -> model_name <> "/dashboard"
+  }
+
+  scaffold_file(file_path, "auth/dashboard_controller.stub", [
+    #("model", model_name),
+    #("route_prefix", route_prefix),
+    #("auth_middleware", auth_middleware),
+    #("view_path", view_path),
+  ])
 }
 
 /// Running `make_auth admin` after already running `make_auth

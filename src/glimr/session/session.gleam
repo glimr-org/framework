@@ -212,6 +212,49 @@ pub fn has_flash(session: Session, key: String) -> Bool {
   }
 }
 
+/// Nobody wants to retype an entire form because one field
+/// failed validation. After a redirect back, the validator
+/// stashes the old values as flash data so templates can
+/// repopulate inputs automatically.
+///
+/// ```html
+/// <input type="email" name="email" :value="session.old(ctx.session, 'email')" />
+/// ```
+///
+pub fn old(session: Session, field: String) -> String {
+  get_flash(session, "old." <> field)
+}
+
+/// Showing inline validation errors next to the field that
+/// failed is way better than a generic "something went wrong"
+/// banner. The validator flashes each field's first error so
+/// templates can display it right where it matters.
+///
+/// ```html
+/// <p l-if="session.error(ctx.session, 'email') != ''" class="text-red-600">
+///   {{ session.error(ctx.session, "email") }}
+/// </p>
+/// ```
+///
+pub fn error(session: Session, field: String) -> String {
+  get_flash(session, "errors." <> field)
+}
+
+/// Templates often need to conditionally show error styling or
+/// error messages. Checking `error() != ""` works but reads
+/// awkwardly in template expressions. This gives a clean
+/// boolean for `l-if` directives.
+///
+/// ```html
+/// <p l-if="session.has_error(ctx.session, 'email')" class="text-red-600">
+///   {{ session.error(ctx.session, "email") }}
+/// </p>
+/// ```
+///
+pub fn has_error(session: Session, field: String) -> Bool {
+  has_flash(session, "errors." <> field)
+}
+
 /// Logout and account deletion need to destroy all session
 /// state and issue a new ID so the old session cookie can never
 /// be reused. The invalidated flag tells middleware to delete

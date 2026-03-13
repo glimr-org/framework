@@ -1282,6 +1282,33 @@ pub fn generate_class_attr_transforms_static_strings_test() {
   |> should.be_true
 }
 
+pub fn generate_class_attr_case_expression_wraps_branch_strings_test() {
+  let result =
+    generate(
+      template([
+        ComponentNode(
+          "button",
+          [
+            ClassAttr(
+              "[\"base-class\", case variant { \"secondary\" -> \"bg-gray\" _ -> \"bg-pink\" }]",
+            ),
+          ],
+          [],
+        ),
+      ]),
+      "page",
+      False,
+    )
+
+  // The entire case expression should be wrapped with runtime.class()
+  // so build_classes receives #(String, Bool) tuples consistently
+  result.code
+  |> string.contains(
+    "runtime.build_classes([runtime.class(\"base-class\"), runtime.class(case variant { \"secondary\" -> \"bg-gray\" _ -> \"bg-pink\" })])",
+  )
+  |> should.be_true
+}
+
 pub fn generate_style_attr_transforms_static_strings_test() {
   let result =
     generate(

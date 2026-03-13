@@ -41,8 +41,6 @@ pub fn run(name: String, create_sqlite: Bool) -> Nil {
 /// failed.
 ///
 fn do_setup(base_path: String, create_sqlite: Bool) -> Nil {
-  io.println("")
-
   // Create base directory
   case simplifile.create_directory_all(base_path) {
     Ok(_) -> io.println(console.warning("Created: ") <> base_path)
@@ -90,6 +88,7 @@ fn do_setup(base_path: String, create_sqlite: Bool) -> Nil {
   }
 
   console.output()
+  |> console.blank_line(1)
   |> console.line_success("Database set up successfully!")
   |> console.print()
 }

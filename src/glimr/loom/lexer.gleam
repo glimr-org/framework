@@ -89,14 +89,111 @@ pub type LexerError {
 /// line number, or the tag stack.
 ///
 pub fn tokenize(input: String) -> Result(List(Token), LexerError) {
-  // tag_stack tracks open HTML tags in LIFO order. Each entry is
-  // (tag_name, is_dynamic) where is_dynamic=True means we emitted an
-  // Element token, False means it was plain HTML emitted as text.
-  // This ensures closing tags match the correct opening tag.
-  do_tokenize(input, 0, 1, [], [])
+  case parse_frontmatter(input) {
+    Ok(#(directive_tokens, remaining, start_line)) ->
+      do_tokenize(remaining, 0, start_line, directive_tokens, [])
+    Error(err) -> Error(err)
+  }
 }
 
 // ------------------------------------------------------------- Private Functions
+
+/// Moving imports and props into a frontmatter block at the top
+/// of the template (between `---` delimiters) keeps directives
+/// separate from HTML content. Parsing them before the main
+/// tokenizer starts means the body doesn't need to handle
+/// `@import` or `@props` mid-template.
+///
+fn parse_frontmatter(
+  input: String,
+) -> Result(#(List(Token), String, Int), LexerError) {
+  let trimmed = string.trim_start(input)
+  let leading_newlines = count_newlines(input) - count_newlines(trimmed)
+  let start_line = 1 + leading_newlines
+
+  case trimmed {
+    "---\n" <> rest | "---\r\n" <> rest -> {
+      case string.split_once(rest, "\n---") {
+        Ok(#(block, after_close)) -> {
+          // Skip past the closing --- line's trailing newline
+          let remaining = case after_close {
+            "\n" <> r -> r
+            "\r\n" <> r -> r
+            r -> r
+          }
+
+          let block_start_line = start_line + 1
+          use tokens <- result.try(
+            parse_frontmatter_lines(block, block_start_line, []),
+          )
+
+          let end_line = block_start_line + count_newlines(block) + 1
+          Ok(#(tokens, remaining, end_line))
+        }
+        Error(_) -> Error(UnterminatedDirective(start_line))
+      }
+    }
+    _ -> Ok(#([], input, 1))
+  }
+}
+
+/// Each frontmatter line is either an `import` statement, a
+/// `props(...)` declaration, or blank. Anything else is an
+/// error with a line number so developers know exactly which
+/// line has the unrecognized directive.
+///
+fn parse_frontmatter_lines(
+  block: String,
+  line: Int,
+  acc: List(Token),
+) -> Result(List(Token), LexerError) {
+  case block {
+    "" -> Ok(acc)
+    _ -> {
+      let #(current_line, rest) = case string.split_once(block, "\n") {
+        Ok(#(l, r)) -> #(l, r)
+        Error(_) -> #(block, "")
+      }
+
+      let trimmed = string.trim(current_line)
+      case trimmed {
+        "" -> parse_frontmatter_lines(rest, line + 1, acc)
+
+        "import " <> import_path -> {
+          let import_str = string.trim(import_path)
+          case import_str {
+            "" -> Error(InvalidImportDirective("empty import", line))
+            _ ->
+              parse_frontmatter_lines(rest, line + 1, [
+                ImportDirective(import_str, line),
+                ..acc
+              ])
+          }
+        }
+
+        "props(" <> _ -> {
+          // Extract content inside props(...)
+          let after_props = string.drop_start(trimmed, 6)
+          case find_matching_paren(after_props, 0, "") {
+            Ok(#(props_str, _)) -> {
+              case parse_props_content(props_str) {
+                Ok(props) ->
+                  parse_frontmatter_lines(rest, line + 1, [
+                    PropsDirective(props, line),
+                    ..acc
+                  ])
+                Error(msg) -> Error(InvalidPropsDirective(msg, line))
+              }
+            }
+            Error(_) -> Error(UnterminatedPropsDirective(line))
+          }
+        }
+
+        other -> Error(InvalidDirective(other, line))
+      }
+    }
+  }
+}
 
 /// Recursive dispatch loop. Order of pattern matches matters
 /// because longer prefixes (e.g. "{{{") must be checked before
@@ -161,14 +258,6 @@ fn do_tokenize(
     }
 
     "<!--" <> rest -> parse_comment(rest, position, line, tokens, tag_stack)
-
-    "@import(" <> rest -> {
-      parse_import_directive(rest, position, line, tokens, tag_stack)
-    }
-
-    "@props(" <> rest -> {
-      parse_props_directive(rest, position, line, tokens, tag_stack)
-    }
 
     "@attributes" <> rest -> {
       parse_simple_directive(
@@ -627,6 +716,8 @@ fn parse_element_attrs(
       }
     }
 
+    "@attributes" <> _ -> #(list.reverse(acc), input)
+
     _ -> {
       case parse_string_or_bool_attr(input) {
         Ok(#(attr, remaining)) ->
@@ -927,6 +1018,7 @@ fn parse_component_attrs(
         Error(_) -> #(list.reverse(acc), input)
       }
     }
+    "@attributes" <> _ -> #(list.reverse(acc), input)
     _ -> {
       case parse_string_or_bool_attr(input) {
         Ok(#(attr, remaining)) ->
@@ -1076,74 +1168,6 @@ fn parse_simple_directive(
       )
     }
   }
-}
-
-/// @import directives can contain nested parentheses in type
-/// signatures (e.g. List(String)), so we use
-/// find_matching_paren instead of a simple split.
-///
-fn parse_import_directive(
-  input: String,
-  position: Int,
-  line: Int,
-  tokens: List(Token),
-  tag_stack: List(#(String, Bool)),
-) -> Result(List(Token), LexerError) {
-  use #(import_str, rest) <- result.try(
-    find_matching_paren(input, 0, "")
-    |> result.replace_error(UnterminatedImportDirective(line)),
-  )
-
-  let import_str = string.trim(import_str)
-  use <- bool.lazy_guard(import_str == "", fn() {
-    Error(InvalidImportDirective("empty import", line))
-  })
-
-  // @import( + content + )
-  let len = 8 + string.length(import_str) + 1
-  let new_line = line + count_newlines(import_str)
-
-  do_tokenize(
-    rest,
-    position + len,
-    new_line,
-    [ImportDirective(import_str, line), ..tokens],
-    tag_stack,
-  )
-}
-
-/// @props also uses nested parentheses for types like
-/// List(#(String, Int)), requiring the same balanced paren
-/// extraction as @import.
-///
-fn parse_props_directive(
-  input: String,
-  position: Int,
-  line: Int,
-  tokens: List(Token),
-  tag_stack: List(#(String, Bool)),
-) -> Result(List(Token), LexerError) {
-  use #(props_str, rest) <- result.try(
-    find_matching_paren(input, 0, "")
-    |> result.replace_error(UnterminatedPropsDirective(line)),
-  )
-
-  use props <- result.try(
-    parse_props_content(props_str)
-    |> result.map_error(InvalidPropsDirective(_, line)),
-  )
-
-  // @props( + content + )
-  let len = 7 + string.length(props_str) + 1
-  let new_line = line + count_newlines(props_str)
-
-  do_tokenize(
-    rest,
-    position + len,
-    new_line,
-    [PropsDirective(props, line), ..tokens],
-    tag_stack,
-  )
 }
 
 /// Directive arguments can contain nested parens (e.g. type
@@ -1437,8 +1461,6 @@ fn take_until_special(input: String, accumulated: String) -> #(String, String) {
     "{{{" <> _ -> #(accumulated, input)
     "{{" <> _ -> #(accumulated, input)
     "<!--" <> _ -> #(accumulated, input)
-    "@import(" <> _ -> #(accumulated, input)
-    "@props(" <> _ -> #(accumulated, input)
     "@attributes" <> _ -> #(accumulated, input)
     "</slot>" <> _ -> #(accumulated, input)
     "<slot" <> _ -> #(accumulated, input)

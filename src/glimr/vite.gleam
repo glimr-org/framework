@@ -57,16 +57,96 @@ pub fn tags(entry: String) -> String {
 /// appear instantly without a full rebuild.
 ///
 fn dev_tags(dev_url: String, entry: String) -> String {
+  let css_entry = resolve_css_entry(entry)
+
   string.concat([
     "<script type=\"module\" src=\"",
     dev_url,
     "/@vite/client\"></script>\n",
+    css_entry
+      |> list.map(fn(css_path) {
+        string.concat([
+          "<link rel=\"stylesheet\" href=\"",
+          dev_url,
+          "/",
+          css_path,
+          "\" />\n",
+        ])
+      })
+      |> string.concat,
     "<script type=\"module\" src=\"",
     dev_url,
     "/",
     entry,
     "\"></script>",
   ])
+}
+
+/// Reads the JS entry file and extracts CSS import paths so
+/// they can be emitted as `<link>` tags in dev mode. This
+/// prevents FOUC by loading stylesheets before the page renders
+/// instead of waiting for Vite's JS client to inject them.
+///
+fn resolve_css_entry(entry: String) -> List(String) {
+  case simplifile.read(entry) {
+    Ok(content) ->
+      content
+      |> string.split("\n")
+      |> list.filter_map(fn(line) {
+        let trimmed = string.trim(line)
+        case string.starts_with(trimmed, "import \"") {
+          True -> extract_import_path(trimmed, "import \"")
+          False ->
+            case string.starts_with(trimmed, "import '") {
+              True -> extract_import_path(trimmed, "import '")
+              False -> Error(Nil)
+            }
+        }
+      })
+      |> list.filter(fn(path) { string.ends_with(path, ".css") })
+      |> list.map(fn(path) { resolve_relative_path(entry, path) })
+    Error(_) -> []
+  }
+}
+
+/// JS imports can use single or double quotes, and may have a
+/// trailing semicolon. Rather than regex, splitting on the
+/// matching quote char after the prefix cleanly isolates the
+/// path regardless of quote style or trailing punctuation.
+///
+fn extract_import_path(line: String, prefix: String) -> Result(String, Nil) {
+  let rest = string.drop_start(line, string.length(prefix))
+  let quote = case prefix {
+    "import \"" -> "\""
+    _ -> "'"
+  }
+  case string.split_once(rest, quote) {
+    Ok(#(path, _)) -> Ok(path)
+    Error(_) -> Error(Nil)
+  }
+}
+
+/// CSS imports in the entry file use relative paths like
+/// `../css/app.css`, but the dev server needs a root-relative
+/// path like `resources/css/app.css`. Walking `..` and `.`
+/// segments against the entry file's directory produces the
+/// path Vite's dev server expects.
+///
+fn resolve_relative_path(entry: String, relative: String) -> String {
+  let parts = string.split(entry, "/")
+  let dir = list.take(parts, list.length(parts) - 1)
+
+  let relative_parts = string.split(relative, "/")
+  let resolved =
+    list.fold(relative_parts, dir, fn(acc, segment) {
+      case segment {
+        ".." -> list.take(acc, list.length(acc) - 1)
+        "." -> acc
+        _ -> list.append(acc, [segment])
+      }
+    })
+
+  string.join(resolved, "/")
 }
 
 /// Production tags resolve hashed filenames from the Vite

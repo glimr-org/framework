@@ -9,7 +9,6 @@ import glimr_auth/auth
 
 /// @post "@{{ route_prefix }}/logout"
 pub fn destroy(ctx: Context(App)) -> Response {
-  // Ensure only authenticated users reach this endpoint.
   use ctx <- middleware.apply([@{{ auth_middleware }}.run], ctx)
 
   auth.logout(ctx.session)

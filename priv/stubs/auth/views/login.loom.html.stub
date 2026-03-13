@@ -1,0 +1,53 @@
+---
+import glimr/session/session
+import glimr/http/context
+import app/app.{type App}
+
+props(ctx: context.Context(App))
+---
+
+<x-layouts:app>
+  <slot name="meta_title">Login</slot>
+
+  <div class="flex items-center justify-center min-h-screen bg-gray-50">
+    <div class="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
+      <h1 class="text-2xl font-bold text-center text-gray-900 mb-6">Login</h1>
+
+      <div
+        l-if="session.has_flash(ctx.session, 'error')"
+        class="mb-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded"
+      >
+        {{ session.get_flash(ctx.session, "error") }}
+      </div>
+
+      <form method="post" action="@{{ route_prefix }}/login">
+        <div class="mb-4">
+          <x-input
+            id="name"
+            name="email"
+            type="email"
+            label="Email"
+            :session="ctx.session"
+          />
+        </div>
+
+        <div class="mb-6">
+          <x-input
+            id="password"
+            name="password"
+            type="password"
+            label="Password"
+            :session="ctx.session"
+          />
+        </div>
+
+        <x-button type="submit">Login</x-button>
+      </form>
+
+      <p class="mt-4 text-center text-sm text-gray-600">
+        Don't have an account?
+        <x-link href="@{{ route_prefix }}/register">Register</x-link>
+      </p>
+    </div>
+  </div>
+</x-layouts:app>
