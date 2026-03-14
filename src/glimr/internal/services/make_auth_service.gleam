@@ -321,16 +321,6 @@ pub fn create_loom_views(
     "auth/views/components/input.loom.html.stub",
     [],
   )
-  scaffold_file(
-    "src/resources/views/components/button.loom.html",
-    "auth/views/components/button.loom.html.stub",
-    [],
-  )
-  scaffold_file(
-    "src/resources/views/components/link.loom.html",
-    "auth/views/components/link.loom.html.stub",
-    [],
-  )
 
   // Auth views (with route_prefix for form actions and links)
   scaffold_file(

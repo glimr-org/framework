@@ -269,6 +269,29 @@ pub fn parse_lm_if_without_else_test() {
   )
 }
 
+pub fn parse_lm_if_else_with_comment_between_test() {
+  // HTML comments between l-if and l-else should not break the chain
+  let tokens = [
+    Element("button", [LmIf("show", 1)], False),
+    Text("yes"),
+    ElementEnd("button"),
+    Text("<!-- a comment -->"),
+    Element("a", [LmElse], False),
+    Text("no"),
+    ElementEnd("a"),
+  ]
+  let assert Ok(template) = parser.parse(tokens)
+
+  template
+  |> should.equal(
+    t([
+      if_else_node("show", [ElementNode("button", [], [TextNode("yes")])], [
+        ElementNode("a", [], [TextNode("no")]),
+      ]),
+    ]),
+  )
+}
+
 // ------------------------------------------------------------- l-for Tests
 
 pub fn parse_lm_for_test() {

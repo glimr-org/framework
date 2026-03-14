@@ -56,18 +56,6 @@ pub fn input_component_stub_exists_test() {
   should.be_ok(result)
 }
 
-pub fn button_component_stub_exists_test() {
-  let result =
-    filesystem.read_stub("glimr", "auth/views/components/button.loom.html.stub")
-  should.be_ok(result)
-}
-
-pub fn link_component_stub_exists_test() {
-  let result =
-    filesystem.read_stub("glimr", "auth/views/components/link.loom.html.stub")
-  should.be_ok(result)
-}
-
 // ------------------------------------------------------------- Dashboard: Stub Files Exist
 
 pub fn dashboard_controller_stub_exists_test() {

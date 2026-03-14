@@ -210,6 +210,31 @@ fn is_whitespace_only(string: String) -> Bool {
   string |> string.to_graphemes |> list.all(string_utils.is_whitespace)
 }
 
+/// Text nodes between conditional siblings are allowed if they
+/// contain only whitespace and/or HTML comments. Without this,
+/// a developer adding a comment between `l-if` and `l-else`
+/// elements would unexpectedly break the conditional chain.
+///
+fn is_ignorable_between_conditionals(content: String) -> Bool {
+  let stripped = strip_html_comments(content)
+  is_whitespace_only(stripped)
+}
+
+/// Removes all `<!-- ... -->` sequences from a string so the
+/// caller can check whether only whitespace remains.
+///
+fn strip_html_comments(content: String) -> String {
+  case string.split_once(content, "<!--") {
+    Error(_) -> content
+    Ok(#(before, rest)) -> {
+      case string.split_once(rest, "-->") {
+        Error(_) -> content
+        Ok(#(_, after)) -> strip_html_comments(before <> after)
+      }
+    }
+  }
+}
+
 /// The recursive backbone of the parser. Each token is
 /// dispatched to the appropriate node constructor while a
 /// pending conditional accumulator tracks l-if chains across
@@ -229,10 +254,10 @@ fn parse_nodes(
     }
 
     [lexer.Text(content), ..rest] -> {
-      // Whitespace-only text between l-if/l-else-if/l-else siblings
-      // should not break the conditional chain
-      case pending_if, string.trim(content) {
-        Some(_), "" -> parse_nodes(rest, acc, pending_if)
+      // Whitespace-only text and HTML comments between
+      // l-if/l-else-if/l-else siblings should not break the chain
+      case pending_if, is_ignorable_between_conditionals(content) {
+        Some(_), True -> parse_nodes(rest, acc, pending_if)
         _, _ -> {
           let acc = flush_pending_if(acc, pending_if)
           parse_nodes(rest, [TextNode(content), ..acc], None)

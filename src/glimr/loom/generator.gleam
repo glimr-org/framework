@@ -2637,15 +2637,18 @@ fn inject_attributes_helper(
 ///
 fn inject_attributes_into_branches(
   branches: List(#(Option(String), Int, List(Node))),
-  injected: Bool,
+  _injected: Bool,
 ) -> #(List(#(Option(String), Int, List(Node))), Bool) {
   case branches {
-    [] -> #([], injected)
+    [] -> #([], False)
     [#(condition, line, body), ..rest] -> {
-      let #(new_body, did_inject) = inject_attributes_helper(body, injected)
-      let #(rest_branches, rest_inject) =
-        inject_attributes_into_branches(rest, did_inject)
-      #([#(condition, line, new_body), ..rest_branches], rest_inject)
+      // Each branch is injected independently — the l-else branch
+      // needs @attributes just as much as the l-if branch since
+      // only one renders at a time.
+      let #(new_body, did_inject) = inject_attributes_helper(body, False)
+      let #(rest_branches, rest_did) =
+        inject_attributes_into_branches(rest, False)
+      #([#(condition, line, new_body), ..rest_branches], did_inject || rest_did)
     }
   }
 }

@@ -672,6 +672,33 @@ pub fn compile_using_component_with_attributes_test() {
   |> should.be_true
 }
 
+pub fn auto_inject_attributes_into_all_conditional_branches_test() {
+  // When a component's root is l-if/l-else, @attributes should be
+  // auto-injected into the root element of every branch, not just the first.
+  let template =
+    "---\nimport gleam/string\n\nprops(href: String)\n---\n<button l-if=\"string.is_empty(href)\">click</button>\n<a l-else :href=\"href\">click</a>"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+  let generated =
+    generator.generate(parsed, "button", True, dict.new(), dict.new())
+
+  // Both branches should have render_attributes or merge_attributes
+  // Count occurrences - should be 2 (one per branch)
+  let count =
+    count_substring(generated.code, "runtime.render_attributes(attributes)")
+    + count_substring(generated.code, "runtime.merge_attributes(")
+  count
+  |> should.equal(2)
+}
+
+fn count_substring(haystack: String, needle: String) -> Int {
+  case string.split_once(haystack, needle) {
+    Ok(#(_, rest)) -> 1 + count_substring(rest, needle)
+    Error(_) -> 0
+  }
+}
+
 // ------------------------------------------------------------- Attribute Merging End-to-End Tests
 
 pub fn merge_class_attributes_at_runtime_test() {
