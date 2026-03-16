@@ -288,9 +288,8 @@ pub fn create_register_validator(scoped: Bool, model_name: String) -> Nil {
 
 /// A generated controller isn't much use without pages to
 /// render. This scaffolds the full set of loom templates
-/// (login, register, dashboard) plus reusable form components
-/// (input, button, link) so `make_auth` produces a working UI
-/// out of the box. Scoped models get their own view
+/// (login, register, dashboard) so `make_auth` produces a
+/// working UI out of the box. Scoped models get their own view
 /// subdirectory so multiple auth models don't collide.
 ///
 pub fn create_loom_views(
