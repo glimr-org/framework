@@ -1,4 +1,5 @@
 import gleam/dict
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
@@ -604,10 +605,42 @@ pub fn attributes_directive_on_dynamic_element_test() {
   |> string.contains("\"@attributes\"")
   |> should.be_false
 
-  // Should render attributes via runtime.render_attributes
+  // Should merge element attrs with forwarded component attributes
   generated.code
-  |> string.contains("runtime.render_attributes(attributes)")
+  |> string.contains("runtime.merge_attributes(")
   |> should.be_true
+
+  // The forwarded attributes should be the second argument to merge
+  generated.code
+  |> string.contains(", attributes)")
+  |> should.be_true
+}
+
+pub fn attributes_with_other_attrs_on_multiline_element_test() {
+  // When @attributes appears on an element alongside :expr and static attrs,
+  // all attributes must be parsed — @attributes must not stop attr parsing
+  let template =
+    "---\nprops(name: String, val: String)\n---\n<input\n  @attributes\n  :value=\"val\"\n  class=\"input\"\n/>"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+  let generated =
+    generator.generate(parsed, "input", True, dict.new(), dict.new())
+
+  // :value must be evaluated as an expression, not rendered as literal text
+  generated.code
+  |> string.contains("runtime.Attribute(\"value\", val)")
+  |> should.be_true
+
+  // class must be a proper attribute
+  generated.code
+  |> string.contains("runtime.Attribute(\"class\", \"input\")")
+  |> should.be_true
+
+  // Must NOT contain :value as literal text
+  generated.code
+  |> string.contains(":value=")
+  |> should.be_false
 }
 
 pub fn attributes_on_dynamic_element_renders_before_closing_angle_test() {
@@ -1194,4 +1227,95 @@ props(items: List(String))
     }
     _ -> panic as "Expected two separate IfNodes"
   }
+}
+
+// ------------------------------------------------------------- Multiline Props Tests
+
+pub fn multiline_props_in_frontmatter_test() {
+  // props(...) that spans multiple lines should be parsed correctly
+  let template =
+    "---
+import glimr/session/session.{type Session}
+
+props(
+  label: String,
+  id: String,
+  name: String,
+  session: Session
+)
+---
+
+<label>{{ label }}</label>"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+
+  // Should have the PropsDirective token with all four props
+  let has_props =
+    list.any(tokens, fn(token) {
+      case token {
+        lexer.PropsDirective(props, _) -> list.length(props) == 4
+        _ -> False
+      }
+    })
+  should.be_true(has_props)
+
+  // Should also have the import directive
+  let has_import =
+    list.any(tokens, fn(token) {
+      case token {
+        lexer.ImportDirective(_, _) -> True
+        _ -> False
+      }
+    })
+  should.be_true(has_import)
+
+  // Full pipeline should work
+  let assert Ok(parsed) = parser.parse(tokens)
+  let _generated =
+    generator.generate(parsed, "input", True, dict.new(), dict.new())
+}
+
+pub fn dynamic_element_inside_static_parent_test() {
+  // A dynamic child element (e.g. <input :value="val">) inside a
+  // non-dynamic parent (e.g. <div>) must still be parsed as a
+  // dynamic Element — the parent being static should not prevent it.
+  let template =
+    "---\nprops(val: String)\n---\n<div>\n  <input :value=\"val\" class=\"input\" />\n</div>"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+  let generated =
+    generator.generate(parsed, "wrapper", False, dict.new(), dict.new())
+
+  // :value must be evaluated as an expression attribute
+  generated.code
+  |> string.contains("runtime.Attribute(\"value\", val)")
+  |> should.be_true
+
+  // Must NOT contain :value as literal text
+  generated.code
+  |> string.contains(":value=")
+  |> should.be_false
+}
+
+pub fn dynamic_element_with_attributes_inside_static_parent_test() {
+  // Same as above but with @attributes on the dynamic child element.
+  // @attributes must not prevent the element from being parsed properly.
+  let template =
+    "---\nprops(val: String)\n---\n<div>\n  <input\n    @attributes\n    :value=\"val\"\n    class=\"input\"\n  />\n</div>"
+
+  let assert Ok(tokens) = lexer.tokenize(template)
+  let assert Ok(parsed) = parser.parse(tokens)
+  let generated =
+    generator.generate(parsed, "wrapper", True, dict.new(), dict.new())
+
+  // :value must be evaluated as an expression attribute
+  generated.code
+  |> string.contains("runtime.Attribute(\"value\", val)")
+  |> should.be_true
+
+  // Must NOT contain :value as literal text
+  generated.code
+  |> string.contains(":value=")
+  |> should.be_false
 }

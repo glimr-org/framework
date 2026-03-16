@@ -315,13 +315,6 @@ pub fn create_loom_views(
     True -> "src/resources/views/" <> model_name <> "/"
   }
 
-  // Components (shared, no variables)
-  scaffold_file(
-    "src/resources/views/components/input.loom.html",
-    "auth/views/components/input.loom.html.stub",
-    [],
-  )
-
   // Auth views (with route_prefix for form actions and links)
   scaffold_file(
     auth_dir <> "login.loom.html",

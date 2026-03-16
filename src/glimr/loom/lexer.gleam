@@ -89,11 +89,10 @@ pub type LexerError {
 /// line number, or the tag stack.
 ///
 pub fn tokenize(input: String) -> Result(List(Token), LexerError) {
-  case parse_frontmatter(input) {
-    Ok(#(directive_tokens, remaining, start_line)) ->
-      do_tokenize(remaining, 0, start_line, directive_tokens, [])
-    Error(err) -> Error(err)
-  }
+  use #(directive_tokens, remaining, start_line) <- result.try(
+    parse_frontmatter(input),
+  )
+  do_tokenize(remaining, 0, start_line, directive_tokens, [])
 }
 
 // ------------------------------------------------------------- Private Functions
@@ -161,31 +160,44 @@ fn parse_frontmatter_lines(
 
         "import " <> import_path -> {
           let import_str = string.trim(import_path)
-          case import_str {
-            "" -> Error(InvalidImportDirective("empty import", line))
-            _ ->
-              parse_frontmatter_lines(rest, line + 1, [
-                ImportDirective(import_str, line),
-                ..acc
-              ])
-          }
+          use <- bool.lazy_guard(import_str == "", fn() {
+            Error(InvalidImportDirective("empty import", line))
+          })
+          parse_frontmatter_lines(rest, line + 1, [
+            ImportDirective(import_str, line),
+            ..acc
+          ])
         }
 
         "props(" <> _ -> {
-          // Extract content inside props(...)
           let after_props = string.drop_start(trimmed, 6)
-          case find_matching_paren(after_props, 0, "") {
-            Ok(#(props_str, _)) -> {
-              case parse_props_content(props_str) {
-                Ok(props) ->
-                  parse_frontmatter_lines(rest, line + 1, [
-                    PropsDirective(props, line),
-                    ..acc
-                  ])
-                Error(msg) -> Error(InvalidPropsDirective(msg, line))
+          // Try single-line first, fall back to multi-line
+          use #(props_str, remaining, next_line) <- result.try(
+            case find_matching_paren(after_props, 0, "") {
+              Ok(#(props_str, _)) -> Ok(#(props_str, rest, line + 1))
+              Error(_) -> {
+                let full = after_props <> "\n" <> rest
+                case find_matching_paren(full, 0, "") {
+                  Ok(#(props_str, after_close)) -> {
+                    let remaining = string.trim_start(after_close)
+                    Ok(#(
+                      props_str,
+                      remaining,
+                      line + count_newlines(props_str) + 1,
+                    ))
+                  }
+                  Error(_) -> Error(UnterminatedPropsDirective(line))
+                }
               }
-            }
-            Error(_) -> Error(UnterminatedPropsDirective(line))
+            },
+          )
+          case parse_props_content(string.trim(props_str)) {
+            Ok(props) ->
+              parse_frontmatter_lines(remaining, next_line, [
+                PropsDirective(props, line),
+                ..acc
+              ])
+            Error(msg) -> Error(InvalidPropsDirective(msg, line))
           }
         }
 
@@ -385,11 +397,9 @@ fn parse_comment(
 /// constructs so error messages point to the right line. Called
 /// after consuming each token to advance the count.
 ///
-fn count_newlines(string: String) -> Int {
-  string
-  |> string.to_graphemes
-  |> list.filter(fn(c) { c == "\n" })
-  |> list.length
+fn count_newlines(s: String) -> Int {
+  string.to_graphemes(s)
+  |> list.count(fn(c) { c == "\n" })
 }
 
 /// Components use the <x-name> convention to distinguish them
@@ -622,7 +632,7 @@ fn parse_element_tag(
     Error(Nil)
   })
 
-  let #(attrs, rest) = parse_element_attrs(rest, [], line)
+  let #(attrs, rest) = parse_attrs(rest, [], line)
   let rest = skip_whitespace(rest)
 
   case rest {
@@ -636,7 +646,7 @@ fn parse_element_tag(
 /// directives need special handling distinct from regular HTML
 /// attributes. Each prefix dispatches to a sub-parser.
 ///
-fn parse_element_attrs(
+fn parse_attrs(
   input: String,
   acc: List(ComponentAttr),
   line: Int,
@@ -649,8 +659,7 @@ fn parse_element_attrs(
 
     ":" <> rest -> {
       case parse_expr_attr(rest) {
-        Ok(#(attr, remaining)) ->
-          parse_element_attrs(remaining, [attr, ..acc], line)
+        Ok(#(attr, remaining)) -> parse_attrs(remaining, [attr, ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
@@ -658,7 +667,7 @@ fn parse_element_attrs(
     "l-if=" <> rest -> {
       case parse_quoted_value(rest) {
         Ok(#(condition, remaining)) ->
-          parse_element_attrs(remaining, [LmIf(condition, line), ..acc], line)
+          parse_attrs(remaining, [LmIf(condition, line), ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
@@ -666,24 +675,20 @@ fn parse_element_attrs(
     "l-else-if=" <> rest -> {
       case parse_quoted_value(rest) {
         Ok(#(condition, remaining)) ->
-          parse_element_attrs(
-            remaining,
-            [LmElseIf(condition, line), ..acc],
-            line,
-          )
+          parse_attrs(remaining, [LmElseIf(condition, line), ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
 
     "l-else" <> rest -> {
       let rest = skip_whitespace(rest)
-      parse_element_attrs(rest, [LmElse, ..acc], line)
+      parse_attrs(rest, [LmElse, ..acc], line)
     }
 
     "l-for=" <> rest -> {
       case parse_lm_for_attr(rest) {
         Ok(#(collection, items, loop_var, remaining)) ->
-          parse_element_attrs(
+          parse_attrs(
             remaining,
             [LmFor(collection, items, loop_var, line), ..acc],
             line,
@@ -694,16 +699,14 @@ fn parse_element_attrs(
 
     "l-on:" <> rest -> {
       case parse_lm_on_attr(rest, line) {
-        Ok(#(attr, remaining)) ->
-          parse_element_attrs(remaining, [attr, ..acc], line)
+        Ok(#(attr, remaining)) -> parse_attrs(remaining, [attr, ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
 
     "l-model=" <> rest -> {
       case parse_lm_model_attr(rest, line) {
-        Ok(#(attr, remaining)) ->
-          parse_element_attrs(remaining, [attr, ..acc], line)
+        Ok(#(attr, remaining)) -> parse_attrs(remaining, [attr, ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
@@ -711,17 +714,20 @@ fn parse_element_attrs(
     "l-show=" <> rest -> {
       case parse_quoted_value(rest) {
         Ok(#(condition, remaining)) ->
-          parse_element_attrs(remaining, [LmShow(condition, line), ..acc], line)
+          parse_attrs(remaining, [LmShow(condition, line), ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
 
-    "@attributes" <> _ -> #(list.reverse(acc), input)
+    "@attributes" <> rest -> {
+      // Skip past @attributes and continue parsing remaining attrs
+      let rest = skip_whitespace(rest)
+      parse_attrs(rest, [BoolAttr("@attributes"), ..acc], line)
+    }
 
     _ -> {
       case parse_string_or_bool_attr(input) {
-        Ok(#(attr, remaining)) ->
-          parse_element_attrs(remaining, [attr, ..acc], line)
+        Ok(#(attr, remaining)) -> parse_attrs(remaining, [attr, ..acc], line)
         Error(_) -> #(list.reverse(acc), input)
       }
     }
@@ -820,10 +826,8 @@ fn parse_lm_model_attr(
   input: String,
   line: Int,
 ) -> Result(#(ComponentAttr, String), Nil) {
-  case parse_quoted_value(input) {
-    Ok(#(prop, rest)) -> Ok(#(LmModel(prop, line), rest))
-    Error(_) -> Error(Nil)
-  }
+  parse_quoted_value(input)
+  |> result.map(fn(pair) { #(LmModel(pair.0, line), pair.1) })
 }
 
 /// Attribute names in HTML end at = or whitespace, so we
@@ -912,7 +916,7 @@ fn parse_component_tag(
   let #(name, rest) = take_component_name(input, "")
   use <- bool.lazy_guard(name == "", fn() { Error(Nil) })
 
-  let #(attrs, rest) = parse_component_attrs(rest, [], line)
+  let #(attrs, rest) = parse_attrs(rest, [], line)
   let rest = skip_whitespace(rest)
 
   case rest {
@@ -935,97 +939,6 @@ fn take_component_name(input: String, acc: String) -> #(String, String) {
       }
     }
     Error(_) -> #(acc, input)
-  }
-}
-
-/// Component attributes follow the same dispatch pattern as
-/// element attributes. Keeping them separate allows future
-/// divergence without breaking either path.
-///
-fn parse_component_attrs(
-  input: String,
-  acc: List(ComponentAttr),
-  line: Int,
-) -> #(List(ComponentAttr), String) {
-  let input = skip_whitespace(input)
-  case input {
-    ">" <> _ -> #(list.reverse(acc), input)
-    "/>" <> _ -> #(list.reverse(acc), input)
-    "" -> #(list.reverse(acc), input)
-    ":" <> rest -> {
-      case parse_expr_attr(rest) {
-        Ok(#(attr, remaining)) ->
-          parse_component_attrs(remaining, [attr, ..acc], line)
-        Error(_) -> #(list.reverse(acc), input)
-      }
-    }
-    "l-if=" <> rest -> {
-      case parse_quoted_value(rest) {
-        Ok(#(condition, remaining)) ->
-          parse_component_attrs(remaining, [LmIf(condition, line), ..acc], line)
-        Error(_) -> #(list.reverse(acc), input)
-      }
-    }
-    "l-else-if=" <> rest -> {
-      case parse_quoted_value(rest) {
-        Ok(#(condition, remaining)) ->
-          parse_component_attrs(
-            remaining,
-            [LmElseIf(condition, line), ..acc],
-            line,
-          )
-        Error(_) -> #(list.reverse(acc), input)
-      }
-    }
-    "l-else" <> rest -> {
-      let rest = skip_whitespace(rest)
-      parse_component_attrs(rest, [LmElse, ..acc], line)
-    }
-    "l-for=" <> rest -> {
-      case parse_lm_for_attr(rest) {
-        Ok(#(collection, items, loop_var, remaining)) ->
-          parse_component_attrs(
-            remaining,
-            [LmFor(collection, items, loop_var, line), ..acc],
-            line,
-          )
-        Error(_) -> #(list.reverse(acc), input)
-      }
-    }
-    "l-on:" <> rest -> {
-      case parse_lm_on_attr(rest, line) {
-        Ok(#(attr, remaining)) ->
-          parse_component_attrs(remaining, [attr, ..acc], line)
-        Error(_) -> #(list.reverse(acc), input)
-      }
-    }
-    "l-model=" <> rest -> {
-      case parse_lm_model_attr(rest, line) {
-        Ok(#(attr, remaining)) ->
-          parse_component_attrs(remaining, [attr, ..acc], line)
-        Error(_) -> #(list.reverse(acc), input)
-      }
-    }
-
-    "l-show=" <> rest -> {
-      case parse_quoted_value(rest) {
-        Ok(#(condition, remaining)) ->
-          parse_component_attrs(
-            remaining,
-            [LmShow(condition, line), ..acc],
-            line,
-          )
-        Error(_) -> #(list.reverse(acc), input)
-      }
-    }
-    "@attributes" <> _ -> #(list.reverse(acc), input)
-    _ -> {
-      case parse_string_or_bool_attr(input) {
-        Ok(#(attr, remaining)) ->
-          parse_component_attrs(remaining, [attr, ..acc], line)
-        Error(_) -> #(list.reverse(acc), input)
-      }
-    }
   }
 }
 

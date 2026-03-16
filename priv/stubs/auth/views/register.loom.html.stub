@@ -9,10 +9,10 @@ props(ctx: context.Context(App))
 <x-layouts:app>
   <slot name="meta_title">Register</slot>
 
-  <div class="flex items-center justify-center min-h-screen bg-gray-50">
+  <div class="flex items-center justify-center min-h-screen bg-mist-50">
     <div class="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
-      <h1 class="text-2xl font-bold text-center text-gray-900 mb-6">
-        Register
+      <h1 class="text-[22px] font-bold text-center text-mist-800 mb-6">
+        Register now
       </h1>
 
       <div
@@ -28,7 +28,8 @@ props(ctx: context.Context(App))
             id="email"
             name="email"
             type="email"
-            label="Email"
+            label="Email Address"
+            placeholder="name@email.com"
             :session="ctx.session"
           />
         </div>
@@ -39,6 +40,7 @@ props(ctx: context.Context(App))
             name="password"
             type="password"
             label="Password"
+            placeholder="super-secret-password"
             :session="ctx.session"
           />
         </div>
@@ -49,6 +51,7 @@ props(ctx: context.Context(App))
             name="password_confirmation"
             type="password"
             label="Confirm Password"
+            placeholder="super-secret-password"
             :session="ctx.session"
           />
         </div>
@@ -56,9 +59,9 @@ props(ctx: context.Context(App))
         <x-button type="submit">Register</x-button>
       </form>
 
-      <p class="mt-4 text-center text-sm text-gray-600">
+      <p class="mt-4 text-center text-sm text-mist-500">
         Already have an account?
-        <x-link href="@{{ route_prefix }}/login">Login</x-link>
+        <x-link href="@{{ route_prefix }}/login" class="ml-0.5">Login</x-link>
       </p>
     </div>
   </div>

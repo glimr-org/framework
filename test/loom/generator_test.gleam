@@ -1131,7 +1131,7 @@ pub fn extract_named_slots_test() {
       SlotNode(None, []),
       SlotNode(Some("footer"), []),
     ])
-  let slots = generator.extract_named_slots(tmpl)
+  let slots = generator.extract_slot_info(tmpl).named_slots
 
   slots
   |> list_contains("header")

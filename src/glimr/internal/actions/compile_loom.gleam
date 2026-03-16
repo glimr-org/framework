@@ -471,20 +471,20 @@ fn lexer_error_to_string(err: lexer.LexerError) -> String {
       <> "' at position "
       <> int.to_string(pos)
     lexer.InvalidPropsDirective(content, line) ->
-      "Invalid @props directive '"
+      "Invalid props directive '"
       <> content
       <> "' at line "
       <> int.to_string(line)
-      <> " (expected: @props(name: Type, ...))"
+      <> " (expected: props(name: Type, ...))"
     lexer.InvalidImportDirective(content, line) ->
-      "Invalid @import directive '"
+      "Invalid import directive '"
       <> content
       <> "' at line "
       <> int.to_string(line)
     lexer.UnterminatedPropsDirective(line) ->
-      "Unterminated @props directive at line " <> int.to_string(line)
+      "Unterminated props directive at line " <> int.to_string(line)
     lexer.UnterminatedImportDirective(line) ->
-      "Unterminated @import directive at line " <> int.to_string(line)
+      "Unterminated import directive at line " <> int.to_string(line)
   }
 }
 
@@ -520,8 +520,8 @@ fn parser_error_to_string(err: parser.ParserError) -> String {
       <> int.to_string(line)
       <> " must appear before template content"
     parser.DuplicatePropsDirective(line) ->
-      "Duplicate @props directive at line "
+      "Duplicate props directive at line "
       <> int.to_string(line)
-      <> " - combine into single @props"
+      <> " - combine into single props()"
   }
 }

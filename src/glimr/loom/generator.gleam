@@ -110,17 +110,6 @@ pub fn generate(
   GeneratedCode(module_name: module_name, code: code)
 }
 
-/// The compiler needs to know which named slots a component
-/// template declares so it can build the ComponentSlotMap
-/// before generating parent templates that reference this
-/// component. Deduplication via a set avoids duplicate
-/// parameters in the generated function signature.
-///
-pub fn extract_named_slots(template: Template) -> List(String) {
-  collect_named_slots(template.nodes, set.new())
-  |> set.to_list
-}
-
 /// Combines default slot detection and named slot collection
 /// into a single ComponentSlotInfo. The compiler calls this
 /// once per component template and caches the result so every
@@ -393,13 +382,15 @@ fn generate_module(
 //// loom:compile`.
 ////
 "
-  let imports = generate_imports(template, component_data)
-
-  // Collect handlers for live templates
-  let handler_lookup = case template.is_live {
-    False -> dict.new()
-    True -> build_handler_lookup(template)
+  // Collect handlers once for live templates — used by imports,
+  // handler_lookup, and generate_live_functions
+  let handlers = case template.is_live {
+    False -> []
+    True -> handler_parser.collect_handlers(template) |> result.unwrap([])
   }
+  let handler_lookup = build_handler_lookup(handlers)
+
+  let imports = generate_imports(template, component_data, handlers)
 
   let html_fn =
     generate_html_function(
@@ -421,6 +412,7 @@ fn generate_module(
         is_component,
         component_data,
         component_slots,
+        handlers,
         handler_lookup,
       )
   }
@@ -440,12 +432,9 @@ fn generate_live_functions(
   is_component: Bool,
   component_data: ComponentDataMap,
   component_slots: ComponentSlotMap,
+  handlers: List(#(String, handler_parser.Handler)),
   handler_lookup: HandlerLookup,
 ) -> String {
-  let handlers =
-    handler_parser.collect_handlers(template)
-    |> result.unwrap([])
-
   let handlers_list =
     handlers
     |> list.map(fn(h) {
@@ -1024,10 +1013,10 @@ fn type_to_encoder(name: String, gleam_type: String) -> String {
 /// consistent IDs across both the attribute emission and the
 /// handle function's case branches.
 ///
-fn build_handler_lookup(template: Template) -> HandlerLookup {
-  handler_parser.collect_handlers(template)
-  |> result.unwrap([])
-  |> list.fold(dict.new(), fn(acc, item) {
+fn build_handler_lookup(
+  handlers: List(#(String, handler_parser.Handler)),
+) -> HandlerLookup {
+  list.fold(handlers, dict.new(), fn(acc, item) {
     let #(id, handler) = item
     let key = #(handler.event, handler.original, handler.line)
     dict.insert(acc, key, id)
@@ -1043,6 +1032,7 @@ fn build_handler_lookup(template: Template) -> HandlerLookup {
 fn generate_imports(
   template: Template,
   component_data: ComponentDataMap,
+  handlers: List(#(String, handler_parser.Handler)),
 ) -> String {
   // Base imports - runtime is always needed
   let base_imports = ["import glimr/loom/runtime"]
@@ -1050,8 +1040,6 @@ fn generate_imports(
   // For live templates, import additional modules for handle/render JSON wrappers
   let live_imports = case template.is_live {
     True -> {
-      let handlers =
-        handler_parser.collect_handlers(template) |> result.unwrap([])
       let used_vars = collect_used_special_vars(handlers)
       let needs_option = used_vars.value || used_vars.checked || used_vars.key
 
@@ -2266,6 +2254,7 @@ fn generate_element_attrs_code(
                   Ok("runtime.Attribute(\"" <> name <> "\", " <> value <> ")")
               }
             }
+            lexer.BoolAttr("@attributes") -> Error(Nil)
             lexer.BoolAttr(name) -> {
               let normalized = normalize_attr_name(name)
               Ok(
@@ -2339,9 +2328,22 @@ fn generate_element_attrs_code(
 
       let all_items = list.append(attr_items, lm_model_value_attrs)
 
-      case all_items {
-        [] -> ""
-        items ->
+      let has_attributes_directive =
+        list.any(attrs, fn(attr) {
+          case attr {
+            lexer.BoolAttr("@attributes") -> True
+            _ -> False
+          }
+        })
+
+      case all_items, has_attributes_directive {
+        [], True -> "  <> \" \" <> runtime.render_attributes(attributes)\n"
+        [], False -> ""
+        items, True ->
+          "  <> \" \" <> runtime.render_attributes(runtime.merge_attributes(["
+          <> string.join(items, ", ")
+          <> "], attributes))\n"
+        items, False ->
           "  <> \" \" <> runtime.render_attributes(["
           <> string.join(items, ", ")
           <> "])\n"
@@ -2539,7 +2541,14 @@ fn has_attributes_node(nodes: List(Node)) -> Bool {
       parser.EachNode(_, _, _, body, _) -> has_attributes_node(body)
       parser.SlotDefNode(_, children) -> has_attributes_node(children)
       parser.ComponentNode(_, _, children) -> has_attributes_node(children)
-      parser.ElementNode(_, _, children) -> has_attributes_node(children)
+      parser.ElementNode(_, attrs, children) ->
+        has_attributes_node(children)
+        || list.any(attrs, fn(attr) {
+          case attr {
+            lexer.BoolAttr("@attributes") -> True
+            _ -> False
+          }
+        })
       _ -> False
     }
   })
@@ -2588,7 +2597,7 @@ fn inject_attributes_helper(
     // Recurse into IfNode to find first element inside conditionals
     False, [parser.IfNode(branches), ..rest] -> {
       let #(new_branches, did_inject) =
-        inject_attributes_into_branches(branches, False)
+        inject_attributes_into_branches(branches)
       case did_inject {
         True -> #([parser.IfNode(new_branches), ..rest], True)
         False -> {
@@ -2637,7 +2646,6 @@ fn inject_attributes_helper(
 ///
 fn inject_attributes_into_branches(
   branches: List(#(Option(String), Int, List(Node))),
-  _injected: Bool,
 ) -> #(List(#(Option(String), Int, List(Node))), Bool) {
   case branches {
     [] -> #([], False)
@@ -2646,8 +2654,7 @@ fn inject_attributes_into_branches(
       // needs @attributes just as much as the l-if branch since
       // only one renders at a time.
       let #(new_body, did_inject) = inject_attributes_helper(body, False)
-      let #(rest_branches, rest_did) =
-        inject_attributes_into_branches(rest, False)
+      let #(rest_branches, rest_did) = inject_attributes_into_branches(rest)
       #([#(condition, line, new_body), ..rest_branches], did_inject || rest_did)
     }
   }
@@ -2931,10 +2938,11 @@ fn generate_component_props_json(
 }
 
 fn component_module_alias(name: String) -> String {
-  "components_"
-  <> name
-  |> string.replace(":", "_")
-  |> string.replace("-", "_")
+  let safe_name =
+    name
+    |> string.replace(":", "_")
+    |> string.replace("-", "_")
+  "components_" <> safe_name
 }
 
 /// Bare strings in :class lists are always-on class names, but
