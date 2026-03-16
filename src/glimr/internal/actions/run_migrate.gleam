@@ -44,11 +44,10 @@ pub fn run(pool: DbPool, database: String) -> Nil {
   }
 
   case setup {
-    Error(#(header, detail)) ->
-      console.output()
-      |> console.line_error(header)
-      |> console.line(detail)
-      |> console.print()
+    Error(#(header, detail)) -> {
+      console.line_error(header)
+      console.line(detail)
+    }
 
     Ok(#(applied, all)) -> {
       let pending = migrate.get_pending_migrations(all, applied)
@@ -89,30 +88,21 @@ pub fn show_status(pool: DbPool, database: String) -> Nil {
 ///
 fn apply_pending(conn: db.Connection, pending: List(migrate.Migration)) -> Nil {
   case pending {
-    [] ->
-      console.output()
-      |> console.line_warning("No pending migrations.")
-      |> console.print()
+    [] -> console.line_warning("No pending migrations.")
 
     _ ->
       case migrate.apply_pending(conn, pending) {
         Ok(applied_versions) -> {
           let count = int.to_string(list.length(applied_versions))
-          list.fold(
-            applied_versions,
-            console.output()
-              |> console.line_success("Applied " <> count <> " migration(s):"),
-            fn(out, version) {
-              console.line(out, console.success("  ✓ ") <> version)
-            },
-          )
-          |> console.print()
+          console.line_success("Applied " <> count <> " migration(s):")
+          list.each(applied_versions, fn(version) {
+            console.line(console.success("  ✓ ") <> version)
+          })
         }
-        Error(e) ->
-          console.output()
-          |> console.line_error("Migration failed:")
-          |> console.line(string.inspect(e))
-          |> console.print()
+        Error(e) -> {
+          console.line_error("Migration failed:")
+          console.line(string.inspect(e))
+        }
       }
   }
 }
@@ -124,25 +114,20 @@ fn apply_pending(conn: db.Connection, pending: List(migrate.Migration)) -> Nil {
 fn print_status(all: List(migrate.Migration), applied: List(String)) -> Nil {
   let pending = migrate.get_pending_migrations(all, applied)
 
-  list.fold(
-    all,
-    console.output()
-      |> console.line_warning("Migration Status:")
-      |> console.blank_line(1),
-    fn(out, m) {
-      let status = case list.contains(applied, m.version) {
-        True -> console.success("✓")
-        False -> console.warning("○")
-      }
-      console.line(out, status <> " " <> m.version <> "_" <> m.name)
-    },
-  )
-  |> console.blank_line(1)
-  |> console.line(
+  console.line_warning("Migration Status:")
+  console.new_line(1)
+  list.each(all, fn(m) {
+    let status = case list.contains(applied, m.version) {
+      True -> console.success("✓")
+      False -> console.warning("○")
+    }
+    console.line(status <> " " <> m.version <> "_" <> m.name)
+  })
+  console.new_line(1)
+  console.line(
     console.success("Applied: ") <> int.to_string(list.length(applied)),
   )
-  |> console.line(
+  console.line(
     console.warning("Pending: ") <> int.to_string(list.length(pending)),
   )
-  |> console.print()
 }

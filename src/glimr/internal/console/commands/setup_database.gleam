@@ -31,13 +31,10 @@ fn run(args: Args) -> Nil {
 
   // Validate that the connection exists in config
   case driver.get_connection_safe(connections, name) {
-    Error(_) -> {
-      console.output()
-      |> console.line_error(
+    Error(_) ->
+      console.line_error(
         "Database connection \"" <> name <> "\" does not exist in your config.",
       )
-      |> console.print()
-    }
     Ok(_) -> run_setup_db.run(name, create_sqlite)
   }
 }

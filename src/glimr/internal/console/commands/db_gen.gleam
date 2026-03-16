@@ -49,25 +49,18 @@ fn run(args: Args, pool: DbPool) -> Nil {
 
   let models_path = "src/database/" <> database <> "/models"
   case validate_models(models_path, model_filter) {
-    Error(invalid) -> {
-      console.output()
-      |> console.line_error(
+    Error(invalid) ->
+      console.line_error(
         "Model(s) not found in "
         <> models_path
         <> ": "
         <> string.join(invalid, ", "),
       )
-      |> console.print()
-    }
     Ok(validated_filter) -> {
       gen_migrate.run(database, validated_filter, verbose)
 
       case verbose {
-        True -> {
-          console.output()
-          |> console.blank_line(1)
-          |> console.print()
-        }
+        True -> console.new_line(1)
         False -> Nil
       }
 
@@ -75,10 +68,7 @@ fn run(args: Args, pool: DbPool) -> Nil {
 
       case should_migrate {
         True -> {
-          console.output()
-          |> console.blank_line(1)
-          |> console.print()
-
+          console.new_line(1)
           run_migrate.run(pool, database)
         }
         False -> Nil

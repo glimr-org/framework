@@ -30,17 +30,12 @@ pub fn run(pool: DbPool, database: String) -> Nil {
 
   case drop_result {
     Error(e) -> {
-      console.output()
-      |> console.line_error("Failed to drop tables:")
-      |> console.line(string.inspect(e))
-      |> console.print()
+      console.line_error("Failed to drop tables:")
+      console.line(string.inspect(e))
     }
     Ok(_) -> {
-      console.output()
-      |> console.line_warning("Tables dropped.")
-      |> console.blank_line(1)
-      |> console.print()
-
+      console.line_warning("Tables dropped.")
+      console.new_line(1)
       run_migrate.run(pool, database)
     }
   }

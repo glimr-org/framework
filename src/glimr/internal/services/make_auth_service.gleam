@@ -37,11 +37,9 @@ pub fn create_model(model_name: String, connection: String) -> Nil {
 
   case dir_exists {
     True -> {
-      console.output()
-      |> console.line_warning(
+      console.line_warning(
         "Skipped: " <> model_dir <> " (model already exists)",
       )
-      |> console.print()
     }
     False -> {
       let schema_path = model_dir <> "/" <> model_name <> "_schema.gleam"
@@ -67,9 +65,7 @@ pub fn create_model(model_name: String, connection: String) -> Nil {
           )
       })
 
-      console.output()
-      |> console.line_success("Created: " <> model_dir)
-      |> console.print()
+      console.line_success("Created: " <> model_dir)
     }
   }
 }
@@ -428,25 +424,21 @@ pub fn register_in_kernel(model_name: String) -> Nil {
 
   case simplifile.read(kernel_path) {
     Error(_) -> {
-      console.output()
-      |> console.line_error(
+      console.line_error(
         "Could not read " <> kernel_path <> " — does it exist?",
       )
-      |> console.print()
     }
 
     Ok(content) -> {
       case string.contains(content, middleware_name) {
         True -> {
-          console.output()
-          |> console.line_warning(
+          console.line_warning(
             "Skipped: "
             <> kernel_path
             <> " ("
             <> middleware_name
             <> " already registered)",
           )
-          |> console.print()
         }
         False -> {
           let modified = inject_into_kernel(content, model_name)
@@ -467,25 +459,19 @@ pub fn register_in_app(model_name: String, connection: String) -> Nil {
 
   case simplifile.read(app_path) {
     Error(_) -> {
-      console.output()
-      |> console.line_error(
-        "Could not read " <> app_path <> " — does it exist?",
-      )
-      |> console.print()
+      console.line_error("Could not read " <> app_path <> " — does it exist?")
     }
 
     Ok(content) -> {
       case string.contains(content, model_name <> ":") {
         True -> {
-          console.output()
-          |> console.line_warning(
+          console.line_warning(
             "Skipped: "
             <> app_path
             <> " ("
             <> model_name
             <> " field already exists)",
           )
-          |> console.print()
         }
         False -> {
           let modified = inject_into_app(content, model_name, connection)
@@ -506,25 +492,21 @@ pub fn register_in_app_start(model_name: String) -> Nil {
 
   case simplifile.read(bootstrap_path) {
     Error(_) -> {
-      console.output()
-      |> console.line_error(
+      console.line_error(
         "Could not read " <> bootstrap_path <> " — does it exist?",
       )
-      |> console.print()
     }
 
     Ok(content) -> {
       case string.contains(content, model_name <> ": ") {
         True -> {
-          console.output()
-          |> console.line_warning(
+          console.line_warning(
             "Skipped: "
             <> bootstrap_path
             <> " ("
             <> model_name
             <> " already initialized)",
           )
-          |> console.print()
         }
         False -> {
           let modified = inject_into_app_start(content, model_name)
@@ -664,9 +646,7 @@ fn scaffold_file(
 
   case file_exists {
     True -> {
-      console.output()
-      |> console.line_warning("Skipped: " <> file_path <> " (already exists)")
-      |> console.print()
+      console.line_warning("Skipped: " <> file_path <> " (already exists)")
     }
     False -> {
       case
@@ -678,14 +658,10 @@ fn scaffold_file(
         )
       {
         Ok(_) -> {
-          console.output()
-          |> console.line_success("Created: " <> file_path)
-          |> console.print()
+          console.line_success("Created: " <> file_path)
         }
         Error(_) -> {
-          console.output()
-          |> console.line_error("Failed to create " <> file_path)
-          |> console.print()
+          console.line_error("Failed to create " <> file_path)
         }
       }
     }
@@ -704,24 +680,18 @@ fn write_and_format(
 ) -> Nil {
   case simplifile.write(path, modified) {
     Error(_) -> {
-      console.output()
-      |> console.line_error("Failed to write " <> path)
-      |> console.print()
+      console.line_error("Failed to write " <> path)
     }
     Ok(_) -> {
       case shellout.command("gleam", ["format", path], in: ".", opt: []) {
         Ok(_) -> {
-          console.output()
-          |> console.line_success("Updated: " <> path)
-          |> console.print()
+          console.line_success("Updated: " <> path)
         }
         Error(_) -> {
           let _ = simplifile.write(path, original)
-          console.output()
-          |> console.line_error(
+          console.line_error(
             "Failed to format " <> path <> ", changes reverted",
           )
-          |> console.print()
         }
       }
     }

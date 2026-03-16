@@ -77,13 +77,8 @@ fn run(args: Args) -> Nil {
 
   case selected {
     // Multiple options — error
-    [_, _, ..] -> {
-      console.output()
-      |> console.line_error(
-        "Error: Only one driver option is allowed at a time.",
-      )
-      |> console.print()
-    }
+    [_, _, ..] ->
+      console.line_error("Error: Only one driver option is allowed at a time.")
 
     // No options — plain command
     [] -> write_stub(file_path, module_name, "command.stub", [])
@@ -109,10 +104,8 @@ fn write_stub(
 
   case file_exists {
     True -> {
-      console.output()
-      |> console.line_error("Error: Command already exists!")
-      |> console.line("[" <> file_path <> "]")
-      |> console.print()
+      console.line_error("Error: Command already exists!")
+      console.line("[" <> file_path <> "]")
     }
     False -> {
       let variables = [#("command_name", module_name), ..extra_variables]
@@ -126,10 +119,8 @@ fn write_stub(
         )
       }
 
-      console.output()
-      |> console.line_success("Command created successfully!")
-      |> console.line("[" <> file_path <> "]")
-      |> console.print()
+      console.line_success("Command created successfully!")
+      console.line("[" <> file_path <> "]")
     }
   }
 }

@@ -40,20 +40,16 @@ fn run(args: Args) -> Nil {
 
   case file_exists {
     True -> {
-      console.output()
-      |> console.line_error("Error: Rule already exists!")
-      |> console.line("[" <> file_path <> "]")
-      |> console.print()
+      console.line_error("Error: Rule already exists!")
+      console.line("[" <> file_path <> "]")
     }
     False -> {
       let assert Ok(_) = {
         filesystem.write_from_stub("glimr", "http/" <> stub_name, file_path)
       }
 
-      console.output()
-      |> console.line_success("Rule created successfully!")
-      |> console.line("[" <> file_path <> "]")
-      |> console.print()
+      console.line_success("Rule created successfully!")
+      console.line("[" <> file_path <> "]")
     }
   }
 }

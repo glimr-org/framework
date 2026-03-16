@@ -60,10 +60,8 @@ fn run(args: Args) -> Nil {
 
   case file_exists {
     True -> {
-      console.output()
-      |> console.line_error("Error: Controller already exists!")
-      |> console.line("[" <> file_path <> "]")
-      |> console.print()
+      console.line_error("Error: Controller already exists!")
+      console.line("[" <> file_path <> "]")
     }
     False -> {
       let assert Ok(_) =
@@ -74,10 +72,8 @@ fn run(args: Args) -> Nil {
           variables: variables,
         )
 
-      console.output()
-      |> console.line_success("Controller created successfully!")
-      |> console.line("[" <> file_path <> "]")
-      |> console.print()
+      console.line_success("Controller created successfully!")
+      console.line("[" <> file_path <> "]")
     }
   }
 }

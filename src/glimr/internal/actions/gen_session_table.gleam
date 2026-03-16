@@ -49,16 +49,8 @@ CREATE INDEX IF NOT EXISTS idx_" <> table <> "_last_activity ON " <> table <> " 
 "
 
   case simplifile.write(migration_path, sql) {
-    Ok(_) -> {
-      console.output()
-      |> console.line_success("Generated: " <> migration_path)
-      |> console.print()
-    }
-    Error(_) -> {
-      console.output()
-      |> console.line_error("Failed to write migration file")
-      |> console.print()
-    }
+    Ok(_) -> console.line_success("Generated: " <> migration_path)
+    Error(_) -> console.line_error("Failed to write migration file")
   }
 }
 
