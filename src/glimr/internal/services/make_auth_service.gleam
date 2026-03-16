@@ -139,6 +139,7 @@ pub fn create_login_controller(
   connection: String,
   ctx_db_name: String,
   scoped: Bool,
+  no_views: Bool,
 ) -> Nil {
   let file_path = case scoped {
     False -> "src/app/http/controllers/auth/login_controller.gleam"
@@ -165,7 +166,12 @@ pub fn create_login_controller(
     True -> "auth/" <> model_name <> "/login"
   }
 
-  scaffold_file(file_path, "auth/login_controller.stub", [
+  let stub = case no_views {
+    False -> "auth/login_controller.stub"
+    True -> "auth/login_controller.no_views.stub"
+  }
+
+  scaffold_file(file_path, stub, [
     #("model", model_name),
     #("route_prefix", route_prefix),
     #("connection", connection),
@@ -216,6 +222,7 @@ pub fn create_register_controller(
   connection: String,
   ctx_db_name: String,
   scoped: Bool,
+  no_views: Bool,
 ) -> Nil {
   let file_path = case scoped {
     False -> "src/app/http/controllers/auth/register_controller.gleam"
@@ -242,7 +249,12 @@ pub fn create_register_controller(
     True -> "auth/" <> model_name <> "/register"
   }
 
-  scaffold_file(file_path, "auth/register_controller.stub", [
+  let stub = case no_views {
+    False -> "auth/register_controller.stub"
+    True -> "auth/register_controller.no_views.stub"
+  }
+
+  scaffold_file(file_path, stub, [
     #("model", model_name),
     #("route_prefix", route_prefix),
     #("connection", connection),
@@ -344,7 +356,11 @@ pub fn create_loom_views(
 /// `make_auth` produces a complete login-to-dashboard flow out
 /// of the box.
 ///
-pub fn create_dashboard_controller(model_name: String, scoped: Bool) -> Nil {
+pub fn create_dashboard_controller(
+  model_name: String,
+  scoped: Bool,
+  no_views: Bool,
+) -> Nil {
   let file_path = case scoped {
     False -> "src/app/http/controllers/dashboard_controller.gleam"
     True ->
@@ -363,7 +379,12 @@ pub fn create_dashboard_controller(model_name: String, scoped: Bool) -> Nil {
     True -> model_name <> "/dashboard"
   }
 
-  scaffold_file(file_path, "auth/dashboard_controller.stub", [
+  let stub = case no_views {
+    False -> "auth/dashboard_controller.stub"
+    True -> "auth/dashboard_controller.no_views.stub"
+  }
+
+  scaffold_file(file_path, stub, [
     #("model", model_name),
     #("route_prefix", route_prefix),
     #("auth_middleware", auth_middleware),

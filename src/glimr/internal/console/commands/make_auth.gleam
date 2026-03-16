@@ -28,6 +28,11 @@ pub fn command() -> Command {
       short: "s",
       description: "Scope middleware and routes to the model name",
     ),
+    Flag(
+      name: "no-views",
+      short: "nv",
+      description: "Skip generating loom views",
+    ),
     Option(
       name: "ctx-db-name",
       description: "Context field name for the database pool",
@@ -45,6 +50,7 @@ fn run(args: Args, pool: DbPool) -> Nil {
   let ctx_db_name = command.get_option(args, "ctx-db-name")
   let should_migrate = command.has_flag(args, "migrate")
   let scoped = command.has_flag(args, "scoped")
+  let no_views = command.has_flag(args, "no-views")
 
   // 1. Check for existing unscoped auth (if not scoped)
   case scoped {
@@ -73,6 +79,7 @@ fn run(args: Args, pool: DbPool) -> Nil {
             connection,
             ctx_db_name,
             scoped,
+            no_views,
             should_migrate,
             pool,
           )
@@ -84,6 +91,7 @@ fn run(args: Args, pool: DbPool) -> Nil {
         connection,
         ctx_db_name,
         scoped,
+        no_views,
         should_migrate,
         pool,
       )
@@ -99,6 +107,7 @@ fn run_steps(
   connection: String,
   ctx_db_name: String,
   scoped: Bool,
+  no_views: Bool,
   should_migrate: Bool,
   pool: DbPool,
 ) -> Nil {
@@ -132,6 +141,7 @@ fn run_steps(
     connection,
     ctx_db_name,
     scoped,
+    no_views,
   )
 
   // 11. Generate logout controller
@@ -143,13 +153,17 @@ fn run_steps(
     connection,
     ctx_db_name,
     scoped,
+    no_views,
   )
 
   // 13. Generate dashboard controller
-  make_auth_service.create_dashboard_controller(model_name, scoped)
+  make_auth_service.create_dashboard_controller(model_name, scoped, no_views)
 
-  // 14. Generate loom views (login, register, dashboard, components)
-  make_auth_service.create_loom_views(scoped, model_name, connection)
+  // 14. Generate loom views (login, register, dashboard)
+  case no_views {
+    False -> make_auth_service.create_loom_views(scoped, model_name, connection)
+    True -> Nil
+  }
 
   // 15. Patch kernel with load middleware
   make_auth_service.register_in_kernel(model_name)

@@ -1,0 +1,61 @@
+import app/app.{type App}
+import app/http/middleware/@{{ guest_middleware }}
+import app/http/validators/@{{ validator }}
+import database/@{{ connection }}/models/@{{ model }}/gen/@{{ model }}
+import glimr/http/context.{type Context}
+import glimr/http/http.{type Response}
+import glimr/http/kernel.{type Middleware}
+import glimr/response/redirect
+import glimr/response/response
+import glimr/session/session
+import glimr/utils/unix_timestamp
+
+/// Apply the guest middleware to the entire controller
+pub fn middleware() -> List(Middleware(App)) {
+  [@{{ guest_middleware }}.run]
+}
+
+/// @get "@{{ route_prefix }}/register"
+pub fn show(ctx: Context(App)) -> Response {
+  todo as "implement register view"
+}
+
+/// @post "@{{ route_prefix }}/register"
+pub fn store(ctx: Context(App)) -> Response {
+  use validated <- @{{ validator }}.validate(ctx)
+
+  let now = unix_timestamp.now()
+
+  let registered = {
+    use pool, hashed_password <- @{{ model }}.register(
+      session: ctx.session,
+      pool: ctx.app.@{{ ctx_db_name }},
+      password: validated.password,
+    )
+
+    @{{ model }}.create(
+      pool: pool,
+      email: validated.email,
+      password: hashed_password,
+      created_at: now,
+      updated_at: now,
+    )
+  }
+
+  case registered {
+    Ok(_) -> {
+      let message = "Account created successfully"
+
+      session.flash(ctx.session, "message", message)
+
+      redirect.to(@{{ guest_middleware }}.auth_redirect)
+    }
+    Error(_) -> {
+      let message = "Registration failed"
+
+      session.flash(ctx.session, "error", message)
+
+      redirect.back(ctx)
+    }
+  }
+}

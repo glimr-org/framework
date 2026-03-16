@@ -1,0 +1,51 @@
+import app/app.{type App}
+import app/http/middleware/@{{ guest_middleware }}
+import app/http/validators/@{{ validator }}
+import database/@{{ connection }}/models/@{{ model }}/gen/@{{ model }}
+import glimr/http/context.{type Context}
+import glimr/http/http.{type Response}
+import glimr/http/kernel.{type Middleware}
+import glimr/response/redirect
+import glimr/response/response
+import glimr/session/session
+
+/// Apply the guest middleware to the entire controller
+pub fn middleware() -> List(Middleware(App)) {
+  [@{{ guest_middleware }}.run]
+}
+
+/// @get "@{{ route_prefix }}/login"
+pub fn show(ctx: Context(App)) -> Response {
+  todo as "implement login view"
+}
+
+/// @post "@{{ route_prefix }}/login"
+pub fn store(ctx: Context(App)) -> Response {
+  use validated <- @{{ validator }}.validate(ctx)
+
+  let authenticated = {
+    @{{ model }}.authenticate(
+      session: ctx.session,
+      pool: ctx.app.@{{ ctx_db_name }},
+      email: validated.email,
+      password: validated.password,
+    )
+  }
+
+  case authenticated {
+    Ok(@{{ model }}) -> {
+      let message = "Welcome back, " <> @{{ model }}.email
+
+      session.flash(ctx.session, "message", message)
+
+      redirect.to(@{{ guest_middleware }}.auth_redirect)
+    }
+    Error(_) -> {
+      let message = "Invalid email or password"
+
+      session.flash(ctx.session, "error", message)
+
+      redirect.back(ctx)
+    }
+  }
+}

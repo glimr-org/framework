@@ -1,0 +1,16 @@
+import app/app.{type App}
+import app/http/middleware/@{{ auth_middleware }}
+import gleam/option
+import glimr/http/context.{type Context}
+import glimr/http/http.{type Response}
+import glimr/http/middleware
+import glimr/response/response
+
+/// @get "@{{ route_prefix }}/dashboard"
+pub fn show(ctx: Context(App)) -> Response {
+  use ctx <- middleware.apply([@{{ auth_middleware }}.run], ctx)
+
+  let assert option.Some(@{{ model }}) = ctx.app.@{{ model }}
+
+  todo as "implement dashboard view"
+}

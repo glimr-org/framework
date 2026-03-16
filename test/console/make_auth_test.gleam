@@ -37,6 +37,26 @@ pub fn register_controller_stub_exists_test() {
   should.be_ok(result)
 }
 
+// ------------------------------------------------------------- No-Views Controller Stubs Exist
+
+pub fn login_controller_no_views_stub_exists_test() {
+  let result =
+    filesystem.read_stub("glimr", "auth/login_controller.no_views.stub")
+  should.be_ok(result)
+}
+
+pub fn register_controller_no_views_stub_exists_test() {
+  let result =
+    filesystem.read_stub("glimr", "auth/register_controller.no_views.stub")
+  should.be_ok(result)
+}
+
+pub fn dashboard_controller_no_views_stub_exists_test() {
+  let result =
+    filesystem.read_stub("glimr", "auth/dashboard_controller.no_views.stub")
+  should.be_ok(result)
+}
+
 // ------------------------------------------------------------- Loom Views: Stub Files Exist
 
 pub fn login_view_stub_exists_test() {
