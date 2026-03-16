@@ -41,11 +41,7 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
   })
 
   case verbose {
-    True -> {
-      console.output()
-      |> console.line_warning("Compiling loom views...")
-      |> console.print()
-    }
+    True -> console.line_warning("Compiling loom views...")
     False -> Nil
   }
 
@@ -71,15 +67,12 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
 
   case verbose {
     True -> Nil
-    False -> {
-      console.output()
-      |> console.line_success(
+    False ->
+      console.line_success(
         "Compiled "
         <> int.to_string(list.length(loom_files))
         <> " Loom templates",
       )
-      |> console.print()
-    }
   }
 
   Ok(Nil)
@@ -145,10 +138,7 @@ fn compile_existing_loom_path(
   })
 
   case verbose {
-    True ->
-      console.output()
-      |> console.line_warning("Compiling loom views...")
-      |> console.print()
+    True -> console.line_warning("Compiling loom views...")
     False -> Nil
   }
 
@@ -166,7 +156,7 @@ fn compile_existing_loom_path(
 
   case verbose {
     True -> Nil
-    False -> io.println(console.success("Compiled 1 Loom template"))
+    False -> console.line_success("Compiled 1 Loom template")
   }
 
   Ok(Nil)
@@ -188,17 +178,11 @@ fn cleanup_deleted_loom_file(path: String, verbose: Bool) -> Nil {
 
   case simplifile.delete(output_file), verbose {
     Ok(_), True -> {
-      console.output()
-      |> console.line_success("Cleaned up generated file for deleted template:")
-      |> console.line("  " <> output_file)
-      |> console.print()
+      console.line_success("Cleaned up generated file for deleted template:")
+      console.line("  " <> output_file)
     }
-    Ok(_), False -> io.println(console.success("Cleaned up 1 generated file"))
-    Error(_), _ -> {
-      console.output()
-      |> console.line_error("Failed to delete: " <> output_file)
-      |> console.print()
-    }
+    Ok(_), False -> console.line_success("Cleaned up 1 generated file")
+    Error(_), _ -> console.line_error("Failed to delete: " <> output_file)
   }
 }
 
@@ -235,15 +219,13 @@ fn compile_component_and_dependents(
 
   case verbose {
     True ->
-      console.output()
-      |> console.line_warning(
+      console.line_warning(
         "Compiling "
         <> component_name
         <> " and "
         <> int.to_string(list.length(dependent_templates))
         <> " dependent template(s)...",
       )
-      |> console.print()
     False -> Nil
   }
 
@@ -262,8 +244,8 @@ fn compile_component_and_dependents(
   case verbose {
     True -> Nil
     False ->
-      io.println(
-        console.success("Compiled ")
+      console.line_success(
+        "Compiled "
         <> int.to_string(list.length(templates_to_compile))
         <> " Loom template(s)",
       )
@@ -353,11 +335,7 @@ fn compile_file(
   }
 
   case verbose {
-    True -> {
-      console.output()
-      |> console.line("  " <> path <> " -> " <> console.success(output_file))
-      |> console.print()
-    }
+    True -> console.line("  " <> path <> " -> " <> console.success(output_file))
     False -> Nil
   }
 

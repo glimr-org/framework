@@ -35,10 +35,8 @@ fn run(args: Args) -> Nil {
 
   case dir_exists {
     True -> {
-      console.output()
-      |> console.line_error("Error: Model already exists!")
-      |> console.line("[" <> model_dir <> "]")
-      |> console.print()
+      console.line_error("Error: Model already exists!")
+      console.line("[" <> model_dir <> "]")
     }
     False -> {
       let schema_path = model_dir <> "/" <> model_name <> "_schema.gleam"
@@ -62,10 +60,8 @@ fn run(args: Args) -> Nil {
           )
       })
 
-      console.output()
-      |> console.line_success("Model created successfully!")
-      |> console.line("[" <> model_dir <> "]")
-      |> console.print()
+      console.line_success("Model created successfully!")
+      console.line("[" <> model_dir <> "]")
     }
   }
 }

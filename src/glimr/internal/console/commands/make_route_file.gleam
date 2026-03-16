@@ -39,19 +39,15 @@ fn run(args: Args) -> Nil {
 
   case file_exists {
     True -> {
-      console.output()
-      |> console.line_error("Error: Route already exists!")
-      |> console.line("[" <> file_path <> "]")
-      |> console.print()
+      console.line_error("Error: Route already exists!")
+      console.line("[" <> file_path <> "]")
     }
     False -> {
       let assert Ok(_) =
         filesystem.write_from_stub("glimr", "route.stub", file_path)
 
-      console.output()
-      |> console.line_success("Route created successfully!")
-      |> console.line("[" <> file_path <> "]")
-      |> console.print()
+      console.line_success("Route created successfully!")
+      console.line("[" <> file_path <> "]")
     }
   }
 }

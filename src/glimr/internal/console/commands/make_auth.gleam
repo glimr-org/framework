@@ -57,19 +57,17 @@ fn run(args: Args, pool: DbPool) -> Nil {
     False -> {
       case make_auth_service.check_existing_unscoped_auth(model_name) {
         Error(existing_model) -> {
-          console.output()
-          |> console.line_warning(
+          console.line_warning(
             "Warning: Unscoped auth already exists for \""
             <> existing_model
             <> "\".",
           )
-          |> console.line_warning(
+          console.line_warning(
             "This will overwrite it with \"" <> model_name <> "\".",
           )
-          |> console.blank_line(1)
-          |> console.line("To add a second auth model, use --scoped:")
-          |> console.line("  ./glimr make_auth " <> model_name <> " --scoped")
-          |> console.print()
+          console.new_line(1)
+          console.line("To add a second auth model, use --scoped:")
+          console.line("  ./glimr make_auth " <> model_name <> " --scoped")
 
           Nil
         }

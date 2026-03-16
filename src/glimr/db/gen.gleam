@@ -47,11 +47,7 @@ pub fn run(name: String, model_filter: Option(List(String)), verbose: Bool) {
 
   case verbose {
     True -> Nil
-    False -> {
-      console.output()
-      |> console.line_success("Generated queries (" <> name <> ")")
-      |> console.print()
-    }
+    False -> console.line_success("Generated queries (" <> name <> ")")
   }
 }
 

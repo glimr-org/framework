@@ -25,11 +25,7 @@ import simplifile
 ///
 pub fn run(verbose: Bool) -> Result(Nil, String) {
   case verbose {
-    True -> {
-      console.output()
-      |> console.line_warning("Compiling routes...")
-      |> console.print()
-    }
+    True -> console.line_warning("Compiling routes...")
     False -> Nil
   }
 
@@ -97,11 +93,7 @@ fn compile_controllers(
     True -> {
       case verbose {
         True -> Nil
-        False -> {
-          console.output()
-          |> console.line_warning("No routes found in controllers")
-          |> console.print()
-        }
+        False -> console.line_warning("No routes found in controllers")
       }
       Ok(Nil)
     }
@@ -227,14 +219,12 @@ fn compile_grouped_routes(
                     list.fold(controller_results, 0, fn(acc, e) {
                       acc + list.length({ e.1 }.routes)
                     })
-                  console.output()
-                  |> console.line(
+                  console.line(
                     "  "
                     <> group_name
                     <> ".gleam -> "
                     <> console.success(int.to_string(count) <> " routes"),
                   )
-                  |> console.print()
                 }
                 False -> Nil
               }
@@ -260,11 +250,7 @@ fn compile_grouped_routes(
                 a + list.length({ e.1 }.routes)
               })
             })
-          console.output()
-          |> console.line_success(
-            "Compiled " <> int.to_string(total) <> " routes",
-          )
-          |> console.print()
+          console.line_success("Compiled " <> int.to_string(total) <> " routes")
         }
       }
       Ok(Nil)

@@ -22,13 +22,10 @@ pub fn run(name: String, create_sqlite: Bool) -> Nil {
 
   // Check if directory already exists
   case simplifile.is_directory(base_path) {
-    Ok(True) -> {
-      console.output()
-      |> console.line_error(
+    Ok(True) ->
+      console.line_error(
         "Database directory \"" <> base_path <> "\" already exists.",
       )
-      |> console.print()
-    }
     _ -> do_setup(base_path, create_sqlite)
   }
 }
@@ -87,8 +84,6 @@ fn do_setup(base_path: String, create_sqlite: Bool) -> Nil {
     False -> Nil
   }
 
-  console.output()
-  |> console.blank_line(1)
-  |> console.line_success("Database set up successfully!")
-  |> console.print()
+  console.new_line(1)
+  console.line_success("Database set up successfully!")
 }

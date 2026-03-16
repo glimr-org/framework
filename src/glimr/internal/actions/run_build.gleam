@@ -16,22 +16,15 @@ import shellout
 /// themselves.
 ///
 pub fn run() -> Result(Nil, String) {
-  console.output()
-  |> console.blank_line(1)
-  |> console.line_warning("Building application...")
-  |> console.print()
+  console.new_line(1)
+  console.line_warning("Building application...")
 
   case
     shellout.command("gleam", ["build"], in: ".", opt: [shellout.LetBeStdout])
   {
-    Ok(_) -> {
-      Ok(Nil)
-    }
+    Ok(_) -> Ok(Nil)
     Error(#(_, _)) -> {
-      console.output()
-      |> console.line_error("Build failed")
-      |> console.print()
-
+      console.line_error("Build failed")
       Error("Build failed")
     }
   }

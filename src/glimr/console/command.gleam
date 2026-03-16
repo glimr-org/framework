@@ -346,9 +346,7 @@ fn resolve_or_error(result: Result(Args, String), next: fn(Args) -> Nil) -> Nil 
   case result {
     Ok(resolved) -> next(resolved)
     Error(msg) -> {
-      console.output()
-      |> console.line_error(msg)
-      |> console.print()
+      console.line_error(msg)
     }
   }
 }
@@ -382,10 +380,8 @@ fn with_db_pool(args: Args, user_handler: fn(Args, DbPool) -> Nil) -> Nil {
   case dynamic_start_pool(module, config) {
     Ok(pool) -> user_handler(args, pool)
     Error(msg) -> {
-      console.output()
-      |> console.line_error("Failed to start database pool:")
-      |> console.line(msg)
-      |> console.print()
+      console.line_error("Failed to start database pool:")
+      console.line(msg)
     }
   }
 }
@@ -416,10 +412,8 @@ fn with_cache_pool(args: Args, user_handler: fn(Args, CachePool) -> Nil) -> Nil 
           cache.stop(pool)
         }
         Error(msg) -> {
-          console.output()
-          |> console.line_error("Failed to start cache pool:")
-          |> console.line(msg)
-          |> console.print()
+          console.line_error("Failed to start cache pool:")
+          console.line(msg)
         }
       }
     }
@@ -446,10 +440,8 @@ fn with_cache_pool(args: Args, user_handler: fn(Args, CachePool) -> Nil) -> Nil 
           db.stop_pool(db_pool)
         }
         Error(msg) -> {
-          console.output()
-          |> console.line_error("Failed to start database pool for cache:")
-          |> console.line(msg)
-          |> console.print()
+          console.line_error("Failed to start database pool for cache:")
+          console.line(msg)
         }
       }
     }
@@ -501,19 +493,15 @@ fn with_cache_db_pool(
           db.stop_pool(pool)
         }
         Error(msg) -> {
-          console.output()
-          |> console.line_error("Failed to start database pool for cache:")
-          |> console.line(msg)
-          |> console.print()
+          console.line_error("Failed to start database pool for cache:")
+          console.line(msg)
         }
       }
     }
     _ -> {
-      console.output()
-      |> console.line_error(
+      console.line_error(
         "Cache store '" <> cache_name <> "' is not a database store",
       )
-      |> console.print()
     }
   }
 }

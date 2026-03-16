@@ -41,11 +41,7 @@ pub type CommandInfo {
 ///
 pub fn run(verbose: Bool) -> Result(Nil, String) {
   case verbose {
-    True -> {
-      console.output()
-      |> console.line_warning("Compiling command registry...")
-      |> console.print()
-    }
+    True -> console.line_warning("Compiling command registry...")
     False -> Nil
   }
 
@@ -71,33 +67,25 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
     [] ->
       case list.is_empty(commands) {
         True -> {
-          console.output()
-          |> console.line_warning("No commands found")
-          |> console.print()
+          console.line_warning("No commands found")
           Ok(Nil)
         }
         False -> {
           case write_registry(commands) {
             Ok(_) -> {
               case verbose {
-                True -> {
-                  console.output()
-                  |> console.line_success(
+                True ->
+                  console.line_success(
                     "Compiled "
                     <> string.inspect(list.length(commands))
                     <> " commands to priv/storage/framework/console/commands.json",
                   )
-                  |> console.print()
-                }
-                False -> {
-                  console.output()
-                  |> console.line_success(
+                False ->
+                  console.line_success(
                     "Compiled "
                     <> string.inspect(list.length(commands))
                     <> " commands",
                   )
-                  |> console.print()
-                }
               }
               Ok(Nil)
             }

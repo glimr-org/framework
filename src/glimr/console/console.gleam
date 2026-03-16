@@ -4,22 +4,9 @@
 //// hard to read and easy to get wrong (missing resets leave
 //// the whole terminal colored). These helpers wrap the codes
 //// so callers just pick a semantic level like success or
-//// error, and the Output builder lets multi-line output be
-//// composed via pipes then flushed at once.
+//// error, and each line function prints immediately.
 
 import gleam/io
-import gleam/list
-
-// ------------------------------------------------------------- Public Types
-
-/// Buffering lines before printing lets callers build complex
-/// output via pipes without interleaving with other console
-/// writes. Flushing all at once keeps related lines grouped in
-/// the terminal.
-///
-pub type Output {
-  Output(lines: List(String))
-}
 
 // ------------------------------------------------------------- Private Constants
 
@@ -97,139 +84,100 @@ pub fn info(output: String) -> String {
   color_info <> output <> color_reset
 }
 
-/// Starting with an empty Output lets callers build up lines
-/// incrementally via pipes. This is cleaner than calling
-/// io.println multiple times because the output is buffered and
-/// flushed together.
+/// Most console output is a single line with no color. Having a
+/// dedicated function for this keeps callers from importing
+/// gleam/io directly, so all output flows through one module
+/// and can be intercepted or styled later.
 ///
 /// *Example*
 ///
 /// ```gleam
-/// console.output()
-/// |> console.line("Processing files...")
-/// |> console.line_success("Done!")
-/// |> console.print()
+/// console.line("Processing files...")
 /// ```
 ///
-pub fn output() -> Output {
-  Output(lines: [])
+pub fn line(message: String) -> Nil {
+  io.println(message)
 }
 
-/// Appending preserves insertion order so lines print in the
-/// sequence they were added. No color is applied — use the
-/// colored variants for styled output.
+/// Wraps and prints in one call so callers don't have to nest
+/// `io.println(console.success(...))` every time they want a
+/// green line. Most command output is single-line success
+/// messages, so this saves a lot of boilerplate.
 ///
 /// *Example*
 ///
 /// ```gleam
-/// console.output()
-/// |> console.line("First line")
-/// |> console.line("Second line")
-/// |> console.print()
+/// console.line_success("Created: src/app/example.gleam")
 /// ```
 ///
-pub fn line(output: Output, message: String) -> Output {
-  Output(lines: list.append(output.lines, [message]))
+pub fn line_success(message: String) -> Nil {
+  io.println(success(message))
 }
 
-/// Visual spacing between sections makes dense command output
-/// easier to scan. Accepting an amount lets callers add
-/// multiple blank lines without chaining repeated calls.
+/// Error messages need to stand out immediately. Combining the
+/// red ANSI wrap and println into one call makes the intent
+/// obvious at the call site and keeps error output visually
+/// consistent across all commands.
 ///
 /// *Example*
 ///
 /// ```gleam
-/// console.output()
-/// |> console.line("Section 1")
-/// |> console.blank_line(1)
-/// |> console.line("Section 2")
-/// |> console.print()
+/// console.line_error("Failed to write file")
 /// ```
 ///
-pub fn blank_line(output: Output, amount: Int) -> Output {
-  let empty_lines = list.repeat("", amount)
-
-  Output(lines: list.append(output.lines, empty_lines))
+pub fn line_error(message: String) -> Nil {
+  io.println(error(message))
 }
 
-/// Shorthand that avoids nesting success() inside line() at
-/// every call site. Keeps pipe chains readable when mixing
-/// colored and plain lines.
+/// Warnings aren't fatal but developers need to notice them.
+/// Yellow stands out without the urgency of red, so it's
+/// perfect for "this worked but you should know about this"
+/// situations like skipping an existing file.
 ///
 /// *Example*
 ///
 /// ```gleam
-/// console.output()
-/// |> console.line_success("File created successfully!")
-/// |> console.print()
+/// console.line_warning("File already exists, skipping")
 /// ```
 ///
-pub fn line_success(output: Output, message: String) -> Output {
-  line(output, success(message))
+pub fn line_warning(message: String) -> Nil {
+  io.println(warning(message))
 }
 
-/// Shorthand that avoids nesting error() inside line() at every
-/// call site. Red-colored errors stand out immediately in
-/// terminal output.
+/// Blue sits between "everything's fine" (no color) and "pay
+/// attention" (yellow). Good for progress updates like "Running
+/// migrations..." where the developer wants to know what's
+/// happening without alarm.
 ///
 /// *Example*
 ///
 /// ```gleam
-/// console.output()
-/// |> console.line_error("Failed to write file")
-/// |> console.print()
+/// console.line_info("Running migrations...")
 /// ```
 ///
-pub fn line_error(output: Output, message: String) -> Output {
-  line(output, error(message))
+pub fn line_info(message: String) -> Nil {
+  io.println(info(message))
 }
 
-/// Shorthand that avoids nesting warning() inside line() at
-/// every call site. Yellow warnings signal non-fatal issues
-/// that may need attention.
+/// Visual spacing between sections of command output makes
+/// longer outputs scannable. Passing a count avoids chaining
+/// multiple `io.println("")` calls when you need more than one
+/// blank line of breathing room.
 ///
 /// *Example*
 ///
 /// ```gleam
-/// console.output()
-/// |> console.line_warning("File already exists, skipping")
-/// |> console.print()
+/// console.new_line(2)
 /// ```
 ///
-pub fn line_warning(output: Output, message: String) -> Output {
-  line(output, warning(message))
-}
-
-/// Shorthand that avoids nesting info() inside line() at every
-/// call site. Blue info lines distinguish progress messages
-/// from results.
-///
-/// *Example*
-///
-/// ```gleam
-/// console.output()
-/// |> console.line_info("Running migrations...")
-/// |> console.print()
-/// ```
-///
-pub fn line_info(output: Output, message: String) -> Output {
-  line(output, info(message))
-}
-
-/// Flushing all buffered lines at once keeps the output grouped
-/// in the terminal. This is the terminal step of the Output
-/// builder chain.
-///
-/// *Example*
-///
-/// ```gleam
-/// console.output()
-/// |> console.line("Hello, world!")
-/// |> console.print()
-/// ```
-///
-pub fn print(output: Output) -> Nil {
-  do_print(output.lines)
+pub fn new_line(amount: Int) -> Nil {
+  case amount > 0 {
+    True -> {
+      io.println("")
+      new_line(amount - 1)
+    }
+    False -> Nil
+  }
 }
 
 /// Immediately terminates the BEAM process with the given exit
@@ -238,24 +186,6 @@ pub fn print(output: Output) -> Nil {
 ///
 pub fn halt(code: Int) -> Nil {
   do_halt(code)
-}
-
-// ------------------------------------------------------------- Private Functions
-
-/// Gleam doesn't have for-loops, so recursion is the standard
-/// way to iterate a list. Separated from print so the public
-/// API stays clean — callers just call print() without seeing
-/// the recursion.
-///
-fn do_print(lines: List(String)) -> Nil {
-  case lines {
-    [first, ..rest] -> {
-      io.println(first)
-
-      do_print(rest)
-    }
-    [] -> Nil
-  }
 }
 
 // ------------------------------------------------------------- FFI Bindings

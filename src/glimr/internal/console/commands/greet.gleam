@@ -15,9 +15,7 @@ pub fn command() -> Command {
 /// Execute the console command.
 ///
 fn run(_args: Args) -> Nil {
-  console.output()
-  |> console.line("Hello! We hope you're enjoying Glimr")
-  |> console.print()
+  console.line("Hello! We hope you're enjoying Glimr")
 }
 
 /// Console command's entry point
