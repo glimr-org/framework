@@ -11,6 +11,7 @@ import gleam/int
 import gleam/list
 import gleam/string
 import glimr/console/console
+import glimr/filesystem/filesystem
 import glimr/routing/annotation_parser
 import glimr/routing/compiler
 import glimr/routing/route_group.{type RouteGroupConfig}
@@ -30,11 +31,23 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
   }
 
   // Ensure the output directory exists
-  let _ = simplifile.create_directory_all("src/compiled/routes")
+  let routes_dir = "src/compiled/routes"
+  let _ = simplifile.create_directory_all(routes_dir)
+
+  // Remove all existing compiled route files so that deleted
+  // controllers don't leave stale imports behind.
+  clean_compiled_routes(routes_dir)
 
   let groups = route_group.load()
   let controller_files = discover_controller_files("src/app/http/controllers")
-  compile_controllers(controller_files, verbose, groups)
+  let result = compile_controllers(controller_files, verbose, groups)
+
+  // Write stub files for any route group that didn't get a
+  // compiled file — the bootstrap imports every group, so
+  // missing files cause "Unknown module" errors.
+  write_empty_group_stubs(routes_dir, groups)
+
+  result
 }
 
 /// Always delegates to a full run because routes from multiple
@@ -51,6 +64,45 @@ pub fn run_for_controllers(
 }
 
 // ------------------------------------------------------------- Private Functions
+
+/// Deletes all .gleam files in the compiled routes directory so
+/// that stale files from deleted controllers don't cause
+/// "Unknown module" errors on the next build.
+///
+fn clean_compiled_routes(dir: String) -> Nil {
+  case simplifile.get_files(dir) {
+    Ok(files) ->
+      files
+      |> list.filter(fn(f) { string.ends_with(f, ".gleam") })
+      |> list.each(fn(f) {
+        let _ = simplifile.delete(f)
+      })
+    Error(_) -> Nil
+  }
+}
+
+/// Writes a stub route file for any route group that doesn't
+/// already have a compiled file. The bootstrap imports every
+/// group unconditionally, so a missing file causes "Unknown
+/// module" build errors even when the group simply has no
+/// controllers yet.
+///
+fn write_empty_group_stubs(
+  routes_dir: String,
+  groups: List(RouteGroupConfig),
+) -> Nil {
+  groups
+  |> list.each(fn(group) {
+    let path = routes_dir <> "/" <> group.name <> ".gleam"
+    case simplifile.is_file(path) {
+      Ok(True) -> Nil
+      _ -> {
+        let _ = filesystem.write_from_stub("glimr", "route.stub", path)
+        Nil
+      }
+    }
+  })
+}
 
 /// Returns an empty list instead of erroring when the directory
 /// doesn't exist, which handles fresh projects that haven't
