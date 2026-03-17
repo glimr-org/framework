@@ -144,8 +144,8 @@ fn compile_controllers(
   case list.is_empty(controller_results) {
     True -> {
       case verbose {
-        True -> Nil
-        False -> console.line_warning("No routes found in controllers")
+        True -> console.line_warning("No routes found in controllers")
+        False -> Nil
       }
       Ok(Nil)
     }
