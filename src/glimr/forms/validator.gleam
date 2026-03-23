@@ -21,7 +21,6 @@ import glimr/db/db.{type DbPool}
 import glimr/forms/form.{type UploadedFile}
 import glimr/http/context.{type Context}
 import glimr/http/http.{type Response}
-import glimr/response/redirect
 import glimr/response/response.{HTML, JSON}
 import glimr/session/session
 import simplifile
@@ -173,7 +172,7 @@ type CustomFileValidation(ctx) =
 /// }
 ///
 /// pub fn validate(ctx: Context(App), next: fn(Data) -> Response) {
-///   use validated <- validator.run(ctx, rules, data)
+///   use validated <- validator.run(ctx, rules, data, redirect.back(ctx))
 ///
 ///   next(validated)
 /// }
@@ -183,6 +182,7 @@ pub fn run(
   ctx: Context(app),
   rules: fn(Context(app)) -> List(Rule(Context(app))),
   data_fn: fn(FormData) -> typed_form,
+  redirect: Response,
   on_valid: fn(typed_form) -> Response,
 ) -> Response {
   use wisp_form_data <- wisp.require_form(ctx.req)
@@ -204,7 +204,7 @@ pub fn run(
             }
           })
           flash_old_input(ctx.session, rules(ctx), data)
-          redirect.back(ctx)
+          redirect
         }
         JSON -> {
           json.object([

@@ -5,7 +5,6 @@
 //// connections while the app restarts.
 ////
 
-import gleam/bit_array
 import gleam/bytes_tree
 import gleam/erlang/process
 import gleam/http
@@ -15,7 +14,6 @@ import gleam/httpc
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/result
 import gleam/string
 import glimr/console/console
 import mist.{type Connection, type ResponseData}
@@ -87,11 +85,11 @@ fn handle_request(
 /// retries to handle app restarts during hot reload.
 ///
 fn forward_with_retry(
-  req: Request(String),
+  req: Request(BitArray),
   max_attempts: Int,
   attempt: Int,
-) -> Result(Response(String), Nil) {
-  case httpc.send(req) {
+) -> Result(Response(BitArray), Nil) {
+  case httpc.send_bits(req) {
     Ok(resp) -> Ok(resp)
     Error(_) if attempt < max_attempts -> {
       process.sleep(50)
@@ -102,16 +100,12 @@ fn forward_with_retry(
 }
 
 /// Reads the request body from a mist connection. Limits body
-/// size to 10MB and returns an empty string if reading fails or
-/// the body cannot be decoded as UTF-8.
+/// size to 10MB and returns empty bits if reading fails.
 ///
-fn read_body(req: Request(Connection)) -> String {
+fn read_body(req: Request(Connection)) -> BitArray {
   case mist.read_body(req, 10_000_000) {
-    Ok(req_with_body) ->
-      req_with_body.body
-      |> bit_array.to_string()
-      |> result.unwrap("")
-    Error(_) -> ""
+    Ok(req_with_body) -> req_with_body.body
+    Error(_) -> <<>>
   }
 }
 
@@ -120,9 +114,9 @@ fn read_body(req: Request(Connection)) -> String {
 /// transfer-encoding headers which are set by the HTTP client.
 ///
 fn copy_headers(
-  req: Request(String),
+  req: Request(BitArray),
   headers: List(#(String, String)),
-) -> Request(String) {
+) -> Request(BitArray) {
   list.fold(headers, req, fn(r, h) {
     let #(name, value) = h
     let lower_name = string.lowercase(name)
@@ -133,12 +127,12 @@ fn copy_headers(
   })
 }
 
-/// Converts an httpc response to a mist response. Transforms
-/// the string body to bytes and copies headers for sending back
-/// to the client.
+/// Converts an httpc response to a mist response. Passes
+/// the raw bytes through directly to preserve binary data
+/// such as images and fonts.
 ///
-fn to_mist_response(resp: Response(String)) -> Response(ResponseData) {
-  let body = mist.Bytes(bytes_tree.from_string(resp.body))
+fn to_mist_response(resp: Response(BitArray)) -> Response(ResponseData) {
+  let body = mist.Bytes(bytes_tree.from_bit_array(resp.body))
 
   response.new(resp.status)
   |> response.set_body(body)

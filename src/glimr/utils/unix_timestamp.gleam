@@ -5,6 +5,7 @@
 //// since the Unix epoch (January 1, 1970). Useful for storing
 //// timestamps in database columns with unix_timestamp().
 
+import gleam/time/calendar
 import gleam/time/timestamp
 
 // ------------------------------------------------------------- Public Functions
@@ -47,4 +48,23 @@ pub fn now_nano() -> Int {
   }
 
   nano
+}
+
+/// Returns the current year as an integer. Useful when you need
+/// to print out the current year on a website footer alongside
+/// a copyright for example.
+///
+/// *Example:*
+///
+/// ```gleam
+/// let year = unix_timestamp.current_year()
+/// // => 2026
+/// ```
+///
+pub fn current_year() -> Int {
+  let #(date, _) =
+    timestamp.system_time()
+    |> timestamp.to_calendar(calendar.utc_offset)
+
+  date.year
 }
