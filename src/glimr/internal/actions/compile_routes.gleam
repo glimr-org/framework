@@ -39,7 +39,7 @@ pub fn run(verbose: Bool) -> Result(Nil, String) {
   clean_compiled_routes(routes_dir)
 
   let groups = route_group.load()
-  let controller_files = discover_controller_files("src/app/http/controllers")
+  let controller_files = discover_controller_files("src")
   let result = compile_controllers(controller_files, verbose, groups)
 
   // Write stub files for any route group that didn't get a
@@ -104,17 +104,67 @@ fn write_empty_group_stubs(
   })
 }
 
-/// Returns an empty list instead of erroring when the directory
-/// doesn't exist, which handles fresh projects that haven't
-/// created any controllers yet.
+/// Finds controller files using two strategies so that both the
+/// conventional `src/app/http/controllers/` layout and
+/// DDD-style structures like `src/app/billing/controller.gleam`
+/// or `src/app/billing/invoice_controller.gleam` work out of
+/// the box. The legacy directory scan picks up any .gleam file
+/// in controllers/ for backwards compat, while the recursive
+/// scan looks for the `_controller.gleam` suffix or an exact
+/// `controller.gleam` filename anywhere under the root.
 ///
-fn discover_controller_files(dir: String) -> List(String) {
-  case simplifile.get_files(dir) {
+@internal
+pub fn discover_controller_files(root: String) -> List(String) {
+  let convention_files = discover_by_convention(root)
+  let legacy_files = discover_legacy_controller_dir(root)
+
+  list.append(convention_files, legacy_files)
+  |> list.unique
+}
+
+/// Someone building a DDD app might put their billing
+/// controller at `src/app/billing/invoice_controller.gleam` or
+/// `src/app/billing/controller.gleam` — both need to be found
+/// without forcing everything into one flat controllers/
+/// folder.
+///
+fn discover_by_convention(root: String) -> List(String) {
+  case simplifile.get_files(root) {
+    Ok(files) ->
+      files
+      |> list.filter(fn(f) { is_controller_file(f) })
+    Error(_) -> []
+  }
+}
+
+/// Existing projects have controllers in
+/// `src/app/http/controllers/` that might not follow the
+/// `_controller.gleam` naming convention. Scanning this
+/// directory for any .gleam file means upgrading the framework
+/// doesn't break their routes.
+///
+fn discover_legacy_controller_dir(root: String) -> List(String) {
+  let legacy_dir = root <> "/app/http/controllers"
+  case simplifile.get_files(legacy_dir) {
     Ok(files) ->
       files
       |> list.filter(fn(f) { string.ends_with(f, ".gleam") })
     Error(_) -> []
   }
+}
+
+/// Matches the two naming conventions we support:
+/// `user_controller.gleam` (flat style) and `controller.gleam`
+/// (module-per-directory style).
+///
+fn is_controller_file(path: String) -> Bool {
+  let filename = case string.split(path, "/") |> list.last {
+    Ok(name) -> name
+    Error(_) -> path
+  }
+
+  filename == "controller.gleam"
+  || string.ends_with(filename, "_controller.gleam")
 }
 
 /// Parsing and grouping happen together so that a single error
