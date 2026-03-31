@@ -41,11 +41,11 @@ pub type ValidationError {
 /// An enum of built-in rules covers the most common validation
 /// needs so validators stay declarative — no inline functions
 /// for simple checks like Required or MinLength. Exists and
-/// Unique handle the most common database checks directly.
-/// Unique is case-insensitive by default (the right call for
-/// emails and usernames); use UniqueSensitive when casing
-/// matters. The Custom variant is the escape hatch for anything
-/// more complex that needs the full app context.
+/// Unique handle the most common database checks directly. Both
+/// are case-insensitive by default (the right call for emails
+/// and usernames); use ExistsSensitive or UniqueSensitive when
+/// casing matters. The Custom variant is the escape hatch for
+/// anything more complex that needs the full app context.
 ///
 pub type StringRule(ctx) {
   Required
@@ -74,6 +74,7 @@ pub type StringRule(ctx) {
   Uuid
   Ip
   Exists(DbPool, String)
+  ExistsSensitive(DbPool, String)
   Unique(DbPool, String)
   UniqueSensitive(DbPool, String)
   Custom(CustomValidation(ctx))
@@ -401,6 +402,8 @@ fn apply_rule(
     Uuid -> validate_uuid(field, value)
     Ip -> validate_ip(field, value)
     Exists(pool, table) -> validate_exists(field, value, pool, table)
+    ExistsSensitive(pool, table) ->
+      validate_exists_sensitive(field, value, pool, table)
     Unique(pool, table) -> validate_unique(field, value, pool, table)
     UniqueSensitive(pool, table) ->
       validate_unique_sensitive(field, value, pool, table)
@@ -939,14 +942,45 @@ fn validate_ip(field: String, value: String) -> Result(Nil, String) {
   }
 }
 
-/// Foreign key references need to point at real rows —
-/// submitting a `category_id` that doesn't exist would pass all
-/// other validation but blow up on insert. Checking the
-/// database here catches it with a friendly "does not exist"
-/// message instead of a constraint error. Empty values pass
+/// Password reset forms, login lookups, invite codes — any time
+/// you need to verify a value exists in the database before
+/// proceeding. Case-insensitive by default so
+/// "admin@example.com" and "Admin@Example.com" both find the
+/// same user. For IDs and foreign keys, LOWER() is a no-op on
+/// integers so there's no practical overhead. Empty values pass
 /// through since Required handles that.
 ///
 fn validate_exists(
+  field: String,
+  value: String,
+  pool: DbPool,
+  table: String,
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let sql =
+        "SELECT 1 FROM "
+        <> table
+        <> " WHERE LOWER("
+        <> field
+        <> ") = LOWER($1) LIMIT 1"
+
+      case db.query(pool, sql, [db.string(value)], decode.at([0], decode.int)) {
+        Ok(db.QueryResult(_, [])) -> Error(field <> " does not exist")
+        Ok(_) -> Ok(Nil)
+        Error(_) -> Error(field <> " could not be validated")
+      }
+    }
+  }
+}
+
+/// When the lookup value must match exactly — binary tokens,
+/// hashed API keys, or any column where "ABC" and "abc" are
+/// genuinely different entries. Skips the LOWER() wrapping so
+/// the database compares values as stored.
+///
+fn validate_exists_sensitive(
   field: String,
   value: String,
   pool: DbPool,
