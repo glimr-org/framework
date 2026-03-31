@@ -627,36 +627,50 @@ fn is_deadlock_error(error: DbError) -> Bool {
 }
 
 /// A simple string.replace won't work because `$1` and `$10`
-/// would conflict — replacing `$1` first would turn `$10` into
-/// `?0`. Character-by-character processing correctly replaces
-/// each `$N` as a complete unit regardless of how many digits
-/// it has.
+/// would conflict — replacing `$1` first turns `$10` into `?0`.
+/// Character-by-character processing handles each `$N` as a
+/// complete unit regardless of how many digits it has.
 ///
 fn convert_pg_to_sqlite_placeholders(sql: String) -> String {
-  do_convert_placeholders(string.to_graphemes(sql), "", False)
+  do_convert_placeholders(string.to_graphemes(sql), "", False, False)
 }
 
-/// The in_placeholder flag skips digits after `$` so `$12`
-/// emits a single `?` rather than `?2`. Once a non-digit
-/// character is hit, the flag resets and normal character
-/// copying resumes. This handles any number of placeholder
-/// digits correctly.
+/// The tricky part here is that `$` can appear inside SQL
+/// string literals too — Argon2 password hashes like
+/// `$argon2id$v=13$m=...` are full of them, and naively
+/// replacing every `$` would corrupt those values. So we track
+/// whether we're inside a single-quoted string and skip `$`
+/// replacement there. Escaped quotes (`''`) work naturally
+/// because toggling in/out on each `'` lands back inside the
+/// string. The in_placeholder flag eats trailing digits so
+/// `$12` emits one `?` instead of `?2`.
 ///
 fn do_convert_placeholders(
   chars: List(String),
   acc: String,
   in_placeholder: Bool,
+  in_string: Bool,
 ) -> String {
   case chars {
     [] -> acc
-    ["$", ..rest] -> do_convert_placeholders(rest, acc <> "?", True)
+
+    // Toggle in/out of string literals
+    ["'", ..rest] if !in_placeholder ->
+      do_convert_placeholders(rest, acc <> "'", False, !in_string)
+
+    // Inside a string literal, copy everything as-is
+    [c, ..rest] if in_string ->
+      do_convert_placeholders(rest, acc <> c, False, True)
+
+    // Outside strings, replace $ placeholders
+    ["$", ..rest] -> do_convert_placeholders(rest, acc <> "?", True, False)
     [c, ..rest] if in_placeholder -> {
       case result.is_ok(int.parse(c)) {
-        True -> do_convert_placeholders(rest, acc, True)
-        False -> do_convert_placeholders(rest, acc <> c, False)
+        True -> do_convert_placeholders(rest, acc, True, False)
+        False -> do_convert_placeholders(rest, acc <> c, False, False)
       }
     }
-    [c, ..rest] -> do_convert_placeholders(rest, acc <> c, False)
+    [c, ..rest] -> do_convert_placeholders(rest, acc <> c, False, False)
   }
 }
 
