@@ -41,8 +41,10 @@ pub type ValidationError {
 /// An enum of built-in rules covers the most common validation
 /// needs so validators stay declarative — no inline functions
 /// for simple checks like Required or MinLength. Exists and
-/// Unique handle the most common database checks directly,
-/// while the Custom variant is the escape hatch for anything
+/// Unique handle the most common database checks directly.
+/// Unique is case-insensitive by default (the right call for
+/// emails and usernames); use UniqueSensitive when casing
+/// matters. The Custom variant is the escape hatch for anything
 /// more complex that needs the full app context.
 ///
 pub type StringRule(ctx) {
@@ -73,6 +75,7 @@ pub type StringRule(ctx) {
   Ip
   Exists(DbPool, String)
   Unique(DbPool, String)
+  UniqueSensitive(DbPool, String)
   Custom(CustomValidation(ctx))
 }
 
@@ -399,6 +402,8 @@ fn apply_rule(
     Ip -> validate_ip(field, value)
     Exists(pool, table) -> validate_exists(field, value, pool, table)
     Unique(pool, table) -> validate_unique(field, value, pool, table)
+    UniqueSensitive(pool, table) ->
+      validate_unique_sensitive(field, value, pool, table)
     Custom(custom_validation) ->
       validate_custom(custom_validation, field, value, data, ctx)
   }
@@ -962,14 +967,46 @@ fn validate_exists(
   }
 }
 
-/// Registration forms, profile updates — anywhere a value must
-/// be unique in the database. Checking at validation time means
-/// the user sees "email already exists" on the form instead of
-/// hitting a database constraint error that the app has to
-/// catch and translate. Empty values pass through since
-/// Required handles that separately.
+/// Emails, usernames, and most identifiers should be unique
+/// regardless of casing — "Admin@Example.com" and
+/// "admin@example.com" are the same person. Using LOWER() on
+/// both sides catches duplicates that a case-sensitive check
+/// would miss, which is what users expect when they see "email
+/// already exists". Empty values pass through since Required
+/// handles that separately.
 ///
 fn validate_unique(
+  field: String,
+  value: String,
+  pool: DbPool,
+  table: String,
+) -> Result(Nil, String) {
+  case value {
+    "" -> Ok(Nil)
+    _ -> {
+      let sql =
+        "SELECT 1 FROM "
+        <> table
+        <> " WHERE LOWER("
+        <> field
+        <> ") = LOWER($1) LIMIT 1"
+
+      case db.query(pool, sql, [db.string(value)], decode.at([0], decode.int)) {
+        Ok(db.QueryResult(_, [])) -> Ok(Nil)
+        Ok(_) -> Error(field <> " already exists")
+        Error(_) -> Error(field <> " could not be validated")
+      }
+    }
+  }
+}
+
+/// Some columns genuinely need case-sensitive uniqueness — API
+/// keys, token hashes, or slugs where "Foo" and "foo" are
+/// intentionally different entries. This variant skips the
+/// LOWER() wrapping so the database compares values exactly as
+/// stored.
+///
+fn validate_unique_sensitive(
   field: String,
   value: String,
   pool: DbPool,
