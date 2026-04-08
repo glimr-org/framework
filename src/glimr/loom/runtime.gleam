@@ -205,13 +205,14 @@ pub fn escape(value: String) -> String {
   houdini.escape(value)
 }
 
-/// Template variables can hold any Gleam type, but HTML output
-/// requires strings. Using string.inspect() as a universal
-/// converter means template authors don't need explicit
-/// conversions for Int, Bool, or custom types — the runtime
-/// handles it transparently.
+/// Fallback converter for raw variables (`{!! expr !!}`) whose
+/// type the generator can't determine at compile time. When
+/// prop types are declared in the view file, codegen emits
+/// specialized conversions (`int.to_string`, `bool.to_string`,
+/// etc.) directly and skips this helper. It remains the path
+/// for loop properties with dynamic types and any expression
+/// the generator can't resolve statically.
 ///
-@deprecated("Re-compile your templates with `./glimr loom_compile`")
 pub fn to_string(value: a) -> String {
   let s = string.inspect(value)
   // string.inspect wraps strings in quotes - strip them
@@ -221,13 +222,16 @@ pub fn to_string(value: a) -> String {
   }
 }
 
-/// The most common template operation: convert a value to a
-/// string and escape it. Combining both steps here means
-/// generated code for {{ variable }} is a single function call,
-/// keeping the generated output compact while ensuring XSS
-/// safety by default.
+/// Fallback converter for `{{ variable }}` expressions whose
+/// type the generator can't determine at compile time (props
+/// without declared types in the view file, loop properties of
+/// unknown types, etc.). When the type IS known, codegen emits
+/// `runtime.escape` for Strings, `int.to_string` for Ints, and
+/// so on — skipping this function entirely. Declaring prop
+/// types in view files is therefore the fast path; this helper
+/// exists so templates without full type coverage still render
+/// safely.
 ///
-@deprecated("Re-compile your templates with `./glimr loom_compile`")
 pub fn display(value: a) -> String {
   let s = string.inspect(value)
   let s = case string.starts_with(s, "\"") && string.ends_with(s, "\"") {
