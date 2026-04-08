@@ -41,6 +41,9 @@ fn cleanup_config() -> Nil {
   let _ = simplifile.delete(session_config_file)
   let _ = simplifile.delete(config_dir)
   let _ = simplifile.delete(test_cache_path)
+  // Also remove the `priv/test` sandbox dir so `gleam test` in the
+  // framework project doesn't leave an empty tree behind.
+  let _ = simplifile.delete("priv/test")
   clear_config_cache()
   clear_session_store()
   Nil

@@ -27,4 +27,10 @@ pub fn stale_route_files_are_cleaned_up_test() {
   // The stale file should have been removed
   simplifile.is_file(stale_path)
   |> should.equal(Ok(False))
+
+  // Clean up the directories this test created so that running
+  // `gleam test` in the framework project doesn't leave an empty
+  // `src/compiled/routes/` tree behind.
+  let _ = simplifile.delete(routes_dir)
+  let _ = simplifile.delete("src/compiled")
 }

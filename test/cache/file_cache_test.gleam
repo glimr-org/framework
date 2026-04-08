@@ -55,6 +55,9 @@ fn setup_internal_pool() -> pool.Pool {
 
 fn cleanup_test_pool() {
   let _ = simplifile.delete(test_cache_path)
+  // Also remove the `priv/test` sandbox dir so `gleam test` in the
+  // framework project doesn't leave an empty tree behind.
+  let _ = simplifile.delete("priv/test")
   cleanup_config()
 }
 

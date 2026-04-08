@@ -9,6 +9,9 @@ const test_registry_path = "priv/storage/framework/loom/modules.json"
 
 fn cleanup() {
   let _ = simplifile.delete(test_registry_path)
+  // Also remove the `priv/storage` sandbox tree so `gleam test` in
+  // the framework project doesn't leave an empty tree behind.
+  let _ = simplifile.delete("priv/storage")
   Nil
 }
 
