@@ -1140,8 +1140,9 @@ fn generate_imports(
     |> set.to_list
     |> list.sort(string.compare)
     |> list.map(fn(name) {
-      let module_path =
-        "compiled/loom/components/" <> string.replace(name, ":", "/")
+      let normalized_name =
+        name |> string.replace(":", "/") |> string.replace("-", "_")
+      let module_path = "compiled/loom/components/" <> normalized_name
       let alias = component_module_alias(name)
       "import " <> module_path <> " as " <> alias
     })
@@ -1634,7 +1635,8 @@ fn generate_node_concat_items(
         False -> [TreeExpr(render_expr)]
         True -> {
           let component_module =
-            "compiled/loom/components/" <> string.replace(name, ":", "/")
+            "compiled/loom/components/"
+            <> { name |> string.replace(":", "/") |> string.replace("-", "_") }
           let props_json_expr =
             generate_component_props_json(name, attributes, component_data)
           [
@@ -3775,7 +3777,8 @@ fn generate_node_tree(
         False -> component_code
         True -> {
           let component_module =
-            "compiled/loom/components/" <> string.replace(name, ":", "/")
+            "compiled/loom/components/"
+            <> { name |> string.replace(":", "/") |> string.replace("-", "_") }
           let props_json_expr =
             generate_component_props_json(name, attributes, component_data)
           "runtime.live_component_wrapper("

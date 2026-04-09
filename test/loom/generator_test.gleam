@@ -713,6 +713,37 @@ pub fn generate_nested_component_path_test() {
   |> should.be_true
 }
 
+pub fn generate_hyphenated_component_name_test() {
+  let result =
+    generate(template([ComponentNode("heart-icon", [], [])]), "page", False)
+
+  // Hyphens in component names should map to underscored module paths
+  result.code
+  |> string.contains(
+    "import compiled/loom/components/heart_icon as components_heart_icon",
+  )
+  |> should.be_true
+
+  result.code
+  |> string.contains("components_heart_icon.render(")
+  |> should.be_true
+}
+
+pub fn generate_hyphenated_nested_component_path_test() {
+  let result =
+    generate(
+      template([ComponentNode("ui:status-badge", [], [])]),
+      "page",
+      False,
+    )
+
+  result.code
+  |> string.contains(
+    "import compiled/loom/components/ui/status_badge as components_ui_status_badge",
+  )
+  |> should.be_true
+}
+
 pub fn generate_component_with_expr_attr_test() {
   let tmpl =
     template([ComponentNode("input", [ExprAttr("value", "data.name")], [])])
