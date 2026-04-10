@@ -899,6 +899,29 @@ pub fn generate_no_false_positive_int_import_test() {
   |> should.be_false
 }
 
+pub fn generate_no_false_positive_int_import_with_escaped_quotes_test() {
+  // When TextNode content contains quotes, escape_gleam_string produces
+  // backslash-escaped quotes in the generated code. The strip logic must
+  // still correctly identify what's inside a string literal.
+  //
+  // TextNode content:  he said "int.to_string(x)" ok
+  // Generated code:    "he said \"int.to_string(x)\" ok"
+  //
+  // Splitting on raw " would misalign the even/odd segments.
+  let result =
+    generate(
+      template([
+        TextNode("he said \"int.to_string(x)\" ok"),
+      ]),
+      "page",
+      False,
+    )
+
+  result.code
+  |> string.contains("import gleam/int")
+  |> should.be_false
+}
+
 // ------------------------------------------------------------- Named Slot Tests
 
 pub fn generate_named_slot_in_component_test() {

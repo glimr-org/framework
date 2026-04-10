@@ -3136,26 +3136,37 @@ fn component_module_alias(name: String) -> String {
 
 /// Removes content between double quotes from generated code so
 /// that string literals (e.g. code examples in TextNodes) don't
-/// cause false-positive import detection.
+/// cause false-positive import detection. Handles escaped quotes
+/// (backslash-double-quote) inside string literals.
 ///
 fn strip_string_literals(code: String) -> String {
-  code
-  |> string.split("\"")
-  |> drop_every_other(True, [])
-  |> string.join("")
+  do_strip_string_literals(code, False, "")
 }
 
-fn drop_every_other(
-  parts: List(String),
-  keep: Bool,
-  acc: List(String),
-) -> List(String) {
-  case parts {
-    [] -> list.reverse(acc)
-    [first, ..rest] ->
-      case keep {
-        True -> drop_every_other(rest, False, [first, ..acc])
-        False -> drop_every_other(rest, True, acc)
+fn do_strip_string_literals(
+  input: String,
+  in_string: Bool,
+  acc: String,
+) -> String {
+  case string.pop_grapheme(input) {
+    Error(_) -> acc
+    Ok(#("\\", rest)) ->
+      case in_string {
+        // Skip the backslash and the next character (escaped char)
+        True ->
+          case string.pop_grapheme(rest) {
+            Ok(#(_, rest2)) -> do_strip_string_literals(rest2, True, acc)
+            Error(_) -> acc
+          }
+        False -> do_strip_string_literals(rest, False, acc <> "\\")
+      }
+    Ok(#("\"", rest)) ->
+      // Toggle in/out of string
+      do_strip_string_literals(rest, !in_string, acc)
+    Ok(#(c, rest)) ->
+      case in_string {
+        True -> do_strip_string_literals(rest, True, acc)
+        False -> do_strip_string_literals(rest, False, acc <> c)
       }
   }
 }
