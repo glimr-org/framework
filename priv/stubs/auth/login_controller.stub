@@ -17,7 +17,7 @@ pub fn middleware() -> List(Middleware(App)) {
 
 /// @get "@{{ route_prefix }}/login"
 pub fn show(ctx: Context(App)) -> Response {
-  response.html(login.render(ctx: ctx), 200)
+  login.render(ctx: ctx) |> response.string_tree(200)
 }
 
 /// @post "@{{ route_prefix }}/login"

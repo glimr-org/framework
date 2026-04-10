@@ -72,7 +72,25 @@ pub fn html(content: String, status: Int) -> Response {
 /// response.loom(welcome.render(), 200)
 /// ```
 ///
+@deprecated("Use response.string_tree instead")
 pub fn loom(content: StringTree, status: Int) -> Response {
+  wisp.response(status)
+  |> wisp.set_header("content-type", "text/html; charset=utf-8")
+  |> wisp.string_tree_body(content)
+}
+
+/// You may need to return StringTree for efficient rendering.
+/// This passes the tree directly to the response body without
+/// flattening into a String first, avoiding O(n²) memory usage
+/// for large pages.
+///
+/// *Example:*
+///
+/// ```gleam
+/// response.string_tree(welcome.render(), 200)
+/// ```
+///
+pub fn string_tree(content: StringTree, status: Int) -> Response {
   wisp.response(status)
   |> wisp.set_header("content-type", "text/html; charset=utf-8")
   |> wisp.string_tree_body(content)

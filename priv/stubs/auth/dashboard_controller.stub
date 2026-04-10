@@ -13,5 +13,6 @@ pub fn show(ctx: Context(App)) -> Response {
 
   let assert option.Some(@{{ model }}) = ctx.app.@{{ model }}
 
-  response.html(dashboard.render(ctx: ctx, @{{ model }}: @{{ model }}), 200)
+  dashboard.render(ctx: ctx, @{{ model }}: @{{ model }})
+  |> response.string_tree(200)
 }
