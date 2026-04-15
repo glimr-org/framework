@@ -1,4 +1,11 @@
-//// TODO: add module docs
+//// HTTP Request
+////
+//// The framework's request type alias. Every controller and
+//// middleware imports Request from here instead of from wisp
+//// directly, so the underlying HTTP library stays a swappable
+//// implementation detail rather than a dependency baked into
+//// every file that touches requests.
+////
 
 import wisp
 
