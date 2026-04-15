@@ -21,7 +21,7 @@ import glimr/db/db.{type DbPool}
 import glimr/forms/form.{type UploadedFile}
 import glimr/http/context.{type Context}
 import glimr/http/response.{type Response, HTML, JSON}
-import glimr/session/session
+import glimr/session
 import simplifile
 import wisp.{type FormData as WispFormData}
 

@@ -1,5 +1,5 @@
 ---
-import glimr/session/session
+import glimr/session
 import glimr/http/context
 import app/app.{type App}
 

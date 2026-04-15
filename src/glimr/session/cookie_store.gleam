@@ -22,6 +22,7 @@ import glimr/session/store.{type SessionStore}
 /// cookie backend skips all server-side persistence logic
 /// entirely.
 ///
+@deprecated("use glimr/session.cookie_store instead")
 pub fn create() -> SessionStore {
   store.new(
     load: fn(cookie_value) { payload.decode(cookie_value) },

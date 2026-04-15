@@ -6,7 +6,7 @@ import gleeunit/should
 import glimr/config/config
 import glimr/http/context
 import glimr/http/middleware/load_session
-import glimr/session/session
+import glimr/session
 import simplifile
 import wisp
 import wisp/simulate

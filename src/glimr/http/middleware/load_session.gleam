@@ -19,8 +19,7 @@ import glimr/http/context.{type Context, Context}
 import glimr/http/middleware.{type Next}
 import glimr/http/request.{type Request} as _glimr_request
 import glimr/http/response.{type Response} as _glimr_response
-import glimr/session/session
-import glimr/session/store
+import glimr/session
 import wisp
 
 // ------------------------------------------------------------- Public Functions
@@ -55,7 +54,7 @@ pub fn run(ctx: Context(app), next: Next(app)) -> Response {
   // Load existing data from store (empty for new sessions)
   let #(data, flash) = case is_new {
     True -> #(dict.new(), dict.new())
-    False -> store.load(session_id)
+    False -> session.load(session_id)
   }
 
   // Start session actor with loaded data
@@ -70,13 +69,13 @@ pub fn run(ctx: Context(app), next: Next(app)) -> Response {
     Ok(state) -> {
       // Destroy old session if invalidated
       case state.invalidated {
-        True -> store.destroy(session_id)
+        True -> session.destroy(session_id)
         False -> Nil
       }
 
       // Save if dirty
       case state.dirty {
-        True -> store.save(state.id, state.data, state.flash)
+        True -> session.save(state.id, state.data, state.flash)
         False -> Nil
       }
 
@@ -84,7 +83,7 @@ pub fn run(ctx: Context(app), next: Next(app)) -> Response {
       maybe_gc()
 
       // Set cookie with session value (ID for server stores, payload for cookie stores)
-      let value = store.cookie_value(state.id, state.data, state.flash)
+      let value = session.cookie_value(state.id, state.data, state.flash)
 
       set_session_cookie(
         resp,
@@ -149,7 +148,7 @@ fn set_session_cookie(
 ///
 fn maybe_gc() -> Nil {
   case rand_uniform(100) {
-    n if n <= 2 -> store.gc()
+    n if n <= 2 -> session.gc()
     _ -> Nil
   }
 }

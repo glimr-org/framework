@@ -30,6 +30,7 @@ import simplifile
 /// the session ID since the actual data lives on disk, not in
 /// the cookie.
 ///
+@deprecated("use glimr/session.file_store instead")
 @internal
 pub fn create(pool: Pool) -> SessionStore {
   let lifetime = config.get_int("session.lifetime")

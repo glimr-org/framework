@@ -139,7 +139,7 @@ fn generate_imports(
         False -> ""
       }
       int_import
-      <> "\nimport glimr/session/session.{type Session}"
+      <> "\nimport glimr/session.{type Session}"
       <> "\nimport glimr_auth/auth"
       <> "\nimport glimr_auth/hash"
     }

@@ -1,6 +1,6 @@
 import gleam/dict
 import gleeunit/should
-import glimr/session/session
+import glimr/session
 
 // ------------------------------------------------------------- Empty Session Tests
 

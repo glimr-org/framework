@@ -4,7 +4,7 @@ import glimr/http/context.{type Context}
 import glimr/http/middleware
 import glimr/http/response.{type Response}
 import glimr/response/redirect
-import glimr/session/session
+import glimr/session
 import glimr_auth/auth
 
 /// @post "@{{ route_prefix }}/logout"

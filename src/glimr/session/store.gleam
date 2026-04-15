@@ -21,6 +21,7 @@ import gleam/dict.{type Dict}
 /// directly, ensuring all access goes through the public
 /// functions that handle the "no store configured" fallback.
 ///
+@deprecated("use glimr/session.SessionStore instead")
 pub opaque type SessionStore {
   SessionStore(
     load: fn(String) -> #(Dict(String, String), Dict(String, String)),
@@ -40,6 +41,7 @@ pub opaque type SessionStore {
 /// the opaque type guarantee holds: every store has all five
 /// callbacks populated.
 ///
+@deprecated("use glimr/session.new instead")
 pub fn new(
   load load: fn(String) -> #(Dict(String, String), Dict(String, String)),
   save save: fn(String, Dict(String, String), Dict(String, String)) -> Nil,
@@ -67,6 +69,7 @@ pub fn new(
 /// sessions aren't set up — reads just return nothing rather
 /// than crashing.
 ///
+@deprecated("use glimr/session.load instead")
 pub fn load(session_id: String) -> #(Dict(String, String), Dict(String, String)) {
   with_store(#(dict.new(), dict.new()), fn(store) { store.load(session_id) })
 }
@@ -77,6 +80,7 @@ pub fn load(session_id: String) -> #(Dict(String, String), Dict(String, String))
 /// already consumed and cleared, enforcing one-shot semantics
 /// at the store level.
 ///
+@deprecated("use glimr/session.save instead")
 pub fn save(
   session_id: String,
   data: Dict(String, String),
@@ -90,6 +94,7 @@ pub fn save(
 /// this before saving the new session, ensuring the old and new
 /// entries never coexist in the store.
 ///
+@deprecated("use glimr/session.destroy instead")
 pub fn destroy(session_id: String) -> Nil {
   with_store(Nil, fn(store) { store.destroy(session_id) })
 }
@@ -99,6 +104,7 @@ pub fn destroy(session_id: String) -> Nil {
 /// so no single request pays the full scan price, while still
 /// purging stale entries within a reasonable window.
 ///
+@deprecated("use glimr/session.gc instead")
 pub fn gc() -> Nil {
   with_store(Nil, fn(store) { store.gc() })
 }
@@ -109,6 +115,7 @@ pub fn gc() -> Nil {
 /// without knowing which strategy is active — the store decides
 /// what goes over the wire.
 ///
+@deprecated("use glimr/session.cookie_value instead")
 pub fn cookie_value(
   session_id: String,
   data: Dict(String, String),
@@ -125,6 +132,7 @@ pub fn cookie_value(
 /// session API ergonomic — callers never need a store
 /// reference.
 ///
+@deprecated("use glimr/session.setup instead")
 pub fn cache_store(store: SessionStore) -> Nil {
   cache(store)
 }
@@ -154,7 +162,6 @@ fn with_store(default: a, f: fn(SessionStore) -> a) -> a {
 @external(erlang, "glimr_kernel_ffi", "cache_session_store")
 fn cache(store: SessionStore) -> Nil
 
-// ------------------------------------------------------------- FFI Bindings
 /// Returns the cached store or Error(Nil) if none has been
 /// cached yet. The Result type lets with_store distinguish "no
 /// store configured" from a real store, so the app degrades

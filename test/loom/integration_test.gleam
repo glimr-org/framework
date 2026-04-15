@@ -1235,7 +1235,7 @@ pub fn multiline_props_in_frontmatter_test() {
   // props(...) that spans multiple lines should be parsed correctly
   let template =
     "---
-import glimr/session/session.{type Session}
+import glimr/session.{type Session}
 
 props(
   label: String,

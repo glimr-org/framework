@@ -6,7 +6,7 @@ import glimr/http/context.{type Context}
 import glimr/http/middleware.{type Middleware}
 import glimr/http/response.{type Response}
 import glimr/response/redirect
-import glimr/session/session
+import glimr/session
 
 /// Apply the guest middleware to the entire controller
 pub fn middleware() -> List(Middleware(App)) {

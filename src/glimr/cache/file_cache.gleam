@@ -10,8 +10,7 @@ import glimr/cache/cache.{type CachePool}
 import glimr/cache/driver
 import glimr/cache/file/cache as file_cache
 import glimr/cache/file/pool
-import glimr/session/file_store
-import glimr/session/store.{type SessionStore}
+import glimr/session.{type SessionStore}
 
 // ------------------------------------------------------------- Public Functions
 
@@ -34,7 +33,7 @@ pub fn start(name: String) -> CachePool {
 ///
 pub fn session_store(name: String) -> SessionStore {
   let internal = start_pool(name)
-  file_store.create(internal)
+  session.file_store(internal)
 }
 
 // ------------------------------------------------------------- Internal Public Functions

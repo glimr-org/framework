@@ -724,7 +724,7 @@ pub fn generate_non_authenticatable_no_auth_imports_test() {
   |> should.be_false()
 
   result
-  |> string.contains("import glimr/session/session")
+  |> string.contains("import glimr/session")
   |> should.be_false()
 }
 
@@ -1035,7 +1035,7 @@ pub fn generate_authenticatable_imports_session_test() {
   let result = generator.generate("user", auth_table(), [], auth_schema)
 
   result
-  |> string.contains("import glimr/session/session.{type Session}")
+  |> string.contains("import glimr/session.{type Session}")
   |> should.be_true()
 }
 
@@ -1277,7 +1277,7 @@ pub fn generate_uuid_auth_still_imports_auth_deps_test() {
   |> should.be_true()
 
   result
-  |> string.contains("import glimr/session/session.{type Session}")
+  |> string.contains("import glimr/session.{type Session}")
   |> should.be_true()
 }
 

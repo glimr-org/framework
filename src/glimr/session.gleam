@@ -12,11 +12,18 @@
 
 import gleam/bit_array
 import gleam/dict.{type Dict}
+import gleam/dynamic/decode
 import gleam/erlang/process.{type Subject}
+import gleam/int
+import gleam/json
+import gleam/list
 import gleam/otp/actor
+import gleam/result
 import gleam/string
-import glimr/session/cookie_store
-import glimr/session/store.{type SessionStore}
+import glimr/cache/file/pool.{type Pool}
+import glimr/config/config
+import glimr/utils/unix_timestamp
+import simplifile
 
 // ------------------------------------------------------------- Public Types
 
@@ -28,10 +35,27 @@ import glimr/session/store.{type SessionStore}
 /// callers from pattern matching on the variant and coupling to
 /// the internal representation.
 ///
-@deprecated("use glimr/session.Session instead")
 pub opaque type Session {
   Live(subject: Subject(SessionMessage))
   Empty
+}
+
+/// Gleam doesn't have traits or interfaces, so the store is
+/// modeled as a record of closures — each backend provides its
+/// own implementations at construction time. Making the type
+/// opaque prevents callers from reaching into the closures
+/// directly, ensuring all access goes through the public
+/// functions that handle the "no store configured" fallback.
+///
+pub opaque type SessionStore {
+  SessionStore(
+    load: fn(String) -> #(Dict(String, String), Dict(String, String)),
+    save: fn(String, Dict(String, String), Dict(String, String)) -> Nil,
+    destroy: fn(String) -> Nil,
+    gc: fn() -> Nil,
+    cookie_value: fn(String, Dict(String, String), Dict(String, String)) ->
+      String,
+  )
 }
 
 // ------------------------------------------------------------- Internal Public Types
@@ -47,7 +71,6 @@ pub opaque type Session {
 /// one). This separation prevents a flash set and read within
 /// the same request from interfering.
 ///
-@deprecated("use glimr/session.SessionState instead")
 @internal
 pub type SessionState {
   SessionState(
@@ -91,7 +114,6 @@ type SessionMessage {
 /// empty values and all writes are silently ignored, avoiding
 /// the need for Option(Session) throughout the framework.
 ///
-@deprecated("use glimr/session.empty instead")
 pub fn empty() -> Session {
   Empty
 }
@@ -101,7 +123,6 @@ pub fn empty() -> Session {
 /// handler. Returns Error(Nil) for missing keys so callers can
 /// distinguish absence from an empty string.
 ///
-@deprecated("use glimr/session.get instead")
 pub fn get(session: Session, key: String) -> Result(String, Nil) {
   case session {
     Live(subject) -> actor.call(subject, 5000, Get(key, _))
@@ -114,7 +135,6 @@ pub fn get(session: Session, key: String) -> Result(String, Nil) {
 /// mutations and the middleware reads the final state after the
 /// handler returns.
 ///
-@deprecated("use glimr/session.put instead")
 pub fn put(session: Session, key: String, value: String) -> Nil {
   case session {
     Live(subject) -> process.send(subject, Put(key, value))
@@ -126,7 +146,6 @@ pub fn put(session: Session, key: String, value: String) -> Nil {
 /// persists the deletion. Fire-and-forget like put since the
 /// caller doesn't need to wait for confirmation.
 ///
-@deprecated("use glimr/session.forget instead")
 pub fn forget(session: Session, key: String) -> Nil {
   case session {
     Live(subject) -> process.send(subject, Forget(key))
@@ -138,7 +157,6 @@ pub fn forget(session: Session, key: String) -> Nil {
 /// caller typically branches on the result immediately, e.g. to
 /// decide whether to redirect an unauthenticated user.
 ///
-@deprecated("use glimr/session.has instead")
 pub fn has(session: Session, key: String) -> Bool {
   case session {
     Live(subject) -> actor.call(subject, 5000, Has(key, _))
@@ -151,7 +169,6 @@ pub fn has(session: Session, key: String) -> Bool {
 /// for debugging. Returns a snapshot — further mutations after
 /// this call won't be reflected in the returned dict.
 ///
-@deprecated("use glimr/session.all instead")
 pub fn all(session: Session) -> Dict(String, String) {
   case session {
     Live(subject) -> actor.call(subject, 5000, All)
@@ -164,7 +181,6 @@ pub fn all(session: Session) -> Dict(String, String) {
 /// implementations access it without reaching into the actor's
 /// internal state directly.
 ///
-@deprecated("use glimr/session.id instead")
 pub fn id(session: Session) -> String {
   case session {
     Live(subject) -> actor.call(subject, 5000, GetId)
@@ -178,7 +194,6 @@ pub fn id(session: Session) -> String {
 /// ensures they appear exactly once without the handler needing
 /// to manage cleanup.
 ///
-@deprecated("use glimr/session.flash instead")
 pub fn flash(session: Session, key: String, value: String) -> Nil {
   case session {
     Live(subject) -> process.send(subject, Flash(key, value))
@@ -191,7 +206,6 @@ pub fn flash(session: Session, key: String, value: String) -> Nil {
 /// Result avoids wrapping every template interpolation in a
 /// case expression.
 ///
-@deprecated("use glimr/session.get_flash instead")
 pub fn get_flash(session: Session, key: String) -> String {
   case get_flash_or(session, key) {
     Ok(value) -> value
@@ -204,7 +218,6 @@ pub fn get_flash(session: Session, key: String) -> String {
 /// returning variant provides that distinction. get_flash
 /// delegates here and unwraps for the common case.
 ///
-@deprecated("use glimr/session.get_flash_or instead")
 pub fn get_flash_or(session: Session, key: String) -> Result(String, Nil) {
   case session {
     Live(subject) -> actor.call(subject, 5000, GetFlash(key, _))
@@ -217,7 +230,6 @@ pub fn get_flash_or(session: Session, key: String) -> Result(String, Nil) {
 /// matching on a Result when the value itself isn't needed for
 /// the conditional.
 ///
-@deprecated("use glimr/session.has_flash instead")
 pub fn has_flash(session: Session, key: String) -> Bool {
   case get_flash_or(session, key) {
     Ok(_) -> True
@@ -234,7 +246,6 @@ pub fn has_flash(session: Session, key: String) -> Bool {
 /// <input type="email" name="email" :value="session.old(ctx.session, 'email')" />
 /// ```
 ///
-@deprecated("use glimr/session.old instead")
 pub fn old(session: Session, field: String) -> String {
   get_flash(session, "old." <> field)
 }
@@ -250,7 +261,6 @@ pub fn old(session: Session, field: String) -> String {
 /// </p>
 /// ```
 ///
-@deprecated("use glimr/session.error instead")
 pub fn error(session: Session, field: String) -> String {
   get_flash(session, "errors." <> field)
 }
@@ -266,7 +276,6 @@ pub fn error(session: Session, field: String) -> String {
 /// </p>
 /// ```
 ///
-@deprecated("use glimr/session.has_error instead")
 pub fn has_error(session: Session, field: String) -> Bool {
   has_flash(session, "errors." <> field)
 }
@@ -277,7 +286,6 @@ pub fn has_error(session: Session, field: String) -> Bool {
 /// the old entry from the store rather than just overwriting
 /// it.
 ///
-@deprecated("use glimr/session.invalidate instead")
 pub fn invalidate(session: Session) -> Nil {
   case session {
     Live(subject) -> process.send(subject, Invalidate)
@@ -291,7 +299,6 @@ pub fn invalidate(session: Session) -> Nil {
 /// if the ID rotates. Data is preserved so the user doesn't
 /// lose pre-login state.
 ///
-@deprecated("use glimr/session.regenerate instead")
 pub fn regenerate(session: Session) -> Nil {
   case session {
     Live(subject) -> process.send(subject, Regenerate)
@@ -304,9 +311,8 @@ pub fn regenerate(session: Session) -> Nil {
 /// threading it through function arguments. Call this once at
 /// boot after creating a store from any driver.
 ///
-@deprecated("use glimr/session.setup instead")
 pub fn setup(session_store: SessionStore) -> Nil {
-  store.cache_store(session_store)
+  cache(session_store)
 }
 
 /// Cookie-based sessions avoid server-side storage entirely —
@@ -314,9 +320,170 @@ pub fn setup(session_store: SessionStore) -> Nil {
 /// payloads under ~4KB where the simplicity of zero
 /// infrastructure outweighs the per-request bandwidth cost.
 ///
-@deprecated("use glimr/session.cookie_store instead")
 pub fn cookie_store() -> SessionStore {
-  cookie_store.create()
+  new(
+    load: fn(cookie_value) { decode_payload(cookie_value) },
+    save: fn(_, _, _) { Nil },
+    destroy: fn(_) { Nil },
+    gc: fn() { Nil },
+    cookie_value: fn(_, data, flash) { encode_payload(data, flash) },
+  )
+}
+
+/// Wiring the store callbacks here keeps filesystem details out
+/// of the session middleware. Reusing the file cache pool's
+/// directory groups all file-based storage under one
+/// configurable path. The cookie_value callback returns just
+/// the session ID since the actual data lives on disk, not in
+/// the cookie.
+///
+@internal
+pub fn file_store(pool: Pool) -> SessionStore {
+  let lifetime = config.get_int("session.lifetime")
+  let base_path = pool.get_path(pool) <> "/sessions"
+
+  new(
+    load: fn(session_id) { file_load(base_path, session_id) },
+    save: fn(session_id, data, flash) {
+      file_save(base_path, session_id, data, flash, lifetime)
+    },
+    destroy: fn(session_id) { file_destroy(base_path, session_id) },
+    gc: fn() { file_gc(base_path) },
+    cookie_value: fn(id, _, _) { id },
+  )
+}
+
+/// Labeled arguments make construction self-documenting at the
+/// call site — each backend explicitly names every callback it
+/// provides. This is the only way to build a SessionStore, so
+/// the opaque type guarantee holds: every store has all five
+/// callbacks populated.
+///
+pub fn new(
+  load load: fn(String) -> #(Dict(String, String), Dict(String, String)),
+  save save: fn(String, Dict(String, String), Dict(String, String)) -> Nil,
+  destroy destroy: fn(String) -> Nil,
+  gc gc: fn() -> Nil,
+  cookie_value cookie_value: fn(
+    String,
+    Dict(String, String),
+    Dict(String, String),
+  ) ->
+    String,
+) -> SessionStore {
+  SessionStore(
+    load: load,
+    save: save,
+    destroy: destroy,
+    gc: gc,
+    cookie_value: cookie_value,
+  )
+}
+
+/// Middleware calls this at request start to hydrate the
+/// session actor. Returning empty dicts when no store is
+/// configured lets the app boot and serve requests even if
+/// sessions aren't set up — reads just return nothing rather
+/// than crashing.
+///
+pub fn load(session_id: String) -> #(Dict(String, String), Dict(String, String)) {
+  with_store(#(dict.new(), dict.new()), fn(store) { store.load(session_id) })
+}
+
+/// Middleware calls this after the handler returns to persist
+/// mutations. The flash dict here contains only values set
+/// during this request — the previous request's flash was
+/// already consumed and cleared, enforcing one-shot semantics
+/// at the store level.
+///
+pub fn save(
+  session_id: String,
+  data: Dict(String, String),
+  flash: Dict(String, String),
+) -> Nil {
+  with_store(Nil, fn(store) { store.save(session_id, data, flash) })
+}
+
+/// Invalidation must remove the old session immediately so a
+/// stolen session ID can never be reused. The middleware calls
+/// this before saving the new session, ensuring the old and new
+/// entries never coexist in the store.
+///
+pub fn destroy(session_id: String) -> Nil {
+  with_store(Nil, fn(store) { store.destroy(session_id) })
+}
+
+/// Expired sessions accumulate in the store over time. Running
+/// GC probabilistically (2% of requests) spreads cleanup cost
+/// so no single request pays the full scan price, while still
+/// purging stale entries within a reasonable window.
+///
+pub fn gc() -> Nil {
+  with_store(Nil, fn(store) { store.gc() })
+}
+
+/// Server-side stores put only the session ID in the cookie
+/// while cookie stores encode the full payload. Abstracting
+/// this behind a callback lets the middleware set the cookie
+/// without knowing which strategy is active — the store decides
+/// what goes over the wire.
+///
+pub fn cookie_value(
+  session_id: String,
+  data: Dict(String, String),
+  flash: Dict(String, String),
+) -> String {
+  with_store(session_id, fn(store) {
+    store.cookie_value(session_id, data, flash)
+  })
+}
+
+/// Data and flash are namespaced under "_data" and "_flash"
+/// keys rather than merged flat so neither can collide with the
+/// other — a session key called "_flash" won't shadow the
+/// actual flash dict. JSON was chosen over ETF or other formats
+/// because the cookie store sends it to browsers where binary
+/// Erlang terms wouldn't be readable.
+///
+pub fn encode_payload(
+  data: Dict(String, String),
+  flash: Dict(String, String),
+) -> String {
+  let to_json_object = fn(d) {
+    dict.to_list(d)
+    |> list.map(fn(entry) { #(entry.0, json.string(entry.1)) })
+    |> json.object
+  }
+
+  json.object([
+    #("_data", to_json_object(data)),
+    #("_flash", to_json_object(flash)),
+  ])
+  |> json.to_string
+}
+
+/// Falling back to empty dicts on any parse failure means a
+/// corrupt or truncated payload degrades to a fresh session
+/// rather than crashing the request. Using optional_field for
+/// both "_data" and "_flash" handles partial payloads — old
+/// sessions written before flash support was added will still
+/// load correctly with an empty flash dict.
+///
+pub fn decode_payload(
+  payload_json: String,
+) -> #(Dict(String, String), Dict(String, String)) {
+  let string_dict = decode.dict(decode.string, decode.string)
+
+  let decoder = {
+    use data <- decode.optional_field("_data", dict.new(), string_dict)
+    use flash <- decode.optional_field("_flash", dict.new(), string_dict)
+    decode.success(#(data, flash))
+  }
+
+  case json.parse(payload_json, decoder) {
+    Ok(result) -> result
+    Error(_) -> #(dict.new(), dict.new())
+  }
 }
 
 // ------------------------------------------------------------- Internal Public Functions
@@ -327,7 +494,6 @@ pub fn cookie_store() -> SessionStore {
 /// will save the cleared flash back — this enforces one-shot
 /// semantics even if the handler never writes to the session.
 ///
-@deprecated("use glimr/session.start instead")
 @internal
 pub fn start(
   id: String,
@@ -361,7 +527,6 @@ pub fn start(
 /// request. Stopping via a message rather than killing the
 /// process lets the actor shut down cleanly.
 ///
-@deprecated("use glimr/session.stop instead")
 @internal
 pub fn stop(session: Session) -> Nil {
   case session {
@@ -376,7 +541,6 @@ pub fn stop(session: Session) -> Nil {
 /// SessionState avoids adding separate accessors for each field
 /// the middleware needs.
 ///
-@deprecated("use glimr/session.get_state instead")
 @internal
 pub fn get_state(session: Session) -> Result(SessionState, Nil) {
   case session {
@@ -391,7 +555,6 @@ pub fn get_state(session: Session) -> Result(SessionState, Nil) {
 /// Hex encoding produces a URL-safe 64-character string
 /// suitable for cookie values.
 ///
-@deprecated("use glimr/session.generate_id instead")
 @internal
 pub fn generate_id() -> String {
   crypto_strong_random_bytes(32)
@@ -490,6 +653,125 @@ fn handle_message(
   }
 }
 
+/// Every public function needs the same fallback logic: use the
+/// cached store if one exists, otherwise return a safe default.
+/// Centralizing this avoids repeating the cache lookup and
+/// Error branch in every function and guarantees consistent "no
+/// store" behavior.
+///
+fn with_store(default: a, f: fn(SessionStore) -> a) -> a {
+  case get_cached() {
+    Ok(store) -> f(store)
+    Error(_) -> default
+  }
+}
+
+/// The expiry timestamp is checked on read rather than relying
+/// solely on GC, so an expired session is never served even if
+/// GC hasn't run yet. Returning an empty tuple on any failure
+/// (missing file, corrupt content, expired) means the caller
+/// always gets a valid session — either hydrated or fresh.
+///
+fn file_load(
+  base_path: String,
+  session_id: String,
+) -> #(dict.Dict(String, String), dict.Dict(String, String)) {
+  let path = base_path <> "/" <> session_id
+  let now = unix_timestamp.now()
+  let empty = #(dict.new(), dict.new())
+
+  let decoded = {
+    use content <- result.try(
+      simplifile.read(path) |> result.replace_error(Nil),
+    )
+    use #(expires_str, payload_json) <- result.try(string.split_once(
+      content,
+      "\n",
+    ))
+    use expires_at <- result.try(int.parse(expires_str))
+    case expires_at >= now {
+      True -> Ok(decode_payload(payload_json))
+      False -> Error(Nil)
+    }
+  }
+  result.unwrap(decoded, empty)
+}
+
+/// The expiry timestamp is written as the first line so GC can
+/// check it without parsing the JSON payload, keeping the GC
+/// scan fast even with many session files. Creating the
+/// directory on every save handles the cold-start case where
+/// the sessions directory doesn't exist yet.
+///
+fn file_save(
+  base_path: String,
+  session_id: String,
+  data: dict.Dict(String, String),
+  flash: dict.Dict(String, String),
+  lifetime: Int,
+) -> Nil {
+  let path = base_path <> "/" <> session_id
+  let encoded = encode_payload(data, flash)
+  let expires_at = unix_timestamp.now() + lifetime * 60
+  let content = int.to_string(expires_at) <> "\n" <> encoded
+
+  let _ = simplifile.create_directory_all(base_path)
+  let _ = simplifile.write(path, content)
+
+  Nil
+}
+
+/// Session invalidation must remove the file immediately so the
+/// old session ID can never be reused, even before GC runs.
+/// Ignoring delete errors is safe — the file may already be
+/// gone from a prior GC pass.
+///
+fn file_destroy(base_path: String, session_id: String) -> Nil {
+  let path = base_path <> "/" <> session_id
+  let _ = simplifile.delete(path)
+  Nil
+}
+
+/// Scans all session files and deletes expired ones. Called
+/// probabilistically by the session middleware so cleanup cost
+/// is amortized across requests. Silently ignoring a missing
+/// directory handles the case where no sessions have been
+/// created yet.
+///
+fn file_gc(base_path: String) -> Nil {
+  let now = unix_timestamp.now()
+
+  case simplifile.read_directory(base_path) {
+    Ok(files) -> list.each(files, gc_file(base_path, now, _))
+    Error(_) -> Nil
+  }
+}
+
+/// Only the first line (the expiry timestamp) needs to be
+/// parsed to decide whether to delete — reading the full
+/// payload would waste I/O on files that might be kept. Corrupt
+/// or unreadable files are left alone rather than deleted,
+/// avoiding data loss from transient I/O errors.
+///
+fn gc_file(base_path: String, now: Int, file: String) -> Nil {
+  let path = base_path <> "/" <> file
+  let expired = {
+    use content <- result.try(
+      simplifile.read(path) |> result.replace_error(Nil),
+    )
+    use #(expires_str, _) <- result.try(string.split_once(content, "\n"))
+    use expires_at <- result.map(int.parse(expires_str))
+    expires_at < now
+  }
+  case expired {
+    Ok(True) -> {
+      let _ = simplifile.delete(path)
+      Nil
+    }
+    _ -> Nil
+  }
+}
+
 // ------------------------------------------------------------- FFI Helpers
 
 /// Gleam has no built-in CSPRNG, so this wraps Erlang's
@@ -499,3 +781,20 @@ fn handle_message(
 ///
 @external(erlang, "crypto", "strong_rand_bytes")
 fn crypto_strong_random_bytes(n: Int) -> BitArray
+
+/// Writes the store to persistent_term so all BEAM processes
+/// can read it without message passing. This is ideal for data
+/// that changes rarely (once at boot) but is read on every
+/// request across all processes.
+///
+@external(erlang, "glimr_kernel_ffi", "cache_session_store")
+fn cache(store: SessionStore) -> Nil
+
+/// Returns the cached store or Error(Nil) if none has been
+/// cached yet. The Result type lets with_store distinguish "no
+/// store configured" from a real store, so the app degrades
+/// gracefully when sessions aren't set up rather than crashing
+/// on the first request.
+///
+@external(erlang, "glimr_kernel_ffi", "get_cached_session_store")
+fn get_cached() -> Result(SessionStore, Nil)

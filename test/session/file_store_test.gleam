@@ -3,8 +3,7 @@ import gleam/int
 import gleeunit/should
 import glimr/cache/file_cache
 import glimr/config/config
-import glimr/session/file_store
-import glimr/session/store
+import glimr/session
 import glimr/utils/unix_timestamp
 import simplifile
 
@@ -58,8 +57,8 @@ fn with_clean_session(f: fn() -> a) -> a {
   let pool = file_cache.start_pool("session_test")
 
   // Create and cache the session store
-  let session = file_store.create(pool)
-  store.cache_store(session)
+  let store = session.file_store(pool)
+  session.setup(store)
 
   let result = f()
 
@@ -71,7 +70,7 @@ fn with_clean_session(f: fn() -> a) -> a {
 
 pub fn load_nonexistent_session_returns_empty_test() {
   with_clean_session(fn() {
-    let #(data, flash) = store.load("nonexistent-id")
+    let #(data, flash) = session.load("nonexistent-id")
 
     data |> should.equal(dict.new())
     flash |> should.equal(dict.new())
@@ -87,9 +86,9 @@ pub fn save_and_load_data_test() {
       |> dict.insert("user_id", "42")
       |> dict.insert("role", "admin")
 
-    store.save("file-sess-1", data, dict.new())
+    session.save("file-sess-1", data, dict.new())
 
-    let #(loaded_data, loaded_flash) = store.load("file-sess-1")
+    let #(loaded_data, loaded_flash) = session.load("file-sess-1")
 
     dict.get(loaded_data, "user_id") |> should.equal(Ok("42"))
     dict.get(loaded_data, "role") |> should.equal(Ok("admin"))
@@ -104,9 +103,9 @@ pub fn save_and_load_flash_test() {
       |> dict.insert("success", "Saved!")
       |> dict.insert("info", "Note this")
 
-    store.save("file-sess-2", dict.new(), flash)
+    session.save("file-sess-2", dict.new(), flash)
 
-    let #(loaded_data, loaded_flash) = store.load("file-sess-2")
+    let #(loaded_data, loaded_flash) = session.load("file-sess-2")
 
     loaded_data |> should.equal(dict.new())
     dict.get(loaded_flash, "success") |> should.equal(Ok("Saved!"))
@@ -124,9 +123,9 @@ pub fn save_and_load_data_and_flash_test() {
       dict.new()
       |> dict.insert("warning", "Check your email")
 
-    store.save("file-sess-3", data, flash)
+    session.save("file-sess-3", data, flash)
 
-    let #(loaded_data, loaded_flash) = store.load("file-sess-3")
+    let #(loaded_data, loaded_flash) = session.load("file-sess-3")
 
     dict.get(loaded_data, "user_id") |> should.equal(Ok("99"))
     dict.get(loaded_flash, "warning") |> should.equal(Ok("Check your email"))
@@ -139,15 +138,15 @@ pub fn save_overwrites_existing_session_test() {
       dict.new()
       |> dict.insert("key", "first")
 
-    store.save("file-sess-4", data1, dict.new())
+    session.save("file-sess-4", data1, dict.new())
 
     let data2 =
       dict.new()
       |> dict.insert("key", "second")
 
-    store.save("file-sess-4", data2, dict.new())
+    session.save("file-sess-4", data2, dict.new())
 
-    let #(loaded_data, _) = store.load("file-sess-4")
+    let #(loaded_data, _) = session.load("file-sess-4")
     dict.get(loaded_data, "key") |> should.equal(Ok("second"))
   })
 }
@@ -160,23 +159,23 @@ pub fn destroy_removes_session_test() {
       dict.new()
       |> dict.insert("key", "value")
 
-    store.save("file-sess-5", data, dict.new())
+    session.save("file-sess-5", data, dict.new())
 
     // Verify it exists
-    let #(loaded, _) = store.load("file-sess-5")
+    let #(loaded, _) = session.load("file-sess-5")
     dict.get(loaded, "key") |> should.equal(Ok("value"))
 
     // Destroy it
-    store.destroy("file-sess-5")
+    session.destroy("file-sess-5")
 
     // Should be gone
-    let #(loaded_after, _) = store.load("file-sess-5")
+    let #(loaded_after, _) = session.load("file-sess-5")
     loaded_after |> should.equal(dict.new())
   })
 }
 
 pub fn destroy_nonexistent_does_not_crash_test() {
-  with_clean_session(fn() { store.destroy("nonexistent") })
+  with_clean_session(fn() { session.destroy("nonexistent") })
 }
 
 // ------------------------------------------------------------- Expiration Tests
@@ -193,7 +192,7 @@ pub fn load_expired_session_returns_empty_test() {
 
     // Loading an expired session should return empty dicts,
     // even without GC having run
-    let #(data, flash) = store.load("expired-sess")
+    let #(data, flash) = session.load("expired-sess")
     data |> should.equal(dict.new())
     flash |> should.equal(dict.new())
   })
@@ -211,7 +210,7 @@ pub fn load_valid_session_returns_data_test() {
     let _ = simplifile.write(session_dir <> "/valid-sess", valid_content)
 
     // Valid session should load fine
-    let #(data, _) = store.load("valid-sess")
+    let #(data, _) = session.load("valid-sess")
     dict.get(data, "key") |> should.equal(Ok("valid"))
   })
 }
@@ -219,7 +218,7 @@ pub fn load_valid_session_returns_data_test() {
 // ------------------------------------------------------------- GC Tests
 
 pub fn gc_does_not_crash_test() {
-  with_clean_session(fn() { store.gc() })
+  with_clean_session(fn() { session.gc() })
 }
 
 pub fn gc_removes_expired_session_test() {
@@ -233,10 +232,10 @@ pub fn gc_removes_expired_session_test() {
     let _ = simplifile.write(session_dir <> "/expired-sess", expired_content)
 
     // Run gc — should remove the expired session file
-    store.gc()
+    session.gc()
 
     // File should be deleted from disk
-    let #(data_after, _) = store.load("expired-sess")
+    let #(data_after, _) = session.load("expired-sess")
     data_after |> should.equal(dict.new())
   })
 }
@@ -253,10 +252,10 @@ pub fn gc_preserves_valid_session_test() {
     let _ = simplifile.write(session_dir <> "/valid-sess", valid_content)
 
     // Run gc — should NOT remove the valid session
-    store.gc()
+    session.gc()
 
     // Should still be loadable
-    let #(data, _) = store.load("valid-sess")
+    let #(data, _) = session.load("valid-sess")
     dict.get(data, "key") |> should.equal(Ok("valid"))
   })
 }
@@ -273,11 +272,11 @@ pub fn multiple_sessions_independent_test() {
       dict.new()
       |> dict.insert("user", "bob")
 
-    store.save("file-sess-a", data_a, dict.new())
-    store.save("file-sess-b", data_b, dict.new())
+    session.save("file-sess-a", data_a, dict.new())
+    session.save("file-sess-b", data_b, dict.new())
 
-    let #(loaded_a, _) = store.load("file-sess-a")
-    let #(loaded_b, _) = store.load("file-sess-b")
+    let #(loaded_a, _) = session.load("file-sess-a")
+    let #(loaded_b, _) = session.load("file-sess-b")
 
     dict.get(loaded_a, "user") |> should.equal(Ok("alice"))
     dict.get(loaded_b, "user") |> should.equal(Ok("bob"))

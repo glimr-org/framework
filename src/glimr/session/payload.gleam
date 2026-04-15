@@ -22,6 +22,7 @@ import gleam/list
 /// because the cookie store sends it to browsers where binary
 /// Erlang terms wouldn't be readable.
 ///
+@deprecated("use glimr/session.encode_payload instead")
 pub fn encode(data: Dict(String, String), flash: Dict(String, String)) -> String {
   let to_json_object = fn(d) {
     dict.to_list(d)
@@ -43,6 +44,7 @@ pub fn encode(data: Dict(String, String), flash: Dict(String, String)) -> String
 /// sessions written before flash support was added will still
 /// load correctly with an empty flash dict.
 ///
+@deprecated("use glimr/session.decode_payload instead")
 pub fn decode(
   payload_json: String,
 ) -> #(Dict(String, String), Dict(String, String)) {

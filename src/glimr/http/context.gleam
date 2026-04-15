@@ -10,7 +10,7 @@
 
 import glimr/http/request.{type Request}
 import glimr/http/response.{type ResponseFormat}
-import glimr/session/session.{type Session}
+import glimr/session.{type Session}
 
 // ------------------------------------------------------------- Public Types
 
