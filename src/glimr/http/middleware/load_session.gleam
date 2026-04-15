@@ -16,8 +16,9 @@ import gleam/http/response
 import gleam/option
 import glimr/config/config
 import glimr/http/context.{type Context, Context}
-import glimr/http/http.{type Request, type Response} as _glimr_http
-import glimr/http/kernel.{type Next}
+import glimr/http/middleware.{type Next}
+import glimr/http/request.{type Request} as _glimr_request
+import glimr/http/response.{type Response} as _glimr_response
 import glimr/session/session
 import glimr/session/store
 import wisp

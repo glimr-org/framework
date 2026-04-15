@@ -7,7 +7,7 @@
 import gleam/list
 import gleam/string
 import glimr/http/context.{type Context}
-import glimr/http/http.{type Response}
+import glimr/http/response.{type Response}
 import wisp
 
 // ------------------------------------------------------------- Public Functions
@@ -22,6 +22,7 @@ import wisp
 /// redirect.to("/dashboard")
 /// ```
 ///
+@deprecated("use glimr/http/response.redirect instead")
 pub fn to(path: String) -> Response {
   wisp.redirect(normalize_path(path))
 }
@@ -37,6 +38,7 @@ pub fn to(path: String) -> Response {
 /// redirect.permanent("/dashboard")
 /// ```
 ///
+@deprecated("use glimr/http/response.redirect_permanent instead")
 pub fn permanent(path: String) -> Response {
   wisp.permanent_redirect(normalize_path(path))
 }
@@ -50,12 +52,13 @@ pub fn permanent(path: String) -> Response {
 /// redirect.back(ctx)
 /// ```
 ///
+@deprecated("use glimr/http/response.redirect_back instead")
 pub fn back(ctx: Context(app)) -> Response {
   let assert Ok(path) =
     ctx.req.headers
     |> list.key_find("referer")
 
-  to(path)
+  response.redirect(path)
 }
 
 // ------------------------------------------------------------- Private Functions

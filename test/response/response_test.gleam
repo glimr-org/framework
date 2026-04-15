@@ -1,7 +1,7 @@
 import gleam/json
 import gleam/list
 import gleeunit/should
-import glimr/response/response
+import glimr/http/response
 import wisp
 
 // ------------------------------------------------------------- html tests

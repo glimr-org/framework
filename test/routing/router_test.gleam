@@ -2,8 +2,8 @@ import gleam/http
 import gleam/http/request
 import gleeunit/should
 import glimr/http/context
-import glimr/http/kernel
-import glimr/response/response
+import glimr/http/middleware
+import glimr/http/response
 import glimr/routing/router
 import routing/helpers
 import wisp
@@ -14,7 +14,7 @@ pub fn prefix_match_exact_test() {
   let groups = [
     router.RouteGroup(
       prefix: "/api",
-      middleware_group: kernel.Api,
+      middleware_group: middleware.Api,
       routes: fn(_path, _method, _ctx) {
         // This shouldn't be called
         response.empty(500)
@@ -22,7 +22,7 @@ pub fn prefix_match_exact_test() {
     ),
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(_path, _method, _ctx) { response.empty(200) },
     ),
   ]
@@ -41,12 +41,12 @@ pub fn prefix_match_api_route_test() {
   let groups = [
     router.RouteGroup(
       prefix: "/api",
-      middleware_group: kernel.Api,
+      middleware_group: middleware.Api,
       routes: fn(_path, _method, _ctx) { response.empty(201) },
     ),
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(_path, _method, _ctx) { response.empty(200) },
     ),
   ]
@@ -65,12 +65,12 @@ pub fn prefix_match_nested_prefix_test() {
   let groups = [
     router.RouteGroup(
       prefix: "/api/v1",
-      middleware_group: kernel.Api,
+      middleware_group: middleware.Api,
       routes: fn(_path, _method, _ctx) { response.empty(202) },
     ),
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(_path, _method, _ctx) { response.empty(200) },
     ),
   ]
@@ -90,12 +90,12 @@ pub fn prefix_match_first_wins_test() {
   let groups = [
     router.RouteGroup(
       prefix: "/api",
-      middleware_group: kernel.Api,
+      middleware_group: middleware.Api,
       routes: fn(_path, _method, _ctx) { response.empty(201) },
     ),
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(_path, _method, _ctx) { response.empty(200) },
     ),
   ]
@@ -116,7 +116,7 @@ pub fn prefix_match_catch_all_test() {
   let groups = [
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(_path, _method, _ctx) { response.empty(200) },
     ),
   ]
@@ -137,7 +137,7 @@ pub fn full_path_passed_to_handler_test() {
   let groups = [
     router.RouteGroup(
       prefix: "/api",
-      middleware_group: kernel.Api,
+      middleware_group: middleware.Api,
       routes: fn(path, _method, _ctx) {
         // Path should include full path with prefix
         case path {
@@ -148,7 +148,7 @@ pub fn full_path_passed_to_handler_test() {
     ),
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(_path, _method, _ctx) { response.empty(200) },
     ),
   ]
@@ -167,7 +167,7 @@ pub fn path_stripping_empty_prefix_no_change_test() {
   let groups = [
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(path, _method, _ctx) {
         // Path should include all segments
         case path {
@@ -192,7 +192,7 @@ pub fn full_path_nested_prefix_test() {
   let groups = [
     router.RouteGroup(
       prefix: "/api/v1",
-      middleware_group: kernel.Api,
+      middleware_group: middleware.Api,
       routes: fn(path, _method, _ctx) {
         // Path should include full path with nested prefix
         case path {
@@ -217,7 +217,7 @@ pub fn path_stripping_root_path_test() {
   let groups = [
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(path, _method, _ctx) {
         // Root path becomes empty list
         case path {
@@ -244,7 +244,7 @@ pub fn handler_pattern_matching_exact_test() {
   let groups = [
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(path, method, _ctx) {
         case path, method {
           ["users"], http.Get -> response.empty(200)
@@ -268,7 +268,7 @@ pub fn handler_pattern_matching_with_id_test() {
   let groups = [
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(path, method, _ctx) {
         case path, method {
           ["users", id], http.Get -> {
@@ -298,7 +298,7 @@ pub fn handler_pattern_matching_method_test() {
   let groups = [
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(path, method, _ctx) {
         case path, method {
           ["users"], http.Get -> response.empty(200)
@@ -340,7 +340,7 @@ pub fn handler_pattern_matching_catch_all_test() {
   let groups = [
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(path, method, _ctx) {
         case path, method {
           ["users"], http.Get -> response.empty(200)
@@ -366,12 +366,12 @@ pub fn middleware_group_api_test() {
   let groups = [
     router.RouteGroup(
       prefix: "/api",
-      middleware_group: kernel.Api,
+      middleware_group: middleware.Api,
       routes: fn(_path, _method, _ctx) { response.empty(200) },
     ),
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(_path, _method, _ctx) { response.empty(200) },
     ),
   ]
@@ -383,15 +383,15 @@ pub fn middleware_group_api_test() {
   let response =
     router.handle(ctx, groups, fn(ctx, middleware_group, next) {
       case middleware_group {
-        kernel.Api -> {
+        middleware.Api -> {
           let resp = next(ctx)
           wisp.set_header(resp, "x-middleware", "api")
         }
-        kernel.Web -> {
+        middleware.Web -> {
           let resp = next(ctx)
           wisp.set_header(resp, "x-middleware", "web")
         }
-        kernel.Custom(_) -> {
+        middleware.Custom(_) -> {
           let resp = next(ctx)
           wisp.set_header(resp, "x-middleware", "custom")
         }
@@ -406,12 +406,12 @@ pub fn middleware_group_web_test() {
   let groups = [
     router.RouteGroup(
       prefix: "/api",
-      middleware_group: kernel.Api,
+      middleware_group: middleware.Api,
       routes: fn(_path, _method, _ctx) { response.empty(200) },
     ),
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(_path, _method, _ctx) { response.empty(200) },
     ),
   ]
@@ -423,15 +423,15 @@ pub fn middleware_group_web_test() {
   let response =
     router.handle(ctx, groups, fn(ctx, middleware_group, next) {
       case middleware_group {
-        kernel.Api -> {
+        middleware.Api -> {
           let resp = next(ctx)
           wisp.set_header(resp, "x-middleware", "api")
         }
-        kernel.Web -> {
+        middleware.Web -> {
           let resp = next(ctx)
           wisp.set_header(resp, "x-middleware", "web")
         }
-        kernel.Custom(_) -> {
+        middleware.Custom(_) -> {
           let resp = next(ctx)
           wisp.set_header(resp, "x-middleware", "custom")
         }
@@ -462,7 +462,7 @@ pub fn handler_404_passes_through_test() {
   let groups = [
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(path, method, _ctx) {
         case path, method {
           ["users"], http.Get -> response.empty(200)
@@ -488,7 +488,7 @@ pub fn context_passed_to_handler_test() {
   let groups = [
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(_path, _method, ctx: context.Context(helpers.TestApp)) {
         // Handler can access app context
         case ctx.app {
@@ -513,7 +513,7 @@ pub fn request_passed_to_handler_test() {
   let groups = [
     router.RouteGroup(
       prefix: "",
-      middleware_group: kernel.Web,
+      middleware_group: middleware.Web,
       routes: fn(_path, _method, ctx: context.Context(helpers.TestApp)) {
         // Handler can access request via context
         case ctx.req.method {

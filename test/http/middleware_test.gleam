@@ -4,7 +4,7 @@ import gleam/option.{type Option, None, Some}
 import gleeunit/should
 import glimr/http/context.{type Context, Context}
 import glimr/http/middleware
-import glimr/response/response
+import glimr/http/response
 import wisp
 
 pub type TestApp {

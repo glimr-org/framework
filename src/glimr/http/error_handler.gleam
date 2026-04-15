@@ -11,8 +11,7 @@
 ////
 
 import gleam/json
-import glimr/http/http.{type Response}
-import glimr/response/response.{type ResponseFormat}
+import glimr/http/response.{type Response, type ResponseFormat}
 
 // ------------------------------------------------------------- Public Functions
 
@@ -23,6 +22,7 @@ import glimr/response/response.{type ResponseFormat}
 /// earlier in the pipeline, so we just dispatch to the right
 /// handler automatically.
 ///
+@deprecated("use glimr/http/response.default_responses instead")
 pub fn default_responses(
   response_format: ResponseFormat,
   handle_request: fn() -> Response,

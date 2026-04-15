@@ -11,7 +11,7 @@ import glimr/http/middleware/log_request
 import glimr/http/middleware/method_override
 import glimr/http/middleware/rescue_crashes
 import glimr/http/middleware/serve_static
-import glimr/response/response
+import glimr/http/response
 import routing/helpers.{TestApp}
 import simplifile
 import wisp

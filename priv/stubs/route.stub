@@ -1,4 +1,4 @@
-import glimr/response/response
+import glimr/http/response
 
 pub fn routes(path, _method, _ctx) {
   case path {

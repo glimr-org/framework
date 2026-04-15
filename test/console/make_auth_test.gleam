@@ -96,7 +96,7 @@ pub fn adds_import_after_last_import_line_test() {
   let input =
     "import app/http/context/ctx.{type Context}
 import app/http/middleware/load_session
-import glimr/http/kernel.{type MiddlewareGroup}
+import glimr/http/middleware.{type MiddlewareGroup}
 import wisp.{type Request, type Response}
 
 pub fn handle() {
@@ -110,7 +110,7 @@ pub fn handle() {
 pub fn import_placed_after_last_import_test() {
   let input =
     "import app/http/context/ctx.{type Context}
-import glimr/http/kernel.{type MiddlewareGroup}
+import glimr/http/middleware.{type MiddlewareGroup}
 import wisp.{type Request, type Response}
 
 pub fn handle() {
@@ -136,7 +136,7 @@ import wisp.{type Request, type Response}
 
 pub fn handle() {
   case middleware_group {
-    kernel.Web | _ -> {
+    middleware.Web | _ -> {
       [
         serve_static.run,
         log_request.run,
@@ -160,7 +160,7 @@ import wisp.{type Request, type Response}
 
 pub fn handle() {
   case middleware_group {
-    kernel.Api -> {
+    middleware.Api -> {
       [
         json_errors.run,
         load_session.run,
@@ -168,7 +168,7 @@ pub fn handle() {
       ]
       |> middleware.apply(req, ctx, router)
     }
-    kernel.Web | _ -> {
+    middleware.Web | _ -> {
       [
         serve_static.run,
         load_session.run,
@@ -193,7 +193,7 @@ import wisp.{type Request, type Response}
 
 pub fn handle() {
   case middleware_group {
-    kernel.Web | _ -> {
+    middleware.Web | _ -> {
       [
         serve_static.run,
         log_request.run,
@@ -224,7 +224,7 @@ import wisp.{type Request, type Response}
 
 pub fn handle() {
   case middleware_group {
-    kernel.Web | _ -> {
+    middleware.Web | _ -> {
       [
         load_session.run,
         // ...
@@ -250,7 +250,7 @@ import wisp.{type Request, type Response}
 
 pub fn handle() {
   case middleware_group {
-    kernel.Web | _ -> {
+    middleware.Web | _ -> {
       [
         load_session.run,
         load_user.run,

@@ -20,8 +20,7 @@ import gleam/string
 import glimr/db/db.{type DbPool}
 import glimr/forms/form.{type UploadedFile}
 import glimr/http/context.{type Context}
-import glimr/http/http.{type Response}
-import glimr/response/response.{HTML, JSON}
+import glimr/http/response.{type Response, HTML, JSON}
 import glimr/session/session
 import simplifile
 import wisp.{type FormData as WispFormData}

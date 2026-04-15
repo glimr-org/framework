@@ -1,8 +1,8 @@
 import app/app.{type App}
 import app/http/middleware/@{{ auth_middleware }}
 import glimr/http/context.{type Context}
-import glimr/http/http.{type Response}
 import glimr/http/middleware
+import glimr/http/response.{type Response}
 import glimr/response/redirect
 import glimr/session/session
 import glimr_auth/auth

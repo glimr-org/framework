@@ -1,9 +1,9 @@
-import gleam/http
+import gleam/http as gleam_http
 import gleam/http/request
 import gleam/list
 import gleeunit/should
 import glimr/http/context
-import glimr/response/redirect
+import glimr/http/response
 import wisp
 
 @external(erlang, "erlang", "make_ref")
@@ -16,12 +16,12 @@ pub type TestApp {
 pub fn back_test() {
   let req =
     request.new()
-    |> request.set_method(http.Get)
+    |> request.set_method(gleam_http.Get)
     |> request.set_header("referer", "https://example.com/previous-page")
     |> request.set_body(stub_connection())
   let ctx = context.new(req, TestApp)
 
-  let res = redirect.back(ctx)
+  let res = response.redirect_back(ctx.req)
 
   res.status
   |> should.equal(303)
@@ -33,7 +33,7 @@ pub fn back_test() {
 }
 
 pub fn to_test() {
-  let res = redirect.to("/success")
+  let res = response.redirect("/success")
 
   res.status
   |> should.equal(303)
@@ -45,7 +45,7 @@ pub fn to_test() {
 }
 
 pub fn to_with_normalization_test() {
-  let res = redirect.to("success/")
+  let res = response.redirect("success/")
 
   res.status
   |> should.equal(303)
@@ -57,7 +57,7 @@ pub fn to_with_normalization_test() {
 }
 
 pub fn to_with_normalization_home_test() {
-  let res = redirect.to("/")
+  let res = response.redirect("/")
 
   res.status
   |> should.equal(303)
@@ -69,7 +69,7 @@ pub fn to_with_normalization_home_test() {
 }
 
 pub fn permanent_test() {
-  let res = redirect.permanent("/success")
+  let res = response.redirect_permanent("/success")
 
   res.status
   |> should.equal(308)

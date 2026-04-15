@@ -16,6 +16,7 @@ import wisp
 /// library only requires changing this alias, not every file
 /// that handles requests.
 ///
+@deprecated("use glimr/http/request.Request instead")
 pub type Request =
   wisp.Request
 
@@ -23,5 +24,6 @@ pub type Request =
 /// so controllers and middleware never depend on wisp directly.
 /// Keeps the HTTP library as a swappable implementation detail.
 ///
+@deprecated("use glimr/http/response.Response instead")
 pub type Response =
   wisp.Response

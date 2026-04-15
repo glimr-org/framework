@@ -12,7 +12,7 @@
 import gleam/dict
 import gleam/list
 import glimr/config/config
-import glimr/http/kernel.{type MiddlewareGroup}
+import glimr/http/middleware.{type MiddlewareGroup}
 import tom
 
 // ------------------------------------------------------------- Public Types
@@ -74,9 +74,9 @@ fn parse_group(name: String, toml: tom.Toml) -> RouteGroupConfig {
   let middleware_str = config.toml_get_string(toml, "middleware", "web")
 
   let middleware = case middleware_str {
-    "web" -> kernel.Web
-    "api" -> kernel.Api
-    _ -> kernel.Custom(middleware_str)
+    "web" -> middleware.Web
+    "api" -> middleware.Api
+    _ -> middleware.Custom(middleware_str)
   }
 
   RouteGroupConfig(name: name, prefix: prefix, middleware: middleware)

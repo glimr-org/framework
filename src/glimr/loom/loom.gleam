@@ -11,7 +11,7 @@ import gleam/list
 import gleam/option.{type Option}
 import gleam/result
 import gleam/string
-import glimr/response/response
+import glimr/http/response
 import simplifile
 
 // ------------------------------------------------------------- Public Constants

@@ -8,7 +8,8 @@
 ////
 
 import glimr/http/context.{type Context}
-import glimr/http/http.{type Response}
+import glimr/http/middleware
+import glimr/http/response.{type Response}
 import wisp
 
 // ------------------------------------------------------------- Public Types
@@ -19,6 +20,7 @@ import wisp
 /// definition and makes it clear what `next` actually is when
 /// you're reading middleware code.
 ///
+@deprecated("use glimr/http/middleware.Next instead")
 pub type Next(app) =
   fn(Context(app)) -> Response
 
@@ -27,8 +29,9 @@ pub type Next(app) =
 /// means the route compiler can generate middleware wiring code
 /// without spelling out the full function signature every time.
 ///
+@deprecated("use glimr/http/middleware.Middleware instead")
 pub type Middleware(app) =
-  fn(Context(app), Next(app)) -> Response
+  fn(Context(app), middleware.Next(app)) -> Response
 
 /// Web routes need HTML error pages and static file serving,
 /// API routes need JSON errors and CORS headers — lumping them
@@ -37,6 +40,7 @@ pub type Middleware(app) =
 /// middleware stack automatically based on what the developer
 /// declared in their route annotations.
 ///
+@deprecated("use glimr/http/middleware.MiddlewareGroup instead")
 pub type MiddlewareGroup {
   Web
   Api
@@ -50,6 +54,7 @@ pub type MiddlewareGroup {
 /// readable request logs. Wrapping it here keeps the boot
 /// sequence free of direct wisp imports.
 ///
+@deprecated("use glimr/http/glimr_mist.configure_logger instead")
 pub fn configure_logger() -> Nil {
   wisp.configure_logger()
 }

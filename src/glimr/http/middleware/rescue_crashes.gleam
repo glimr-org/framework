@@ -18,9 +18,8 @@
 
 import glimr/http/context.{type Context}
 import glimr/http/fail
-import glimr/http/http.{type Response}
-import glimr/http/kernel.{type Next}
-import glimr/response/response
+import glimr/http/middleware.{type Next}
+import glimr/http/response.{type Response}
 import wisp
 
 // ------------------------------------------------------------- Public Functions

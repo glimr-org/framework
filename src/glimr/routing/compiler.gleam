@@ -171,7 +171,7 @@ pub fn write_compiled_file(
     <> http_import
     <> middleware_import
     <> redirect_import
-    <> "\nimport glimr/response/response"
+    <> "\nimport glimr/http/response"
     <> "\n\npub fn routes("
     <> fn_args
     <> ") {\n"
@@ -1157,7 +1157,7 @@ fn get_specific_error_hint(msg: String) -> String {
       "Handler function has incorrect number of parameters.\n"
       <> "Expected signature: fn(ctx: Context(App)) or fn(ctx: Context(App), ...path_params)"
     _ if is_wrong_return ->
-      "Handler function must return a glimr/http/http.Response.\n"
+      "Handler function must return a glimr/http/response.Response.\n"
       <> "Make sure your handler returns a Response type."
     _ if is_unknown_var ->
       "Handler function not found.\n"

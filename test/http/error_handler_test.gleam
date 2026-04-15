@@ -1,7 +1,6 @@
 import gleam/string
 import gleeunit/should
-import glimr/http/error_handler
-import glimr/response/response
+import glimr/http/response
 import wisp
 
 // ------------------------------------------------------------- HTML Response Tests
@@ -9,7 +8,7 @@ import wisp
 pub fn html_200_unchanged_test() {
   let resp = response.empty(200)
 
-  let result = error_handler.default_responses(response.HTML, fn() { resp })
+  let result = response.default_responses(response.HTML, fn() { resp })
 
   result.status
   |> should.equal(200)
@@ -18,7 +17,7 @@ pub fn html_200_unchanged_test() {
 pub fn html_404_test() {
   let resp = response.empty(404)
 
-  let result = error_handler.default_responses(response.HTML, fn() { resp })
+  let result = response.default_responses(response.HTML, fn() { resp })
 
   result.status
   |> should.equal(404)
@@ -36,7 +35,7 @@ pub fn html_404_test() {
 pub fn html_405_test() {
   let resp = response.empty(405)
 
-  let result = error_handler.default_responses(response.HTML, fn() { resp })
+  let result = response.default_responses(response.HTML, fn() { resp })
 
   result.status
   |> should.equal(405)
@@ -54,7 +53,7 @@ pub fn html_405_test() {
 pub fn html_400_test() {
   let resp = response.empty(400)
 
-  let result = error_handler.default_responses(response.HTML, fn() { resp })
+  let result = response.default_responses(response.HTML, fn() { resp })
 
   result.status
   |> should.equal(400)
@@ -72,7 +71,7 @@ pub fn html_400_test() {
 pub fn html_413_test() {
   let resp = response.empty(413)
 
-  let result = error_handler.default_responses(response.HTML, fn() { resp })
+  let result = response.default_responses(response.HTML, fn() { resp })
 
   result.status
   |> should.equal(413)
@@ -90,7 +89,7 @@ pub fn html_413_test() {
 pub fn html_500_test() {
   let resp = response.empty(500)
 
-  let result = error_handler.default_responses(response.HTML, fn() { resp })
+  let result = response.default_responses(response.HTML, fn() { resp })
 
   result.status
   |> should.equal(500)
@@ -110,7 +109,7 @@ pub fn html_500_test() {
 pub fn json_200_unchanged_test() {
   let resp = response.empty(200)
 
-  let result = error_handler.default_responses(response.JSON, fn() { resp })
+  let result = response.default_responses(response.JSON, fn() { resp })
 
   result.status
   |> should.equal(200)
@@ -119,7 +118,7 @@ pub fn json_200_unchanged_test() {
 pub fn json_404_test() {
   let resp = response.empty(404)
 
-  let result = error_handler.default_responses(response.JSON, fn() { resp })
+  let result = response.default_responses(response.JSON, fn() { resp })
 
   result.status
   |> should.equal(404)
@@ -146,7 +145,7 @@ pub fn json_404_test() {
 pub fn json_405_test() {
   let resp = response.empty(405)
 
-  let result = error_handler.default_responses(response.JSON, fn() { resp })
+  let result = response.default_responses(response.JSON, fn() { resp })
 
   result.status
   |> should.equal(405)
@@ -164,7 +163,7 @@ pub fn json_405_test() {
 pub fn json_400_test() {
   let resp = response.empty(400)
 
-  let result = error_handler.default_responses(response.JSON, fn() { resp })
+  let result = response.default_responses(response.JSON, fn() { resp })
 
   result.status
   |> should.equal(400)
@@ -182,7 +181,7 @@ pub fn json_400_test() {
 pub fn json_422_test() {
   let resp = response.empty(422)
 
-  let result = error_handler.default_responses(response.JSON, fn() { resp })
+  let result = response.default_responses(response.JSON, fn() { resp })
 
   result.status
   |> should.equal(422)
@@ -200,7 +199,7 @@ pub fn json_422_test() {
 pub fn json_413_test() {
   let resp = response.empty(413)
 
-  let result = error_handler.default_responses(response.JSON, fn() { resp })
+  let result = response.default_responses(response.JSON, fn() { resp })
 
   result.status
   |> should.equal(413)
@@ -218,7 +217,7 @@ pub fn json_413_test() {
 pub fn json_500_test() {
   let resp = response.empty(500)
 
-  let result = error_handler.default_responses(response.JSON, fn() { resp })
+  let result = response.default_responses(response.JSON, fn() { resp })
 
   result.status
   |> should.equal(500)

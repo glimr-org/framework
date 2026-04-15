@@ -7,8 +7,39 @@
 //// apply a list of middleware inline with `use`.
 
 import glimr/http/context.{type Context}
-import glimr/http/http.{type Response}
-import glimr/http/kernel.{type Middleware}
+import glimr/http/response.{type Response}
+
+// ------------------------------------------------------------- Public Types
+
+/// Middleware functions receive a `next` callback they can call
+/// to continue the chain. Naming this signature avoids
+/// repeating `fn(Context(app)) -> Response` in every middleware
+/// definition and makes it clear what `next` actually is when
+/// you're reading middleware code.
+///
+pub type Next(app) =
+  fn(Context(app)) -> Response
+
+/// The shape of a middleware function — takes a context and the
+/// next handler in the chain. Having a named type for this
+/// means the route compiler can generate middleware wiring code
+/// without spelling out the full function signature every time.
+///
+pub type Middleware(app) =
+  fn(Context(app), Next(app)) -> Response
+
+/// Web routes need HTML error pages and static file serving,
+/// API routes need JSON errors and CORS headers — lumping them
+/// together means one group gets the wrong defaults. Splitting
+/// into groups lets the route compiler wire the right
+/// middleware stack automatically based on what the developer
+/// declared in their route annotations.
+///
+pub type MiddlewareGroup {
+  Web
+  Api
+  Custom(String)
+}
 
 // ------------------------------------------------------------- Public Functions
 

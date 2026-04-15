@@ -127,8 +127,7 @@ fn generate_imports(
   let db_import = "\nimport glimr/db/db"
 
   let query_imports = case has_queries {
-    True ->
-      "\nimport glimr/http/http.{type Response}\nimport glimr/response/response"
+    True -> "\nimport glimr/http/response.{type Response}"
     False -> ""
   }
 

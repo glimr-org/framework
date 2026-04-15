@@ -58,6 +58,15 @@ pub fn handler(
   }
 }
 
+/// Wisp's logger setup needs to run before the HTTP server
+/// starts or you get raw Erlang crash reports instead of
+/// readable request logs. Wrapping it here keeps the boot
+/// sequence free of direct wisp imports.
+///
+pub fn configure_logger() -> Nil {
+  wisp.configure_logger()
+}
+
 // ------------------------------------------------------------- Private Functions
 
 /// A request to /loom/ws could be a regular HTTP request (e.g.,

@@ -11,8 +11,8 @@ import gleam/http/response
 import gleam/list
 import gleam/string
 import glimr/http/context.{type Context}
-import glimr/http/http.{type Response} as _glimr_http
-import glimr/http/kernel.{type MiddlewareGroup}
+import glimr/http/middleware.{type MiddlewareGroup}
+import glimr/http/response.{type Response} as _glimr_response
 import glimr/routing/route_group
 import wisp
 
@@ -79,7 +79,7 @@ pub fn handle(
 
     // No matching group (should never happen with catch-all)
     Error(_) -> {
-      use _ctx <- kernel_handle(ctx, kernel.Web)
+      use _ctx <- kernel_handle(ctx, middleware.Web)
       response.Response(404, [], wisp.Text(""))
     }
   }

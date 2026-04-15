@@ -12,9 +12,10 @@
 import gleam/http.{type Method}
 import gleam/int
 import gleam/json.{type Json}
+import gleam/list
 import gleam/string
 import gleam/string_tree.{type StringTree}
-import glimr/http/response.{type Response}
+import glimr/http/request.{type Request}
 import simplifile
 import wisp
 
@@ -26,10 +27,16 @@ import wisp
 /// directory structure is a one-line fix instead of a
 /// find-and-replace across the codebase.
 ///
-@deprecated("use glimr/http/response.views_path instead")
 pub const views_path = "src/resources/views/"
 
 // ------------------------------------------------------------- Public Types
+
+/// Same idea as Request — the response type is re-exported here
+/// so controllers and middleware never depend on wisp directly.
+/// Keeps the HTTP library as a swappable implementation detail.
+///
+pub type Response =
+  wisp.Response
 
 /// The error handler middleware needs to know whether to render
 /// an HTML error page or a JSON `{"error": "..."}`, and
@@ -38,7 +45,6 @@ pub const views_path = "src/resources/views/"
 /// request context lets downstream code branch cleanly with a
 /// single pattern match.
 ///
-@deprecated("use glimr/http/response.ResponseFormat instead")
 pub type ResponseFormat {
   HTML
   JSON
@@ -59,7 +65,6 @@ pub type ResponseFormat {
 /// response.html(html, 200)
 /// ```
 ///
-@deprecated("use glimr/http/response.html instead")
 pub fn html(content: String, status: Int) -> Response {
   wisp.html_response(content, status)
 }
@@ -75,7 +80,7 @@ pub fn html(content: String, status: Int) -> Response {
 /// response.loom(welcome.render(), 200)
 /// ```
 ///
-@deprecated("use glimr/http/response.string_tree instead")
+@deprecated("Use response.string_tree instead")
 pub fn loom(content: StringTree, status: Int) -> Response {
   wisp.response(status)
   |> wisp.set_header("content-type", "text/html; charset=utf-8")
@@ -93,7 +98,6 @@ pub fn loom(content: StringTree, status: Int) -> Response {
 /// response.string_tree(welcome.render(), 200)
 /// ```
 ///
-@deprecated("use glimr/http/response.string_tree instead")
 pub fn string_tree(content: StringTree, status: Int) -> Response {
   wisp.response(status)
   |> wisp.set_header("content-type", "text/html; charset=utf-8")
@@ -113,10 +117,9 @@ pub fn string_tree(content: StringTree, status: Int) -> Response {
 /// response.html_file("contact/success.html", 200)
 /// ```
 ///
-@deprecated("use glimr/http/response.html_file instead")
 pub fn html_file(file_path: String, status: Int) -> Response {
   let path = strip_leading_slashes(file_path)
-  let assert Ok(content) = simplifile.read(response.views_path <> path)
+  let assert Ok(content) = simplifile.read(views_path <> path)
 
   wisp.html_response(content, status)
 }
@@ -140,7 +143,6 @@ pub fn html_file(file_path: String, status: Int) -> Response {
 /// |> response.json(200)
 /// ```
 ///
-@deprecated("use glimr/http/response.json instead")
 pub fn json(json: Json, status: Int) -> Response {
   json.to_string(json)
   |> wisp.json_response(status)
@@ -159,7 +161,6 @@ pub fn json(json: Json, status: Int) -> Response {
 /// |> response.header("content-type", "application/json")
 /// ```
 ///
-@deprecated("use glimr/http/response.header instead")
 pub fn header(response: Response, key: String, value: String) -> Response {
   response
   |> wisp.set_header(key, value)
@@ -182,12 +183,11 @@ pub fn header(response: Response, key: String, value: String) -> Response {
 /// response.error(500)
 /// ```
 ///
-@deprecated("use glimr/http/response.error instead")
 pub fn error(status: Int) -> Response {
   let file_name = "errors/" <> int.to_string(status) <> ".html"
 
-  case simplifile.read(response.views_path <> file_name) {
-    Ok(content) -> response.html(content, status)
+  case simplifile.read(views_path <> file_name) {
+    Ok(content) -> html(content, status)
     Error(_) -> generic_error_page(status)
   }
 }
@@ -199,7 +199,6 @@ pub fn error(status: Int) -> Response {
 /// here means both formats always agree on what to call each
 /// status code.
 ///
-@deprecated("use glimr/http/response.status_reason instead")
 pub fn status_reason(status: Int) -> String {
   case status {
     400 -> "Bad Request"
@@ -233,7 +232,6 @@ pub fn status_reason(status: Int) -> String {
 /// response.empty(401)
 /// ```
 ///
-@deprecated("use glimr/http/response.empty instead")
 pub fn empty(status: Int) -> Response {
   wisp.response(status)
 }
@@ -244,7 +242,6 @@ pub fn empty(status: Int) -> Response {
 /// out of both — and if we ever want 404s to go through the
 /// custom error page system, there's one place to change.
 ///
-@deprecated("use glimr/http/response.not_found instead")
 pub fn not_found() -> Response {
   wisp.not_found()
 }
@@ -255,7 +252,6 @@ pub fn not_found() -> Response {
 /// imports out of controller code so the abstraction boundary
 /// holds.
 ///
-@deprecated("use glimr/http/response.internal_server_error instead")
 pub fn internal_server_error() -> Response {
   wisp.internal_server_error()
 }
@@ -266,9 +262,71 @@ pub fn internal_server_error() -> Response {
 /// compiler generates these automatically so developers get
 /// correct HTTP semantics without thinking about it.
 ///
-@deprecated("use glimr/http/response.method_not_allowed instead")
 pub fn method_not_allowed(allowed: List(Method)) -> Response {
   wisp.method_not_allowed(allowed)
+}
+
+/// A single middleware entry handles both web and API error
+/// formatting by checking the response format flag. This means
+/// routes that serve both HTML and JSON traffic don't need
+/// separate error middleware — the format is already known from
+/// earlier in the pipeline, so we just dispatch to the right
+/// handler automatically.
+///
+pub fn default_responses(
+  response_format: ResponseFormat,
+  handle_request: fn() -> Response,
+) -> Response {
+  case response_format {
+    HTML -> default_html_responses(handle_request)
+    JSON -> default_json_responses(handle_request)
+  }
+}
+
+/// Sends a temporary redirect (HTTP 303 See Other) to the
+/// specified path. The location header directs the browser to
+/// the new URL for this request only.
+///
+/// *Example:*
+///
+/// ```gleam
+/// response.redirect("/dashboard")
+/// ```
+///
+pub fn redirect(path: String) -> Response {
+  wisp.redirect(normalize_path(path))
+}
+
+/// Sends a permanent redirect (HTTP 308) to the specified path.
+/// Browsers will cache this redirect and automatically use the
+/// new location for all subsequent requests to the original
+/// URL.
+///
+/// *Example:*
+///
+/// ```gleam
+/// response.redirect_permanent("/dashboard")
+/// ```
+///
+pub fn redirect_permanent(path: String) -> Response {
+  wisp.permanent_redirect(normalize_path(path))
+}
+
+/// Sets the redirect path to the previous page from the Referer
+/// header. Panics if no referer is found. Useful for cancel or
+/// back buttons that must have a referrer.
+///
+/// *Example:*
+/// ```gleam
+/// response.redirect_back(ctx)
+/// ```
+///
+pub fn redirect_back(req: Request) -> Response {
+  let assert Ok(path) =
+    req.headers
+    |> list.key_find("referer")
+
+  redirect(path)
 }
 
 // ------------------------------------------------------------- Private Functions
@@ -282,7 +340,7 @@ pub fn method_not_allowed(allowed: List(Method)) -> Response {
 ///
 fn generic_error_page(status: Int) -> Response {
   let status_str = int.to_string(status)
-  let reason = response.status_reason(status)
+  let reason = status_reason(status)
 
   let content =
     "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"/><meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\"/><title>"
@@ -293,7 +351,42 @@ fn generic_error_page(status: Int) -> Response {
     <> reason
     <> "</p></div></body></html>"
 
-  wisp.html_response(content, status)
+  html(content, status)
+}
+
+/// Successful responses pass through untouched — if a handler
+/// already rendered its own 200 page, we don't want to
+/// interfere. But any error status (400+) gets replaced with a
+/// proper error page via response.error, which checks the app's
+/// views/errors/ directory for a custom template first, then
+/// falls back to the framework's built-in page.
+///
+fn default_html_responses(handle_request: fn() -> Response) -> Response {
+  let res = handle_request()
+
+  case res.status >= 400 {
+    True -> error(res.status)
+    False -> res
+  }
+}
+
+/// API clients need a predictable JSON shape for every error so
+/// they can parse failures without status-code-specific logic.
+/// Returning `{"error": "Not Found"}` or `{"error":
+/// "Forbidden"}` lets client code handle all errors with one
+/// code path instead of special-casing each status code.
+///
+fn default_json_responses(handle_request: fn() -> Response) -> Response {
+  let res = handle_request()
+
+  case res.status >= 400 {
+    True ->
+      json.object([
+        #("error", json.string(status_reason(res.status))),
+      ])
+      |> json(res.status)
+    False -> res
+  }
 }
 
 /// Callers pass paths like "/errors/404.html" or
@@ -307,5 +400,21 @@ fn strip_leading_slashes(value: String) -> String {
   case string.starts_with(value, "/") {
     True -> string.drop_start(value, 1)
     False -> value
+  }
+}
+
+/// Removes the final leading slash from the path if present.
+/// Used to normalize file paths for consistent reading when
+/// setting the location for your redirects.
+///
+fn normalize_path(path: String) -> String {
+  case path == "/" {
+    True -> path
+    False -> {
+      case string.ends_with(path, "/") {
+        True -> string.drop_end(path, 1)
+        False -> path
+      }
+    }
   }
 }

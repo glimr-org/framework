@@ -7,10 +7,8 @@
 ////
 
 import glimr/http/context.{type Context, Context}
-import glimr/http/error_handler
-import glimr/http/http.{type Response}
-import glimr/http/kernel.{type Next}
-import glimr/response/response
+import glimr/http/middleware.{type Next}
+import glimr/http/response.{type Response}
 
 // ------------------------------------------------------------- Public Functions
 
@@ -19,7 +17,7 @@ import glimr/response/response
 ///
 pub fn run(ctx: Context(app), next: Next(app)) -> Response {
   let ctx = Context(..ctx, response_format: response.HTML)
-  use <- error_handler.default_responses(response.HTML)
+  use <- response.default_responses(response.HTML)
 
   next(ctx)
 }

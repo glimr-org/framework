@@ -8,8 +8,8 @@
 //// caches, etc.) without the framework needing to know about
 //// them.
 
-import glimr/http/http.{type Request}
-import glimr/response/response.{type ResponseFormat}
+import glimr/http/request.{type Request}
+import glimr/http/response.{type ResponseFormat}
 import glimr/session/session.{type Session}
 
 // ------------------------------------------------------------- Public Types
