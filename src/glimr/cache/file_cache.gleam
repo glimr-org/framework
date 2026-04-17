@@ -20,6 +20,7 @@ import glimr/session.{type SessionStore}
 /// caught immediately than discovered when the first request
 /// tries to write a file and gets a confusing filesystem error.
 ///
+@deprecated("use glimr/cache.start_file instead")
 pub fn start(name: String) -> CachePool {
   let internal = start_pool(name)
   wrap_pool(internal)
@@ -31,9 +32,10 @@ pub fn start(name: String) -> CachePool {
 /// bootstrap and you've got sessions with zero extra
 /// infrastructure.
 ///
+@deprecated("use glimr/cache.file_session_store instead")
 pub fn session_store(name: String) -> SessionStore {
   let internal = start_pool(name)
-  session.file_store(internal)
+  session.file_store(pool.get_path(internal))
 }
 
 // ------------------------------------------------------------- Internal Public Functions
@@ -44,6 +46,7 @@ pub fn session_store(name: String) -> SessionStore {
 /// than going through the cache abstraction. Exposing this as
 /// @internal lets both paths share config loading.
 ///
+@deprecated("use glimr/cache.file_start_pool instead")
 @internal
 pub fn start_pool(name: String) -> pool.Pool {
   let stores = driver.load_stores()
@@ -58,6 +61,7 @@ pub fn start_pool(name: String) -> pool.Pool {
 /// concurrency-safe, but file caches aren't typically used in
 /// high-concurrency scenarios anyway.
 ///
+@deprecated("use glimr/cache.file_wrap_pool instead")
 @internal
 pub fn wrap_pool(internal: pool.Pool) -> CachePool {
   let get_fn = fn(key) { file_cache.get(internal, key) }

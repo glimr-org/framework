@@ -22,6 +22,7 @@ import gleam/result
 /// error would force callers to parse messages to figure out
 /// what happened.
 ///
+@deprecated("use glimr/cache.CacheError instead")
 pub type CacheError {
   /// The key doesn't exist or has expired
   NotFound
@@ -44,6 +45,7 @@ pub type CacheError {
 /// construct a CachePool without going through new_pool, which
 /// ensures all 8 operations are wired up.
 ///
+@deprecated("use glimr/cache.CachePool instead")
 pub opaque type CachePool {
   CachePool(
     get: fn(String) -> Result(String, CacheError),
@@ -65,6 +67,7 @@ pub opaque type CachePool {
 /// — swapping from Redis to file caching is a config change,
 /// not a code change.
 ///
+@deprecated("use glimr/cache.get instead")
 pub fn get(pool: CachePool, key: String) -> Result(String, CacheError) {
   pool.get(key)
 }
@@ -75,6 +78,7 @@ pub fn get(pool: CachePool, key: String) -> Result(String, CacheError) {
 /// function name makes that a conscious decision rather than an
 /// accidental omission.
 ///
+@deprecated("use glimr/cache.put instead")
 pub fn put(
   pool: CachePool,
   key: String,
@@ -90,6 +94,7 @@ pub fn put(
 /// it obvious in code reviews that the author intended
 /// permanent storage.
 ///
+@deprecated("use glimr/cache.put_forever instead")
 pub fn put_forever(
   pool: CachePool,
   key: String,
@@ -103,6 +108,7 @@ pub fn put_forever(
 /// concurrent requests both try to invalidate the same key and
 /// one of them would get a spurious error.
 ///
+@deprecated("use glimr/cache.forget instead")
 pub fn forget(pool: CachePool, key: String) -> Result(Nil, CacheError) {
   pool.forget(key)
 }
@@ -112,6 +118,7 @@ pub fn forget(pool: CachePool, key: String) -> Result(Nil, CacheError) {
 /// belonging to other pools or other applications sharing the
 /// same storage.
 ///
+@deprecated("use glimr/cache.flush instead")
 pub fn flush(pool: CachePool) -> Result(Nil, CacheError) {
   pool.flush()
 }
@@ -122,6 +129,7 @@ pub fn flush(pool: CachePool) -> Result(Nil, CacheError) {
 /// doesn't exist means callers don't need to initialize
 /// counters before using them.
 ///
+@deprecated("use glimr/cache.increment instead")
 pub fn increment(
   pool: CachePool,
   key: String,
@@ -136,6 +144,7 @@ pub fn increment(
 /// transferring the value over the network, saving bandwidth on
 /// large cached blobs.
 ///
+@deprecated("use glimr/cache.has instead")
 pub fn has(pool: CachePool, key: String) -> Bool {
   pool.has(key)
 }
@@ -146,6 +155,7 @@ pub fn has(pool: CachePool, key: String) -> Bool {
 /// which could exhaust connection limits if someone runs
 /// several CLI commands in quick succession.
 ///
+@deprecated("use glimr/cache.stop instead")
 pub fn stop(pool: CachePool) -> Nil {
   pool.stop()
 }
@@ -156,6 +166,7 @@ pub fn stop(pool: CachePool) -> Nil {
 /// this as two separate calls would let another request sneak
 /// in and read the token before it's deleted.
 ///
+@deprecated("use glimr/cache.pull instead")
 pub fn pull(pool: CachePool, key: String) -> Result(String, CacheError) {
   use value <- result.try(get(pool, key))
   let _ = forget(pool, key)
@@ -168,6 +179,7 @@ pub fn pull(pool: CachePool, key: String) -> Result(String, CacheError) {
 /// naturally instead of the confusing "increment(key, -1)"
 /// which looks like a bug at first glance.
 ///
+@deprecated("use glimr/cache.decrement instead")
 pub fn decrement(
   pool: CachePool,
   key: String,
@@ -183,6 +195,7 @@ pub fn decrement(
 /// and nothing is written to the cache. Errors are never
 /// cached, so transient failures won't poison the TTL.
 ///
+@deprecated("use glimr/cache.remember instead")
 pub fn try_remember(
   pool: CachePool,
   key: String,
@@ -200,6 +213,7 @@ pub fn try_remember(
 /// database. The only way to refresh these is an explicit
 /// forget() or flush().
 ///
+@deprecated("use glimr/cache.remember_forever instead")
 pub fn try_remember_forever(
   pool: CachePool,
   key: String,
@@ -217,6 +231,7 @@ pub fn try_remember_forever(
 /// decoder and encoder operate on the success type `a` because
 /// the error branch is never serialized.
 ///
+@deprecated("use glimr/cache.remember_json instead")
 pub fn try_remember_json(
   pool: CachePool,
   key: String,
@@ -245,6 +260,7 @@ pub fn try_remember_json(
 /// just waste computation. The only way to refresh is an
 /// explicit forget() or flush().
 ///
+@deprecated("use glimr/cache.remember_json_forever instead")
 pub fn try_remember_json_forever(
   pool: CachePool,
   key: String,
@@ -272,7 +288,7 @@ pub fn try_remember_json_forever(
 /// cache backend is down, it just calls compute every time —
 /// your app stays working, it's just slower.
 ///
-@deprecated("Use try_remember, which takes a Result-returning compute callback and does not cache errors.")
+@deprecated("use glimr/cache.remember instead")
 pub fn remember(
   pool: CachePool,
   key: String,
@@ -290,7 +306,7 @@ pub fn remember(
 /// only way to refresh these is an explicit forget() or
 /// flush().
 ///
-@deprecated("Use try_remember_forever, which takes a Result-returning compute callback and does not cache errors.")
+@deprecated("use glimr/cache.remember_forever instead")
 pub fn remember_forever(
   pool: CachePool,
   key: String,
@@ -306,7 +322,7 @@ pub fn remember_forever(
 /// value, caches the new format, and life goes on. No need to
 /// manually flush the cache after every deploy.
 ///
-@deprecated("Use try_remember_json, which takes a Result-returning compute callback and does not cache errors.")
+@deprecated("use glimr/cache.remember_json instead")
 pub fn remember_json(
   pool: CachePool,
   key: String,
@@ -332,7 +348,7 @@ pub fn remember_json(
 /// computation. The only way to refresh is an explicit forget()
 /// or flush().
 ///
-@deprecated("Use try_remember_json_forever, which takes a Result-returning compute callback and does not cache errors.")
+@deprecated("use glimr/cache.remember_json_forever instead")
 pub fn remember_json_forever(
   pool: CachePool,
   key: String,
@@ -356,6 +372,7 @@ pub fn remember_json_forever(
 /// failure — which lets remember_json distinguish "stale
 /// format, recompute" from "the backend is broken."
 ///
+@deprecated("use glimr/cache.get_json instead")
 pub fn get_json(
   pool: CachePool,
   key: String,
@@ -375,6 +392,7 @@ pub fn get_json(
 /// importantly, get_json and put_json always agree on the
 /// format because they both go through the same path.
 ///
+@deprecated("use glimr/cache.put_json instead")
 pub fn put_json(
   pool: CachePool,
   key: String,
@@ -390,6 +408,7 @@ pub fn put_json(
 /// lookups, feature flags, or any JSON structure you want
 /// cached until an explicit forget or flush clears it.
 ///
+@deprecated("use glimr/cache.put_json_forever instead")
 pub fn put_json_forever(
   pool: CachePool,
   key: String,
@@ -409,6 +428,7 @@ pub fn put_json_forever(
 /// this constructor is the only way to create one, which
 /// guarantees all 8 operations are always wired up.
 ///
+@deprecated("use glimr/cache.new_pool instead")
 @internal
 pub fn new_pool(
   get get: fn(String) -> Result(String, CacheError),
@@ -438,6 +458,7 @@ pub fn new_pool(
 /// heavy concurrency, but good enough for file-cached counters
 /// where you're probably the only process anyway.
 ///
+@deprecated("use glimr/cache.default_increment instead")
 @internal
 pub fn default_increment(
   get_fn: fn(String) -> Result(String, CacheError),

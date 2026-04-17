@@ -15,10 +15,9 @@ import gleam/io
 import gleam/list
 import gleam/result
 import gleam/string
-import glimr/cache/cache.{type CachePool}
-import glimr/cache/database as cache_database
-import glimr/cache/driver.{type CacheStore, DatabaseStore, FileStore, RedisStore} as cache_driver
-import glimr/cache/file_cache
+import glimr/cache.{
+  type CachePool, type CacheStore, DatabaseStore, FileStore, RedisStore,
+}
 import glimr/config/config
 import glimr/console/console
 import glimr/db/db.{type Config, type DbPool}
@@ -314,20 +313,20 @@ pub fn resolve_cache(parsed: Args) -> Result(Args, String) {
   case dict.get(parsed.options, "cache") {
     Error(_) -> Ok(parsed)
     Ok(store_name) -> {
-      let stores = cache_driver.load_stores()
+      let stores = cache.load_stores()
 
       // Resolve "_default" to the first store
       use name <- result.try(case store_name {
         "_default" ->
           list.first(stores)
-          |> result.map(cache_driver.store_name)
+          |> result.map(cache.store_name)
           |> result.replace_error("No cache stores configured")
         name -> Ok(name)
       })
 
       // Validate store exists
       use _ <- result.try(
-        list.find(stores, fn(s) { cache_driver.store_name(s) == name })
+        list.find(stores, fn(s) { cache.store_name(s) == name })
         |> result.replace_error("Cache store not found: " <> name),
       )
 
@@ -389,19 +388,19 @@ fn with_db_pool(args: Args, user_handler: fn(Args, DbPool) -> Nil) -> Nil {
 /// Starts a CachePool for the resolved --cache store. File
 /// stores are created directly, Redis stores use dynamic
 /// dispatch to the adapter, and Database stores start a db pool
-/// first then wrap it with cache_database.
+/// first then wrap it with cache.
 ///
 fn with_cache_pool(args: Args, user_handler: fn(Args, CachePool) -> Nil) -> Nil {
   let cache_name = get_option(args, "cache")
-  let stores = cache_driver.load_stores()
+  let stores = cache.load_stores()
 
   // Store is guaranteed to exist (validated by resolve_cache)
   let assert Ok(store) =
-    list.find(stores, fn(s) { cache_driver.store_name(s) == cache_name })
+    list.find(stores, fn(s) { cache.store_name(s) == cache_name })
 
   case store {
     FileStore(_, _) -> {
-      let pool = file_cache.wrap_pool(file_cache.start_pool(cache_name))
+      let pool = cache.file_wrap_pool(cache.file_start_pool(cache_name))
       user_handler(args, pool)
       cache.stop(pool)
     }
@@ -435,7 +434,7 @@ fn with_cache_pool(args: Args, user_handler: fn(Args, CachePool) -> Nil) -> Nil 
 
       case dynamic_start_pool(module, db_config) {
         Ok(db_pool) -> {
-          let pool = cache_database.start_with_table(db_pool, table)
+          let pool = cache.database_start_with_table(db_pool, table)
           user_handler(args, pool)
           db.stop_pool(db_pool)
         }
@@ -461,11 +460,11 @@ fn with_cache_db_pool(
   user_handler: fn(Args, DbPool, String) -> Nil,
 ) -> Nil {
   let cache_name = get_option(args, "cache")
-  let stores = cache_driver.load_stores()
+  let stores = cache.load_stores()
 
   // Store is guaranteed to exist (validated by resolve_cache)
   let assert Ok(store) =
-    list.find(stores, fn(s) { cache_driver.store_name(s) == cache_name })
+    list.find(stores, fn(s) { cache.store_name(s) == cache_name })
 
   case store {
     DatabaseStore(_, db_name, table) -> {

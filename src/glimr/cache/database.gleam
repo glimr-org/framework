@@ -27,6 +27,7 @@ import glimr/utils/unix_timestamp
 /// database pool from their app setup, so all they need is the
 /// store name to get caching going.
 ///
+@deprecated("use glimr/cache.database_start instead")
 pub fn start(db_pool: DbPool, name: String) -> CachePool {
   let stores = driver.load_stores()
   let store = driver.find_by_name(name, stores)
@@ -42,6 +43,7 @@ pub fn start(db_pool: DbPool, name: String) -> CachePool {
 /// column type is chosen automatically based on which database
 /// they're actually using.
 ///
+@deprecated("use glimr/cache.database_create_table instead")
 pub fn create_table(db_pool: DbPool, table: String) -> Result(Nil, CacheError) {
   let int_type = case db.pool_driver(db_pool) {
     db.Postgres -> "BIGINT"
@@ -69,6 +71,7 @@ pub fn create_table(db_pool: DbPool, table: String) -> Result(Nil, CacheError) {
 /// grows without bound. This is called by the session GC and
 /// can be hooked into a scheduled task to keep the table lean.
 ///
+@deprecated("use glimr/cache.database_cleanup_expired instead")
 pub fn cleanup_expired(
   db_pool: DbPool,
   table: String,
@@ -99,6 +102,7 @@ pub fn cleanup_expired(
 /// — shutting it down here would kill everything else that uses
 /// the same database connection.
 ///
+@deprecated("use glimr/cache.database_start_with_table instead")
 @internal
 pub fn start_with_table(db_pool: DbPool, table: String) -> CachePool {
   cache.new_pool(

@@ -29,6 +29,7 @@ import simplifile
 /// scanning for stale files, and entries that nobody reads
 /// again just sit harmlessly until the next flush.
 ///
+@deprecated("use glimr/cache instead")
 pub fn get(pool: Pool, key: String) -> Result(String, CacheError) {
   let path = key_to_path(pool, key)
 
@@ -44,6 +45,7 @@ pub fn get(pool: Pool, key: String) -> Result(String, CacheError) {
 /// means reads only need a single comparison against the
 /// current time, no duration arithmetic involved.
 ///
+@deprecated("use glimr/cache instead")
 pub fn put(
   pool: Pool,
   key: String,
@@ -61,6 +63,7 @@ pub fn put(
 /// path doesn't need to branch on format — it just checks if
 /// the timestamp is 0 and skips expiry logic.
 ///
+@deprecated("use glimr/cache instead")
 pub fn put_forever(
   pool: Pool,
   key: String,
@@ -76,6 +79,7 @@ pub fn put_forever(
 /// Only actual filesystem failures (permissions, disk full)
 /// bubble up as errors.
 ///
+@deprecated("use glimr/cache instead")
 pub fn forget(pool: Pool, key: String) -> Result(Nil, CacheError) {
   let path = key_to_path(pool, key)
 
@@ -95,6 +99,7 @@ pub fn forget(pool: Pool, key: String) -> Result(Nil, CacheError) {
 /// return True for entries that get() would reject as expired —
 /// and that inconsistency would be really confusing to debug.
 ///
+@deprecated("use glimr/cache instead")
 pub fn has(pool: Pool, key: String) -> Bool {
   case get(pool, key) {
     Ok(_) -> True
@@ -108,6 +113,7 @@ pub fn has(pool: Pool, key: String) -> Bool {
 /// gets recreated automatically the next time something is
 /// written, so there's no setup step needed after a flush.
 ///
+@deprecated("use glimr/cache instead")
 pub fn flush(pool: Pool) -> Result(Nil, CacheError) {
   let path = pool.get_path(pool)
 
@@ -130,6 +136,7 @@ pub fn flush(pool: Pool) -> Result(Nil, CacheError) {
 /// small. This is @internal because the console cache:clear
 /// command needs to resolve paths for display.
 ///
+@deprecated("use glimr/cache.file_key_to_path instead")
 @internal
 pub fn key_to_path(pool: Pool, key: String) -> String {
   let hash =

@@ -1,6 +1,6 @@
 import gleam/dict
 import gleeunit/should
-import glimr/cache/driver as cache_driver
+import glimr/cache
 import glimr/console/command.{Args, Argument, Command, Flag, Option}
 import glimr/db/driver.{SqliteConnection}
 
@@ -214,7 +214,7 @@ pub fn resolve_connection_noop_without_database_option_test() {
 fn cache_db_connections(connections: List(driver.Connection)) -> Nil
 
 @external(erlang, "glimr_command_test_ffi", "cache_cache_stores")
-fn cache_cache_stores(stores: List(cache_driver.CacheStore)) -> Nil
+fn cache_cache_stores(stores: List(cache.CacheStore)) -> Nil
 
 @external(erlang, "glimr_command_test_ffi", "clear_cache_stores")
 fn clear_cache_stores() -> Nil
@@ -350,7 +350,7 @@ pub fn cache_db_handler_preserves_existing_args_test() {
 pub fn resolve_cache_replaces_default_with_first_store_test() {
   clear_cache_stores()
   cache_cache_stores([
-    cache_driver.DatabaseStore(name: "main", database: "mydb", table: "cache"),
+    cache.DatabaseStore(name: "main", database: "mydb", table: "cache"),
   ])
 
   let parsed =
@@ -371,12 +371,8 @@ pub fn resolve_cache_replaces_default_with_first_store_test() {
 pub fn resolve_cache_keeps_explicit_store_name_test() {
   clear_cache_stores()
   cache_cache_stores([
-    cache_driver.FileStore(name: "files", path: "priv/cache"),
-    cache_driver.DatabaseStore(
-      name: "db_cache",
-      database: "mydb",
-      table: "cache",
-    ),
+    cache.FileStore(name: "files", path: "priv/cache"),
+    cache.DatabaseStore(name: "db_cache", database: "mydb", table: "cache"),
   ])
 
   let parsed =
@@ -414,7 +410,7 @@ pub fn resolve_cache_errors_when_no_stores_configured_test() {
 pub fn resolve_cache_errors_when_store_not_found_test() {
   clear_cache_stores()
   cache_cache_stores([
-    cache_driver.FileStore(name: "files", path: "priv/cache"),
+    cache.FileStore(name: "files", path: "priv/cache"),
   ])
 
   let parsed =

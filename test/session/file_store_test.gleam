@@ -1,7 +1,7 @@
 import gleam/dict
 import gleam/int
 import gleeunit/should
-import glimr/cache/file_cache
+import glimr/cache
 import glimr/config/config
 import glimr/session
 import glimr/utils/unix_timestamp
@@ -54,10 +54,10 @@ fn with_clean_session(f: fn() -> a) -> a {
 
   setup_config()
 
-  let pool = file_cache.start_pool("session_test")
+  let pool = cache.file_start_pool("session_test")
 
   // Create and cache the session store
-  let store = session.file_store(pool)
+  let store = session.file_store(cache.file_pool_path(pool))
   session.setup(store)
 
   let result = f()

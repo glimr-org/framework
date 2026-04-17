@@ -20,7 +20,6 @@ import gleam/list
 import gleam/otp/actor
 import gleam/result
 import gleam/string
-import glimr/cache/file/pool.{type Pool}
 import glimr/config/config
 import glimr/utils/unix_timestamp
 import simplifile
@@ -338,9 +337,9 @@ pub fn cookie_store() -> SessionStore {
 /// the cookie.
 ///
 @internal
-pub fn file_store(pool: Pool) -> SessionStore {
+pub fn file_store(path: String) -> SessionStore {
   let lifetime = config.get_int("session.lifetime")
-  let base_path = pool.get_path(pool) <> "/sessions"
+  let base_path = path <> "/sessions"
 
   new(
     load: fn(session_id) { file_load(base_path, session_id) },

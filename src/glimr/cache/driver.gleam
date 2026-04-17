@@ -21,6 +21,7 @@ import tom
 /// config module doesn't need to panic during parsing, and the
 /// error message can point at exactly which env var is missing.
 ///
+@deprecated("use glimr/cache.CacheStore instead")
 pub type CacheStore {
   FileStore(name: String, path: String)
   RedisStore(
@@ -37,6 +38,7 @@ pub type CacheStore {
 /// branch on backend type without pattern matching on the full
 /// CacheStore and ignoring most fields.
 ///
+@deprecated("use glimr/cache.StoreType instead")
 pub type StoreType {
   File
   Redis
@@ -50,6 +52,7 @@ pub type StoreType {
 /// call the file, Redis, or database flush logic — it doesn't
 /// need the URL or path, just which driver to dispatch to.
 ///
+@deprecated("use glimr/cache.store_type instead")
 pub fn store_type(store: CacheStore) -> StoreType {
   case store {
     FileStore(_, _) -> File
@@ -64,6 +67,7 @@ pub fn store_type(store: CacheStore) -> StoreType {
 /// three-branch pattern match every time they just want the
 /// name — which comes up a lot in config lookup and logging.
 ///
+@deprecated("use glimr/cache.store_name instead")
 pub fn store_name(store: CacheStore) -> String {
   case store {
     FileStore(name, _) -> name
@@ -78,6 +82,7 @@ pub fn store_name(store: CacheStore) -> String {
 /// the store name in the message makes it obvious which
 /// misconfigured store caused the crash.
 ///
+@deprecated("use glimr/cache.store_path instead")
 pub fn store_path(store: CacheStore) -> String {
   case store {
     FileStore(_, path) -> path
@@ -94,6 +99,7 @@ pub fn store_path(store: CacheStore) -> String {
 /// a wiring mistake that should be caught immediately rather
 /// than silently returning garbage.
 ///
+@deprecated("use glimr/cache.store_table instead")
 pub fn store_table(store: CacheStore) -> String {
   case store {
     DatabaseStore(_, _, table) -> table
@@ -109,6 +115,7 @@ pub fn store_table(store: CacheStore) -> String {
 /// lookup. Returns an empty list if no config exists, which is
 /// fine for projects that don't use caching.
 ///
+@deprecated("use glimr/cache.load_stores instead")
 pub fn load_stores() -> List(CacheStore) {
   case config.get_cached("cache_stores") {
     Ok(stores) -> stores
@@ -127,6 +134,7 @@ pub fn load_stores() -> List(CacheStore) {
 /// Panicking with the exact name and pointing at
 /// config_cache.gleam tells them exactly what to fix.
 ///
+@deprecated("use glimr/cache.find_by_name instead")
 pub fn find_by_name(name: String, stores: List(CacheStore)) -> CacheStore {
   let store =
     list.find(stores, fn(store: CacheStore) { store_name(store) == name })
@@ -147,6 +155,7 @@ pub fn find_by_name(name: String, stores: List(CacheStore)) -> CacheStore {
 /// configured two DatabaseStores pointing at the same database,
 /// which would make it impossible to know which table to use.
 ///
+@deprecated("use glimr/cache.find_database_store instead")
 pub fn find_database_store(
   database: String,
   stores: List(CacheStore),

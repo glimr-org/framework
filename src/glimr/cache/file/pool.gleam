@@ -17,6 +17,7 @@ import glimr/cache/driver.{type CacheStore, FileStore}
 /// flexible — if we ever need to add metadata like a pool name
 /// or stats, existing code won't break.
 ///
+@deprecated("use glimr/cache.FilePool instead")
 pub opaque type Pool {
   Pool(path: String)
 }
@@ -30,6 +31,7 @@ pub opaque type Pool {
 /// immediately instead of getting mysterious filesystem errors
 /// at runtime.
 ///
+@deprecated("use glimr/cache.file_start_pool instead")
 pub fn start_pool(store: CacheStore) -> Pool {
   case store {
     FileStore(_, path) -> Pool(path)
@@ -44,6 +46,7 @@ pub fn start_pool(store: CacheStore) -> Pool {
 /// cache.stop() on a file-backed pool would crash instead of
 /// gracefully doing nothing.
 ///
+@deprecated("use glimr/cache instead")
 pub fn stop_pool(_pool: Pool) -> Nil {
   Nil
 }
@@ -53,6 +56,7 @@ pub fn stop_pool(_pool: Pool) -> Nil {
 /// type safe — cache.gleam calls this to build file paths for
 /// each key without knowing the pool's internal structure.
 ///
+@deprecated("use glimr/cache.file_pool_path instead")
 pub fn get_path(pool: Pool) -> String {
   pool.path
 }

@@ -2,10 +2,7 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/string
 import gleeunit/should
-import glimr/cache/cache.{type CachePool, NotFound, SerializationError}
-import glimr/cache/file/cache as fcache
-import glimr/cache/file/pool
-import glimr/cache/file_cache
+import glimr/cache.{type CachePool, type FilePool, NotFound, SerializationError}
 import glimr/config/config
 import simplifile
 
@@ -42,15 +39,15 @@ fn setup_test_pool() -> CachePool {
   let _ = simplifile.create_directory_all(test_cache_path)
 
   setup_config()
-  file_cache.start("test")
+  cache.start_file("test")
 }
 
-fn setup_internal_pool() -> pool.Pool {
+fn setup_internal_pool() -> FilePool {
   let _ = simplifile.delete(test_cache_path)
   let _ = simplifile.create_directory_all(test_cache_path)
 
   setup_config()
-  file_cache.start_pool("test")
+  cache.file_start_pool("test")
 }
 
 fn cleanup_test_pool() {
@@ -338,26 +335,26 @@ pub fn get_json_invalid_format_test() {
   cleanup_test_pool()
 }
 
-// ------------------------------------------------------------- try_remember
+// ------------------------------------------------------------- remember
 
-pub fn try_remember_returns_cached_value_test() {
+pub fn remember_returns_cached_value_test() {
   let pool = setup_test_pool()
 
   cache.put(pool, "cached", "existing_value", 3600)
   |> should.be_ok()
 
   // Compute function should not be called
-  cache.try_remember(pool, "cached", 3600, fn() { Ok("computed_value") })
+  cache.remember(pool, "cached", 3600, fn() { Ok("computed_value") })
   |> should.be_ok()
   |> should.equal("existing_value")
 
   cleanup_test_pool()
 }
 
-pub fn try_remember_computes_when_missing_test() {
+pub fn remember_computes_when_missing_test() {
   let pool = setup_test_pool()
 
-  cache.try_remember(pool, "missing", 3600, fn() { Ok("computed_value") })
+  cache.remember(pool, "missing", 3600, fn() { Ok("computed_value") })
   |> should.be_ok()
   |> should.equal("computed_value")
 
@@ -369,10 +366,10 @@ pub fn try_remember_computes_when_missing_test() {
   cleanup_test_pool()
 }
 
-pub fn try_remember_does_not_cache_errors_test() {
+pub fn remember_does_not_cache_errors_test() {
   let pool = setup_test_pool()
 
-  cache.try_remember(pool, "fails", 3600, fn() { Error(Nil) })
+  cache.remember(pool, "fails", 3600, fn() { Error(Nil) })
   |> should.be_error()
   |> should.equal(Nil)
 
@@ -384,10 +381,10 @@ pub fn try_remember_does_not_cache_errors_test() {
   cleanup_test_pool()
 }
 
-pub fn try_remember_forever_test() {
+pub fn remember_forever_test() {
   let pool = setup_test_pool()
 
-  cache.try_remember_forever(pool, "permanent", fn() { Ok("computed") })
+  cache.remember_forever(pool, "permanent", fn() { Ok("computed") })
   |> should.be_ok()
   |> should.equal("computed")
 
@@ -398,16 +395,16 @@ pub fn try_remember_forever_test() {
   cleanup_test_pool()
 }
 
-// ------------------------------------------------------------- try_remember_json
+// ------------------------------------------------------------- remember_json
 
-pub fn try_remember_json_returns_cached_test() {
+pub fn remember_json_returns_cached_test() {
   let pool = setup_test_pool()
   let user = User(name: "Cached", age: 40)
 
   cache.put_json(pool, "user_cached", user, user_encoder, 3600)
   |> should.be_ok()
 
-  cache.try_remember_json(
+  cache.remember_json(
     pool,
     "user_cached",
     3600,
@@ -421,11 +418,11 @@ pub fn try_remember_json_returns_cached_test() {
   cleanup_test_pool()
 }
 
-pub fn try_remember_json_computes_when_missing_test() {
+pub fn remember_json_computes_when_missing_test() {
   let pool = setup_test_pool()
   let user = User(name: "New", age: 20)
 
-  cache.try_remember_json(
+  cache.remember_json(
     pool,
     "new_user",
     3600,
@@ -444,10 +441,10 @@ pub fn try_remember_json_computes_when_missing_test() {
   cleanup_test_pool()
 }
 
-pub fn try_remember_json_does_not_cache_errors_test() {
+pub fn remember_json_does_not_cache_errors_test() {
   let pool = setup_test_pool()
 
-  cache.try_remember_json(
+  cache.remember_json(
     pool,
     "failing_user",
     3600,
@@ -466,11 +463,11 @@ pub fn try_remember_json_does_not_cache_errors_test() {
   cleanup_test_pool()
 }
 
-pub fn try_remember_json_forever_test() {
+pub fn remember_json_forever_test() {
   let pool = setup_test_pool()
   let user = User(name: "Forever", age: 55)
 
-  cache.try_remember_json_forever(
+  cache.remember_json_forever(
     pool,
     "forever_user",
     user_decoder(),
@@ -492,7 +489,7 @@ pub fn try_remember_json_forever_test() {
 pub fn key_to_path_creates_nested_structure_test() {
   let pool = setup_internal_pool()
 
-  let path = fcache.key_to_path(pool, "test_key")
+  let path = cache.file_key_to_path(pool, "test_key")
 
   // Path should contain the base path and 2-level directory structure
   path
@@ -508,8 +505,8 @@ pub fn key_to_path_creates_nested_structure_test() {
 pub fn key_to_path_is_deterministic_test() {
   let pool = setup_internal_pool()
 
-  let path1 = fcache.key_to_path(pool, "same_key")
-  let path2 = fcache.key_to_path(pool, "same_key")
+  let path1 = cache.file_key_to_path(pool, "same_key")
+  let path2 = cache.file_key_to_path(pool, "same_key")
 
   path1
   |> should.equal(path2)
@@ -520,8 +517,8 @@ pub fn key_to_path_is_deterministic_test() {
 pub fn key_to_path_different_keys_different_paths_test() {
   let pool = setup_internal_pool()
 
-  let path1 = fcache.key_to_path(pool, "key1")
-  let path2 = fcache.key_to_path(pool, "key2")
+  let path1 = cache.file_key_to_path(pool, "key1")
+  let path2 = cache.file_key_to_path(pool, "key2")
 
   path1
   |> should.not_equal(path2)
