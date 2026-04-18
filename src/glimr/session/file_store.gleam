@@ -15,7 +15,7 @@ import gleam/list
 import gleam/result
 import gleam/string
 import glimr/cache/file/pool.{type Pool}
-import glimr/config/config
+import glimr/config
 import glimr/session/payload
 import glimr/session/store.{type SessionStore}
 import glimr/utils/unix_timestamp

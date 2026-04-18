@@ -11,7 +11,7 @@ import gleam/http.{type Method}
 import gleam/http/response
 import gleam/list
 import gleam/string
-import glimr/config/config
+import glimr/config
 import glimr/http/context.{type Context}
 import glimr/http/middleware.{type MiddlewareGroup}
 import glimr/http/response.{type Response} as _glimr_response

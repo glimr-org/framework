@@ -3,7 +3,7 @@ import gleam/json
 import gleam/string
 import gleeunit/should
 import glimr/cache.{type CachePool, type FilePool, NotFound, SerializationError}
-import glimr/config/config
+import glimr/config
 import simplifile
 
 const test_cache_path = "priv/test/cache"

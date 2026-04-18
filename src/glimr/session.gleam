@@ -20,7 +20,7 @@ import gleam/list
 import gleam/otp/actor
 import gleam/result
 import gleam/string
-import glimr/config/config
+import glimr/config
 import glimr/utils/unix_timestamp
 import simplifile
 

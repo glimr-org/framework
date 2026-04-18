@@ -1,7 +1,7 @@
 import gleam/http
 import gleam/http/request
 import gleeunit/should
-import glimr/config/config
+import glimr/config
 import glimr/http/context.{type Context}
 import glimr/http/middleware
 import glimr/http/middleware/expects_html

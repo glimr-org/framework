@@ -14,7 +14,7 @@ import gleam/http/cookie
 import gleam/http/request
 import gleam/http/response
 import gleam/option
-import glimr/config/config
+import glimr/config
 import glimr/http/context.{type Context, Context}
 import glimr/http/middleware.{type Next}
 import glimr/http/request.{type Request} as _glimr_request

@@ -1,5 +1,5 @@
 import gleeunit/should
-import glimr/config/config
+import glimr/config
 import simplifile
 
 const config_dir = "config"

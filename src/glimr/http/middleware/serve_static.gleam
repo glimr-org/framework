@@ -8,7 +8,7 @@
 //// duplicating the value across middleware and config.
 ////
 
-import glimr/config/config
+import glimr/config
 import glimr/http/context.{type Context}
 import glimr/http/middleware.{type Next}
 import glimr/http/response.{type Response}

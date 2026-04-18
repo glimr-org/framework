@@ -11,7 +11,7 @@
 
 import gleam/dict
 import gleam/list
-import glimr/config/config
+import glimr/config
 import glimr/http/kernel.{type MiddlewareGroup}
 import tom
 

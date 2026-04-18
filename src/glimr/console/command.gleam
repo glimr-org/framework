@@ -18,7 +18,7 @@ import gleam/string
 import glimr/cache.{
   type CachePool, type CacheStore, DatabaseStore, FileStore, RedisStore,
 }
-import glimr/config/config
+import glimr/config
 import glimr/console/console
 import glimr/db/db.{type Config, type DbPool}
 import glimr/db/driver

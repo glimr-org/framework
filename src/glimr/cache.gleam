@@ -18,7 +18,7 @@ import gleam/json.{type Json}
 import gleam/list
 import gleam/result
 import gleam/string
-import glimr/config/config
+import glimr/config
 import glimr/db/db.{type DbPool}
 import glimr/filesystem/filesystem
 import glimr/session.{type SessionStore}

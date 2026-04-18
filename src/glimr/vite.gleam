@@ -13,7 +13,7 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/string
-import glimr/config/config
+import glimr/config
 import simplifile
 
 // ------------------------------------------------------------- Public Types
