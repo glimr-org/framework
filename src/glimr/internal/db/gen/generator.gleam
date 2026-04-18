@@ -12,10 +12,8 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
-import glimr/db/gen/parser.{type ParsedQuery}
-import glimr/db/gen/parser/columns.{type SelectedColumn}
-import glimr/db/gen/schema_parser.{type ColumnType, type Table}
-import glimr/db/gen/schema_parser/codegen
+import glimr/internal/db/gen/parser.{type ParsedQuery, type SelectedColumn}
+import glimr/internal/db/gen/schema_parser.{type ColumnType, type Table}
 
 // ------------------------------------------------------------- Public Functions
 
@@ -98,9 +96,11 @@ fn generate_imports(
     list.any(columns, fn(col) { col.column_type == schema_parser.Boolean })
   let has_nullable = list.any(columns, fn(col) { col.nullable })
   let has_array =
-    list.any(columns, fn(col) { codegen.is_array(col.column_type) })
-  let has_blob = list.any(columns, fn(col) { codegen.is_blob(col.column_type) })
-  let has_enum = list.any(columns, fn(col) { codegen.is_enum(col.column_type) })
+    list.any(columns, fn(col) { schema_parser.is_array(col.column_type) })
+  let has_blob =
+    list.any(columns, fn(col) { schema_parser.is_blob(col.column_type) })
+  let has_enum =
+    list.any(columns, fn(col) { schema_parser.is_enum(col.column_type) })
 
   let base_imports = "import gleam/dynamic/decode\nimport gleam/json"
 
@@ -230,7 +230,7 @@ fn generate_model_type(model_name: String, table: Table) -> String {
 
   let fields =
     list.map(columns, fn(col) {
-      let gleam_type = codegen.gleam_type(col.column_type)
+      let gleam_type = schema_parser.gleam_type(col.column_type)
       let type_str = case col.nullable {
         True -> "Option(" <> gleam_type <> ")"
         False -> gleam_type
@@ -260,7 +260,7 @@ fn generate_model_decoder(model_name: String, table: Table) -> String {
 
   let field_decoders =
     list.index_map(columns, fn(col, idx) {
-      let decoder = codegen.decoder_fn(col.column_type)
+      let decoder = schema_parser.decoder_fn(col.column_type)
       let decoder_with_nullable = case col.nullable {
         True -> "decode.optional(" <> decoder <> ")"
         False -> decoder
@@ -348,7 +348,7 @@ fn generate_model_json_decoder(model_name: String, table: Table) -> String {
 
   let field_decoders =
     list.map(columns, fn(col) {
-      let decoder = codegen.decoder_fn(col.column_type)
+      let decoder = schema_parser.decoder_fn(col.column_type)
       let decoder_with_nullable = case col.nullable {
         True -> "decode.optional(" <> decoder <> ")"
         False -> decoder
@@ -411,12 +411,12 @@ fn generate_encoder_field(
 ) -> String {
   // Special types that need custom encoder expressions
   let needs_expr =
-    codegen.is_array(col_type)
-    || codegen.is_blob(col_type)
-    || codegen.is_enum(col_type)
+    schema_parser.is_array(col_type)
+    || schema_parser.is_blob(col_type)
+    || schema_parser.is_enum(col_type)
   case needs_expr {
     True -> {
-      let expr = codegen.json_encoder_expr(col_type, "v")
+      let expr = schema_parser.json_encoder_expr(col_type, "v")
       case nullable {
         True ->
           "    #(\""
@@ -427,13 +427,13 @@ fn generate_encoder_field(
           <> expr
           <> " }))"
         False -> {
-          let expr = codegen.json_encoder_expr(col_type, "model." <> name)
+          let expr = schema_parser.json_encoder_expr(col_type, "model." <> name)
           "    #(\"" <> name <> "\", " <> expr <> ")"
         }
       }
     }
     False -> {
-      let encoder = codegen.json_encoder_fn(col_type)
+      let encoder = schema_parser.json_encoder_fn(col_type)
       case nullable {
         True ->
           "    #(\""
@@ -678,7 +678,7 @@ fn generate_row_type(
   let fields =
     list.map(columns, fn(col_tuple) {
       let #(name, col_type, nullable) = col_tuple
-      let gleam_type = codegen.gleam_type(col_type)
+      let gleam_type = schema_parser.gleam_type(col_type)
       let type_str = case nullable {
         True -> "Option(" <> gleam_type <> ")"
         False -> gleam_type
@@ -708,7 +708,7 @@ fn generate_row_decoder(
   let field_decoders =
     list.index_map(columns, fn(col_tuple, idx) {
       let #(name, col_type, nullable) = col_tuple
-      let decoder = codegen.decoder_fn(col_type)
+      let decoder = schema_parser.decoder_fn(col_type)
       let decoder_with_nullable = case nullable {
         True -> "decode.optional(" <> decoder <> ")"
         False -> decoder
@@ -788,7 +788,7 @@ fn generate_row_json_decoder(
   let field_decoders =
     list.map(columns, fn(col_tuple) {
       let #(name, col_type, nullable) = col_tuple
-      let decoder = codegen.decoder_fn(col_type)
+      let decoder = schema_parser.decoder_fn(col_type)
       let decoder_with_nullable = case nullable {
         True -> "decode.optional(" <> decoder <> ")"
         False -> decoder
@@ -860,7 +860,7 @@ fn generate_query_function(
           [
             case list.find(param_types, fn(pt) { pt.0 == n }) {
               Ok(#(_, col_name, col_type)) -> {
-                let gleam_type = codegen.gleam_type(col_type)
+                let gleam_type = schema_parser.gleam_type(col_type)
                 col_name <> " " <> col_name <> ": " <> gleam_type
               }
               Error(_) -> {
@@ -1109,7 +1109,7 @@ fn generate_execute_function(
           [
             case list.find(param_types, fn(pt) { pt.0 == n }) {
               Ok(#(_, col_name, col_type)) -> {
-                let gleam_type = codegen.gleam_type(col_type)
+                let gleam_type = schema_parser.gleam_type(col_type)
                 col_name <> " " <> col_name <> ": " <> gleam_type
               }
               Error(_) -> {

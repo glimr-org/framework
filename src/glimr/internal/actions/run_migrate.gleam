@@ -13,7 +13,7 @@ import gleam/result
 import gleam/string
 import glimr/console/console
 import glimr/db/db.{type DbPool}
-import glimr/db/migrate
+import glimr/internal/db/migrate
 
 // ------------------------------------------------------------- Public Functions
 

@@ -1,7 +1,7 @@
 import gleam/option.{None, Some}
 import gleeunit/should
-import glimr/db/gen/migrate/validation
-import glimr/db/gen/schema_parser.{Column, Index, Table}
+import glimr/internal/db/gen/migrate
+import glimr/internal/db/gen/schema_parser.{Column, Index, Table}
 
 // ------------------------------------------------------------- Valid Indexes
 
@@ -26,7 +26,7 @@ pub fn validate_valid_indexes_test() {
   ]
 
   // Should not panic
-  validation.validate_indexes(tables)
+  migrate.validate_indexes(tables)
 }
 
 pub fn validate_empty_indexes_test() {
@@ -41,7 +41,7 @@ pub fn validate_empty_indexes_test() {
   ]
 
   // Should not panic
-  validation.validate_indexes(tables)
+  migrate.validate_indexes(tables)
 }
 
 // ------------------------------------------------------------- Invalid: Non-existent Column
@@ -59,7 +59,7 @@ pub fn validate_nonexistent_column_panics_test() {
     ),
   ]
 
-  let result = panic_to_result(fn() { validation.validate_indexes(tables) })
+  let result = panic_to_result(fn() { migrate.validate_indexes(tables) })
 
   result |> should.be_error()
 }
@@ -81,7 +81,7 @@ pub fn validate_duplicate_indexes_panics_test() {
     ),
   ]
 
-  let result = panic_to_result(fn() { validation.validate_indexes(tables) })
+  let result = panic_to_result(fn() { migrate.validate_indexes(tables) })
 
   result |> should.be_error()
 }
@@ -102,7 +102,7 @@ pub fn validate_same_columns_different_unique_not_duplicate_test() {
   ]
 
   // Same columns but different unique flag — should not panic
-  validation.validate_indexes(tables)
+  migrate.validate_indexes(tables)
 }
 
 // ------------------------------------------------------------- Valid Array Types
@@ -140,7 +140,7 @@ pub fn validate_valid_array_types_test() {
   ]
 
   // Should not panic
-  validation.validate_array_types(tables)
+  migrate.validate_array_types(tables)
 }
 
 pub fn validate_array_of_boolean_test() {
@@ -161,7 +161,7 @@ pub fn validate_array_of_boolean_test() {
   ]
 
   // Should not panic
-  validation.validate_array_types(tables)
+  migrate.validate_array_types(tables)
 }
 
 pub fn validate_array_of_uuid_test() {
@@ -182,7 +182,7 @@ pub fn validate_array_of_uuid_test() {
   ]
 
   // Should not panic
-  validation.validate_array_types(tables)
+  migrate.validate_array_types(tables)
 }
 
 pub fn validate_array_of_timestamp_test() {
@@ -203,7 +203,7 @@ pub fn validate_array_of_timestamp_test() {
   ]
 
   // Should not panic
-  validation.validate_array_types(tables)
+  migrate.validate_array_types(tables)
 }
 
 pub fn validate_no_arrays_test() {
@@ -219,7 +219,7 @@ pub fn validate_no_arrays_test() {
   ]
 
   // Should not panic
-  validation.validate_array_types(tables)
+  migrate.validate_array_types(tables)
 }
 
 // ------------------------------------------------------------- Invalid: Array(Id)
@@ -235,7 +235,7 @@ pub fn validate_array_of_id_panics_test() {
     ),
   ]
 
-  let result = panic_to_result(fn() { validation.validate_array_types(tables) })
+  let result = panic_to_result(fn() { migrate.validate_array_types(tables) })
 
   result |> should.be_error()
 }
@@ -259,7 +259,7 @@ pub fn validate_array_of_foreign_panics_test() {
     ),
   ]
 
-  let result = panic_to_result(fn() { validation.validate_array_types(tables) })
+  let result = panic_to_result(fn() { migrate.validate_array_types(tables) })
 
   result |> should.be_error()
 }
@@ -283,7 +283,7 @@ pub fn validate_nested_array_of_id_panics_test() {
     ),
   ]
 
-  let result = panic_to_result(fn() { validation.validate_array_types(tables) })
+  let result = panic_to_result(fn() { migrate.validate_array_types(tables) })
 
   result |> should.be_error()
 }
@@ -307,7 +307,7 @@ pub fn validate_nested_array_of_foreign_panics_test() {
     ),
   ]
 
-  let result = panic_to_result(fn() { validation.validate_array_types(tables) })
+  let result = panic_to_result(fn() { migrate.validate_array_types(tables) })
 
   result |> should.be_error()
 }
@@ -333,7 +333,7 @@ pub fn validate_array_of_enum_panics_test() {
     ),
   ]
 
-  let result = panic_to_result(fn() { validation.validate_array_types(tables) })
+  let result = panic_to_result(fn() { migrate.validate_array_types(tables) })
 
   result |> should.be_error()
 }
@@ -357,7 +357,7 @@ pub fn validate_array_of_blob_panics_test() {
     ),
   ]
 
-  let result = panic_to_result(fn() { validation.validate_array_types(tables) })
+  let result = panic_to_result(fn() { migrate.validate_array_types(tables) })
 
   result |> should.be_error()
 }
@@ -382,7 +382,7 @@ pub fn validate_valid_enum_test() {
   ]
 
   // Should not panic
-  validation.validate_enum_variants(tables)
+  migrate.validate_enum_variants(tables)
 }
 
 pub fn validate_enum_empty_variants_panics_test() {
@@ -396,8 +396,7 @@ pub fn validate_enum_empty_variants_panics_test() {
     ),
   ]
 
-  let result =
-    panic_to_result(fn() { validation.validate_enum_variants(tables) })
+  let result = panic_to_result(fn() { migrate.validate_enum_variants(tables) })
 
   result |> should.be_error()
 }
@@ -419,8 +418,7 @@ pub fn validate_enum_empty_variant_string_panics_test() {
     ),
   ]
 
-  let result =
-    panic_to_result(fn() { validation.validate_enum_variants(tables) })
+  let result = panic_to_result(fn() { migrate.validate_enum_variants(tables) })
 
   result |> should.be_error()
 }
@@ -442,8 +440,7 @@ pub fn validate_enum_duplicate_variants_panics_test() {
     ),
   ]
 
-  let result =
-    panic_to_result(fn() { validation.validate_enum_variants(tables) })
+  let result = panic_to_result(fn() { migrate.validate_enum_variants(tables) })
 
   result |> should.be_error()
 }

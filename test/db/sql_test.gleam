@@ -2,11 +2,10 @@ import gleam/dict
 import gleam/option.{None, Some}
 import gleam/string
 import gleeunit/should
-import glimr/db/gen/migrate/snapshot.{
-  ColumnSnapshot, IndexSnapshot, Snapshot, TableSnapshot,
+import glimr/internal/db/gen/migrate.{
+  ColumnSnapshot, IndexSnapshot, Postgres, Snapshot, Sqlite, TableSnapshot,
 }
-import glimr/db/gen/migrate/sql.{Postgres, Sqlite}
-import glimr/db/gen/schema_parser.{Column, Index, Table}
+import glimr/internal/db/gen/schema_parser.{Column, Index, Table}
 
 // ------------------------------------------------------------- Create Index SQL
 
@@ -38,8 +37,8 @@ pub fn create_index_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> should.equal(
@@ -75,8 +74,8 @@ pub fn create_unique_index_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains("CREATE UNIQUE INDEX idx_users_email ON users (email);")
@@ -115,8 +114,8 @@ pub fn create_composite_index_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains(
@@ -155,8 +154,8 @@ pub fn create_named_index_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains("CREATE INDEX idx_custom ON users (email);")
@@ -191,8 +190,8 @@ pub fn create_index_sqlite_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   result
   |> string.contains("CREATE UNIQUE INDEX idx_users_email ON users (email);")
@@ -243,8 +242,8 @@ pub fn drop_index_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> should.equal("DROP INDEX idx_users_email;")
@@ -292,8 +291,8 @@ pub fn drop_named_index_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> should.equal("DROP INDEX idx_custom;")
@@ -328,7 +327,7 @@ pub fn no_index_changes_when_same_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(snap, snap, [table], False)
+  let diff = migrate.compute_diff(snap, snap, [table], False)
   diff.changes |> should.equal([])
 }
 
@@ -376,8 +375,8 @@ pub fn add_index_to_existing_table_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> should.equal("CREATE INDEX idx_users_email ON users (email);")
@@ -387,19 +386,19 @@ pub fn add_index_to_existing_table_test() {
 
 pub fn describe_create_index_test() {
   let change =
-    sql.CreateIndex(
+    migrate.CreateIndex(
       "users",
       Index(columns: ["email"], unique: True, name: None),
     )
 
-  sql.describe_change(change)
+  migrate.describe_change(change)
   |> should.equal("Create index: idx_users_email")
 }
 
 pub fn describe_drop_index_test() {
-  let change = sql.DropIndex("users", "idx_users_email")
+  let change = migrate.DropIndex("users", "idx_users_email")
 
-  sql.describe_change(change)
+  migrate.describe_change(change)
   |> should.equal("Drop index: idx_users_email")
 }
 
@@ -439,8 +438,8 @@ pub fn create_table_with_string_array_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   // Postgres should use VARCHAR(255)[]
   result
@@ -482,8 +481,8 @@ pub fn create_table_with_int_array_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains("scores INTEGER[] NOT NULL")
@@ -524,8 +523,8 @@ pub fn create_table_with_nested_array_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   // Nested array: INTEGER[][]
   result
@@ -567,8 +566,8 @@ pub fn create_table_with_boolean_array_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains("active_flags BOOLEAN[] NOT NULL")
@@ -611,8 +610,8 @@ pub fn create_table_with_array_sqlite_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   // SQLite always stores arrays as TEXT (JSON)
   result
@@ -654,8 +653,8 @@ pub fn create_table_with_nested_array_sqlite_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   // Even nested arrays are just TEXT in SQLite
   result
@@ -699,8 +698,8 @@ pub fn default_empty_array_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   // Postgres empty array literal
   result
@@ -742,8 +741,8 @@ pub fn default_empty_array_sqlite_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   // SQLite empty JSON array
   result
@@ -803,8 +802,8 @@ pub fn add_array_column_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> should.equal("ALTER TABLE posts ADD COLUMN tags VARCHAR(255)[] NOT NULL;")
@@ -860,8 +859,8 @@ pub fn add_array_column_sqlite_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   result
   |> should.equal("ALTER TABLE posts ADD COLUMN tags TEXT NOT NULL;")
@@ -903,8 +902,8 @@ pub fn nullable_array_column_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   // Nullable array should NOT have NOT NULL
   result
@@ -958,8 +957,8 @@ pub fn create_table_with_enum_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   // Should have CREATE TYPE before CREATE TABLE
   result
@@ -1013,8 +1012,8 @@ pub fn create_table_with_enum_sqlite_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   // SQLite should use TEXT with CHECK constraint
   result
@@ -1054,8 +1053,8 @@ pub fn create_table_with_decimal_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains("price NUMERIC(10, 2) NOT NULL")
@@ -1090,8 +1089,8 @@ pub fn create_table_with_decimal_sqlite_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   result
   |> string.contains("price TEXT NOT NULL")
@@ -1128,8 +1127,8 @@ pub fn create_table_with_blob_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains("data BYTEA NOT NULL")
@@ -1164,8 +1163,8 @@ pub fn create_table_with_blob_sqlite_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   result
   |> string.contains("data BLOB NOT NULL")
@@ -1202,8 +1201,8 @@ pub fn create_table_with_time_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains("starts_at TIME NOT NULL")
@@ -1238,8 +1237,8 @@ pub fn create_table_with_time_sqlite_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   result
   |> string.contains("starts_at TEXT NOT NULL")
@@ -1287,8 +1286,8 @@ pub fn foreign_on_delete_cascade_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains("REFERENCES users(id) ON DELETE CASCADE")
@@ -1334,8 +1333,8 @@ pub fn foreign_on_update_restrict_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains("ON UPDATE RESTRICT")
@@ -1385,8 +1384,8 @@ pub fn foreign_both_actions_postgres_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Postgres)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result
   |> string.contains("ON DELETE CASCADE")
@@ -1436,8 +1435,8 @@ pub fn foreign_on_delete_cascade_sqlite_test() {
       ]),
     )
 
-  let diff = sql.compute_diff(old, new, [table], False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let diff = migrate.compute_diff(old, new, [table], False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   // SQLite also supports FK actions
   result
@@ -1448,9 +1447,9 @@ pub fn foreign_on_delete_cascade_sqlite_test() {
 // ------------------------------------------------------------- Describe Change
 
 pub fn describe_create_enum_type_test() {
-  let change = sql.CreateEnumType("status", ["active", "inactive"])
+  let change = migrate.CreateEnumType("status", ["active", "inactive"])
 
-  sql.describe_change(change)
+  migrate.describe_change(change)
   |> should.equal("Create enum type: status")
 }
 
@@ -1469,9 +1468,9 @@ pub fn create_table_smallint_postgres_test() {
   ]
 
   let old = Snapshot(tables: dict.new())
-  let new = snapshot.build(tables)
-  let diff = sql.compute_diff(old, new, tables, False)
-  let result = sql.generate_sql(diff, Postgres)
+  let new = migrate.build_snapshot(tables)
+  let diff = migrate.compute_diff(old, new, tables, False)
+  let result = migrate.generate_sql(diff, Postgres)
 
   result |> string.contains("priority SMALLINT NOT NULL") |> should.be_true()
 }
@@ -1489,9 +1488,9 @@ pub fn create_table_smallint_sqlite_test() {
   ]
 
   let old = Snapshot(tables: dict.new())
-  let new = snapshot.build(tables)
-  let diff = sql.compute_diff(old, new, tables, False)
-  let result = sql.generate_sql(diff, Sqlite)
+  let new = migrate.build_snapshot(tables)
+  let diff = migrate.compute_diff(old, new, tables, False)
+  let result = migrate.generate_sql(diff, Sqlite)
 
   result |> string.contains("priority INTEGER NOT NULL") |> should.be_true()
 }

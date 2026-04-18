@@ -1,9 +1,9 @@
 import gleam/option.{None}
 import gleam/string
 import gleeunit/should
-import glimr/db/gen/generator
-import glimr/db/gen/parser.{ParsedQuery}
-import glimr/db/gen/schema_parser.{Column, Table}
+import glimr/internal/db/gen/generator
+import glimr/internal/db/gen/parser.{ParsedQuery}
+import glimr/internal/db/gen/schema_parser.{Column, Table}
 
 // ------------------------------------------------------------- Array Type Generation
 

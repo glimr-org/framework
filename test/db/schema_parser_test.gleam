@@ -1,6 +1,6 @@
 import gleam/option.{None, Some}
 import gleeunit/should
-import glimr/db/gen/schema_parser.{
+import glimr/internal/db/gen/schema_parser.{
   Array, BigInt, Blob, Boolean, Cascade, Column, Date, Decimal, DefaultAutoUuid,
   DefaultBool, DefaultEmptyArray, DefaultFloat, DefaultInt, DefaultNow,
   DefaultNull, DefaultString, DefaultUnixNow, Enum, Float, Foreign, Id, Index,

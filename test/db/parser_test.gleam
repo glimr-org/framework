@@ -1,7 +1,6 @@
 import gleam/option.{None, Some}
 import gleeunit/should
-import glimr/db/gen/parser
-import glimr/db/gen/parser/columns.{SelectedColumn}
+import glimr/internal/db/gen/parser.{SelectedColumn}
 
 // ------------------------------------------------------------- SELECT Queries
 

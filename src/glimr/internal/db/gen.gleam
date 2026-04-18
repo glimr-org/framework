@@ -14,9 +14,9 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import glimr/console/console
-import glimr/db/gen/generator
-import glimr/db/gen/parser
-import glimr/db/gen/schema_parser
+import glimr/internal/db/gen/generator
+import glimr/internal/db/gen/parser
+import glimr/internal/db/gen/schema_parser
 import shellout
 import simplifile
 

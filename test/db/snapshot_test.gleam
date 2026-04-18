@@ -1,10 +1,10 @@
 import gleam/dict
 import gleam/option.{None, Some}
 import gleeunit/should
-import glimr/db/gen/migrate/snapshot.{
+import glimr/internal/db/gen/migrate.{
   ColumnSnapshot, IndexSnapshot, Snapshot, TableSnapshot,
 }
-import glimr/db/gen/schema_parser.{Column, Index, Table}
+import glimr/internal/db/gen/schema_parser.{Column, Index, Table}
 
 // ------------------------------------------------------------- Build
 
@@ -39,7 +39,7 @@ pub fn build_snapshot_with_indexes_test() {
     ),
   ]
 
-  let snap = snapshot.build(tables)
+  let snap = migrate.build_snapshot(tables)
 
   let assert Ok(table_snap) = dict.get(snap.tables, "users")
 
@@ -71,7 +71,7 @@ pub fn build_snapshot_without_indexes_test() {
     ),
   ]
 
-  let snap = snapshot.build(tables)
+  let snap = migrate.build_snapshot(tables)
 
   let assert Ok(table_snap) = dict.get(snap.tables, "posts")
 
@@ -117,8 +117,8 @@ pub fn snapshot_save_load_roundtrip_with_indexes_test() {
 
   let path = "/tmp/glimr_test_snapshot_indexes.json"
 
-  let assert Ok(_) = snapshot.save(path, snap)
-  let loaded = snapshot.load(path)
+  let assert Ok(_) = migrate.save_snapshot(path, snap)
+  let loaded = migrate.load_snapshot(path)
 
   let assert Ok(table_snap) = dict.get(loaded.tables, "users")
 
@@ -165,7 +165,7 @@ pub fn snapshot_backwards_compat_no_indexes_test() {
 "
 
   let assert Ok(_) = simplifile.write(path, content)
-  let loaded = snapshot.load(path)
+  let loaded = migrate.load_snapshot(path)
 
   let assert Ok(table_snap) = dict.get(loaded.tables, "users")
 
@@ -179,24 +179,24 @@ import simplifile
 // ------------------------------------------------------------- Array Column Type Strings
 
 pub fn column_type_to_string_array_of_string_test() {
-  snapshot.column_type_to_string(schema_parser.Array(schema_parser.String))
+  migrate.column_type_to_string(schema_parser.Array(schema_parser.String))
   |> should.equal("Array(String)")
 }
 
 pub fn column_type_to_string_array_of_int_test() {
-  snapshot.column_type_to_string(schema_parser.Array(schema_parser.Int))
+  migrate.column_type_to_string(schema_parser.Array(schema_parser.Int))
   |> should.equal("Array(Int)")
 }
 
 pub fn column_type_to_string_nested_array_test() {
-  snapshot.column_type_to_string(
+  migrate.column_type_to_string(
     schema_parser.Array(schema_parser.Array(schema_parser.Int)),
   )
   |> should.equal("Array(Array(Int))")
 }
 
 pub fn column_type_to_string_triple_nested_array_test() {
-  snapshot.column_type_to_string(
+  migrate.column_type_to_string(
     schema_parser.Array(
       schema_parser.Array(schema_parser.Array(schema_parser.Float)),
     ),
@@ -205,12 +205,12 @@ pub fn column_type_to_string_triple_nested_array_test() {
 }
 
 pub fn column_type_to_string_array_of_boolean_test() {
-  snapshot.column_type_to_string(schema_parser.Array(schema_parser.Boolean))
+  migrate.column_type_to_string(schema_parser.Array(schema_parser.Boolean))
   |> should.equal("Array(Boolean)")
 }
 
 pub fn column_type_to_string_array_of_uuid_test() {
-  snapshot.column_type_to_string(schema_parser.Array(schema_parser.Uuid))
+  migrate.column_type_to_string(schema_parser.Array(schema_parser.Uuid))
   |> should.equal("Array(Uuid)")
 }
 
@@ -240,7 +240,7 @@ pub fn build_snapshot_with_array_column_test() {
     ),
   ]
 
-  let snap = snapshot.build(tables)
+  let snap = migrate.build_snapshot(tables)
 
   let assert Ok(table_snap) = dict.get(snap.tables, "posts")
 
@@ -280,7 +280,7 @@ pub fn build_snapshot_with_nested_array_test() {
     ),
   ]
 
-  let snap = snapshot.build(tables)
+  let snap = migrate.build_snapshot(tables)
 
   let assert Ok(table_snap) = dict.get(snap.tables, "data")
   let assert [col] = table_snap.columns
@@ -326,8 +326,8 @@ pub fn snapshot_roundtrip_with_array_column_test() {
 
   let path = "/tmp/glimr_test_snapshot_array.json"
 
-  let assert Ok(_) = snapshot.save(path, snap)
-  let loaded = snapshot.load(path)
+  let assert Ok(_) = migrate.save_snapshot(path, snap)
+  let loaded = migrate.load_snapshot(path)
 
   let assert Ok(table_snap) = dict.get(loaded.tables, "posts")
 
@@ -357,29 +357,29 @@ pub fn snapshot_roundtrip_with_array_column_test() {
 // ------------------------------------------------------------- New Type Strings
 
 pub fn column_type_to_string_enum_test() {
-  snapshot.column_type_to_string(
+  migrate.column_type_to_string(
     schema_parser.Enum("status", ["active", "inactive"]),
   )
   |> should.equal("Enum(status:active,inactive)")
 }
 
 pub fn column_type_to_string_decimal_test() {
-  snapshot.column_type_to_string(schema_parser.Decimal(10, 2))
+  migrate.column_type_to_string(schema_parser.Decimal(10, 2))
   |> should.equal("Decimal(10,2)")
 }
 
 pub fn column_type_to_string_blob_test() {
-  snapshot.column_type_to_string(schema_parser.Blob)
+  migrate.column_type_to_string(schema_parser.Blob)
   |> should.equal("Blob")
 }
 
 pub fn column_type_to_string_time_test() {
-  snapshot.column_type_to_string(schema_parser.Time)
+  migrate.column_type_to_string(schema_parser.Time)
   |> should.equal("Time")
 }
 
 pub fn column_type_to_string_foreign_no_actions_test() {
-  snapshot.column_type_to_string(schema_parser.Foreign(
+  migrate.column_type_to_string(schema_parser.Foreign(
     "users",
     option.None,
     option.None,
@@ -388,7 +388,7 @@ pub fn column_type_to_string_foreign_no_actions_test() {
 }
 
 pub fn column_type_to_string_foreign_with_on_delete_test() {
-  snapshot.column_type_to_string(schema_parser.Foreign(
+  migrate.column_type_to_string(schema_parser.Foreign(
     "users",
     option.Some(schema_parser.Cascade),
     option.None,
@@ -397,7 +397,7 @@ pub fn column_type_to_string_foreign_with_on_delete_test() {
 }
 
 pub fn column_type_to_string_foreign_with_both_actions_test() {
-  snapshot.column_type_to_string(schema_parser.Foreign(
+  migrate.column_type_to_string(schema_parser.Foreign(
     "users",
     option.Some(schema_parser.Cascade),
     option.Some(schema_parser.Restrict),
@@ -440,8 +440,8 @@ pub fn snapshot_roundtrip_with_new_types_test() {
 
   let path = "/tmp/glimr_test_snapshot_new_types.json"
 
-  let assert Ok(_) = snapshot.save(path, snap)
-  let loaded = snapshot.load(path)
+  let assert Ok(_) = migrate.save_snapshot(path, snap)
+  let loaded = migrate.load_snapshot(path)
 
   let assert Ok(table_snap) = dict.get(loaded.tables, "test")
 
@@ -473,7 +473,7 @@ pub fn snapshot_backwards_compat_foreign_no_actions_test() {
 "
 
   let assert Ok(_) = simplifile.write(path, content)
-  let loaded = snapshot.load(path)
+  let loaded = migrate.load_snapshot(path)
 
   let assert Ok(table_snap) = dict.get(loaded.tables, "posts")
 
@@ -486,6 +486,6 @@ pub fn snapshot_backwards_compat_foreign_no_actions_test() {
 // ------------------------------------------------------------- SmallInt Snapshot
 
 pub fn column_type_to_string_smallint_test() {
-  snapshot.column_type_to_string(schema_parser.SmallInt)
+  migrate.column_type_to_string(schema_parser.SmallInt)
   |> should.equal("SmallInt")
 }

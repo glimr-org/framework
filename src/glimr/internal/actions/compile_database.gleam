@@ -6,8 +6,8 @@
 //// during development.
 
 import gleam/option.{None}
-import glimr/db/gen as db_gen
-import glimr/db/gen/migrate as gen_migrate
+import glimr/internal/db/gen as db_gen
+import glimr/internal/db/gen/migrate as gen_migrate
 
 // ------------------------------------------------------------- Public Functions
 
