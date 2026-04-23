@@ -9,7 +9,6 @@
 
 import gleam/dict.{type Dict}
 import gleam/erlang/process
-import gleam/io
 import gleam/list
 import gleam/string
 import glimr/config
@@ -40,7 +39,7 @@ pub fn run() -> Nil {
   let app_port = config.app_port()
   let dev_proxy_port = config.dev_proxy_port()
 
-  io.println("")
+  console.new_line(1)
   dev_proxy.start(app_port, dev_proxy_port)
 
   let initial_mtimes = get_watched_file_mtimes("src")
@@ -123,16 +122,16 @@ fn watch_loop(
                   || string.contains(f, "src/app/http/middleware/")
                 })
 
-              io.println("")
-              io.println(console.warning("Route-related changes detected:"))
-              list.each(route_related_files, fn(f) { io.println("  " <> f) })
-              io.println("")
+              console.new_line(1)
+              console.line_warning("Route-related changes detected:")
+              list.each(route_related_files, fn(f) { console.line("  " <> f) })
+              console.new_line(1)
 
               // Recompile all routes when controllers or validators change
               case compile_routes.run(False) {
                 Ok(_) -> watch_loop(current_mtimes, port, False)
                 Error(msg) -> {
-                  io.println(console.error(msg))
+                  console.line_error(msg)
                   watch_loop(current_mtimes, port, True)
                 }
               }
@@ -146,10 +145,10 @@ fn watch_loop(
               let loom_files =
                 list.filter(files, fn(f) { string.ends_with(f, ".loom.html") })
 
-              io.println("")
-              io.println(console.warning("Loom changes detected:"))
-              list.each(loom_files, fn(f) { io.println("  " <> f) })
-              io.println("")
+              console.new_line(1)
+              console.line_warning("Loom changes detected:")
+              list.each(loom_files, fn(f) { console.line("  " <> f) })
+              console.new_line(1)
 
               // Compile changed loom files
               let loom_had_error =
@@ -157,7 +156,7 @@ fn watch_loop(
                   case compile_loom.run_path(path, False) {
                     Ok(_) -> False
                     Error(msg) -> {
-                      io.println(console.error(msg))
+                      console.line_error(msg)
                       True
                     }
                   }
@@ -177,16 +176,16 @@ fn watch_loop(
                   && string.ends_with(f, ".gleam")
                 })
 
-              io.println("")
-              io.println(console.warning("Command changes detected:"))
-              list.each(command_files, fn(f) { io.println("  " <> f) })
-              io.println("")
+              console.new_line(1)
+              console.line_warning("Command changes detected:")
+              list.each(command_files, fn(f) { console.line("  " <> f) })
+              console.new_line(1)
 
               // Regenerate command registry
               let cmd_had_error = case compile_commands.run(False) {
                 Ok(_) -> False
                 Error(msg) -> {
-                  io.println(console.error(msg))
+                  console.line_error(msg)
                   True
                 }
               }
@@ -205,10 +204,10 @@ fn watch_loop(
                   && !string.contains(f, "/_migrations/")
                 })
 
-              io.println("")
-              io.println(console.warning("Database changes detected:"))
-              list.each(db_files, fn(f) { io.println("  " <> f) })
-              io.println("")
+              console.new_line(1)
+              console.line_warning("Database changes detected:")
+              list.each(db_files, fn(f) { console.line("  " <> f) })
+              console.new_line(1)
 
               // Extract unique connection names and regenerate for each
               let connections =
@@ -221,7 +220,7 @@ fn watch_loop(
                   case compile_database.run(connection) {
                     Ok(_) -> False
                     Error(msg) -> {
-                      io.println(console.error(msg))
+                      console.line_error(msg)
                       True
                     }
                   }
@@ -241,10 +240,10 @@ fn watch_loop(
               case only_compiled_files {
                 True -> Nil
                 False -> {
-                  io.println("")
-                  io.println(console.warning("File changes detected:"))
-                  list.each(files, fn(f) { io.println("  " <> f) })
-                  io.println("")
+                  console.new_line(1)
+                  console.line_warning("File changes detected:")
+                  list.each(files, fn(f) { console.line("  " <> f) })
+                  console.new_line(1)
                 }
               }
 
@@ -253,12 +252,12 @@ fn watch_loop(
               case list.is_empty(run_reload_pre) {
                 True -> Nil
                 False -> {
-                  io.println("")
-                  io.println(console.warning("Running pre-reload hooks..."))
+                  console.new_line(1)
+                  console.line_warning("Running pre-reload hooks...")
                   case run_hooks.run(run_reload_pre) {
                     Ok(_) -> Nil
                     Error(msg) -> {
-                      io.println(console.error(msg))
+                      console.line_error(msg)
                     }
                   }
                 }
@@ -269,19 +268,20 @@ fn watch_loop(
               case list.is_empty(run_reload_post_modified) {
                 True -> Nil
                 False -> {
-                  io.println("")
-                  io.println(console.warning("Running post-modified hooks..."))
+                  console.new_line(1)
+                  console.line_warning("Running post-modified hooks...")
                   case run_hooks.run(run_reload_post_modified) {
                     Ok(_) -> Nil
                     Error(msg) -> {
-                      io.println(console.error(msg))
+                      console.line_error(msg)
                     }
                   }
                 }
               }
 
-              io.println("")
-              io.println(console.warning("Restarting application... ✨"))
+              console.new_line(1)
+              console.line_warning("Restarting application... ✨")
+
               stop_port(port)
               let new_port = start_gleam_run()
               start_output_reader(new_port)

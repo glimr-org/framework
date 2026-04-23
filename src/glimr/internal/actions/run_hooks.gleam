@@ -9,6 +9,7 @@
 import gleam/dict
 import gleam/io
 import gleam/list
+import gleam/result
 import gleam/string
 import glimr/internal/actions/compile_commands
 import shellout
@@ -84,11 +85,12 @@ fn run_hook(cmd: String) -> Result(Nil, String) {
 fn run_internal_command(cmd: String) -> Result(Nil, String) {
   let parts =
     cmd
+    // drop_start(8) to drop the "./glimr " from the command
     |> string.drop_start(8)
     |> string.trim()
     |> string.split(" ")
 
-  let name = list.first(parts) |> unwrap_or("")
+  let name = list.first(parts) |> result.unwrap("")
 
   case compile_commands.read_registry() {
     Ok(registry) -> {
@@ -97,36 +99,17 @@ fn run_internal_command(cmd: String) -> Result(Nil, String) {
           // Convert module path to Erlang atom format
           // glimr/internal/console/commands/build -> glimr@internal@console@commands@build
           let module = string.replace(info.module, "/", "@")
+
           call_module_main(module)
           Ok(Nil)
         }
-        Error(_) -> {
-          Error("Unknown command: " <> name)
-        }
+        Error(_) -> Error("Unknown command: " <> name)
       }
     }
     Error(_) -> {
       // Registry not found, fall back to external
       run_external_command(cmd)
     }
-  }
-}
-
-/// Dynamically calls a module's main() function using Erlang
-/// apply/3. The module string must be in Erlang atom format
-/// (slashes replaced with @).
-///
-@external(erlang, "glimr_hooks_ffi", "call_module_main")
-fn call_module_main(module: String) -> Nil
-
-/// Gleam's result.unwrap requires the error type to match, so
-/// this small helper avoids a verbose case expression at each
-/// call site.
-///
-fn unwrap_or(result: Result(a, e), default: a) -> a {
-  case result {
-    Ok(value) -> value
-    Error(_) -> default
   }
 }
 
@@ -150,3 +133,12 @@ fn run_external_command(cmd: String) -> Result(Nil, String) {
     }
   }
 }
+
+// ------------------------------------------------------------- FFI Bindings
+
+/// Dynamically calls a module's main() function using Erlang
+/// apply/3. The module string must be in Erlang atom format
+/// (slashes replaced with @).
+///
+@external(erlang, "glimr_hooks_ffi", "call_module_main")
+fn call_module_main(module: String) -> Nil

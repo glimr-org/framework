@@ -53,7 +53,11 @@ fn handle_request(
   req: Request(Connection),
   target_port: Int,
 ) -> Response(ResponseData) {
-  let body = read_body(req)
+  let body = case mist.read_body(req, max_body_limit: 10_000_000) {
+    Ok(req_with_body) -> req_with_body.body
+    // Return empty bits if reading fails.
+    Error(_) -> <<>>
+  }
 
   let path_with_query = case req.query {
     Some(q) -> req.path <> "?" <> q
@@ -70,7 +74,7 @@ fn handle_request(
     |> request.set_body(body)
     |> copy_headers(req.headers)
 
-  case forward_with_retry(target_req, 200, 50) {
+  case forward_with_retry(target_req, 200, 0) {
     Ok(resp) -> to_mist_response(resp)
     Error(_) ->
       response.new(502)
@@ -99,16 +103,6 @@ fn forward_with_retry(
   }
 }
 
-/// Reads the request body from a mist connection. Limits body
-/// size to 10MB and returns empty bits if reading fails.
-///
-fn read_body(req: Request(Connection)) -> BitArray {
-  case mist.read_body(req, 10_000_000) {
-    Ok(req_with_body) -> req_with_body.body
-    Error(_) -> <<>>
-  }
-}
-
 /// Copies headers from the original request to the forwarded
 /// request. Excludes host, content-length, and
 /// transfer-encoding headers which are set by the HTTP client.
@@ -120,6 +114,7 @@ fn copy_headers(
   list.fold(headers, req, fn(r, h) {
     let #(name, value) = h
     let lower_name = string.lowercase(name)
+
     case lower_name {
       "host" | "content-length" | "transfer-encoding" -> r
       _ -> request.set_header(r, name, value)

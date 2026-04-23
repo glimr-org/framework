@@ -1,4 +1,3 @@
-import gleam/io
 import glimr/config
 import glimr/console/command.{type Args, type Command}
 import glimr/console/console
@@ -22,16 +21,14 @@ pub fn command() -> Command {
 fn run(_args: Args) -> Nil {
   case auto_compile.run() {
     Ok(_) -> {
-      case run_hooks.run(config.get_string_list("glimr.hooks.run.pre")) {
+      let run_pre_hooks = config.get_string_list("glimr.hooks.run.pre")
+
+      case run_hooks.run(run_pre_hooks) {
         Ok(_) -> run_with_watch.run()
-        Error(msg) -> {
-          io.println(console.error(msg))
-        }
+        Error(msg) -> console.line_error(msg)
       }
     }
-    Error(msg) -> {
-      io.println(console.error(msg))
-    }
+    Error(msg) -> console.line_error(msg)
   }
 }
 
