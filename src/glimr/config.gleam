@@ -1,4 +1,4 @@
-//// Unified Configuration
+//// Configuration
 ////
 //// Every module in the framework needs config values — session
 //// secrets, database URLs, feature flags — but scattering
@@ -257,6 +257,18 @@ pub fn app_port() -> Int {
 ///
 pub fn dev_proxy_port() -> Int {
   env.get_int("DEV_PROXY_PORT") |> result.unwrap(8001)
+}
+
+/// The port the HTTP server should bind to. When the app is
+/// launched via `./glimr run`, the framework sets _GLIMR_RUN so
+/// the app yields the configured app.port to the dev proxy and
+/// listens on the dev_proxy_port instead.
+///
+pub fn listen_port() -> Int {
+  case env.get_string("_GLIMR_RUN") {
+    Ok("true") -> dev_proxy_port()
+    _ -> get_int("app.port")
+  }
 }
 
 // ------------------------------------------------------------- Internal Public Functions
