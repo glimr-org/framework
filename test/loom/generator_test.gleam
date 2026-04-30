@@ -77,6 +77,11 @@ pub fn generate_empty_template_test() {
   result.code
   |> string.contains("pub fn render() -> StringTree")
   |> should.be_true
+
+  // Should also contain the ok() function
+  result.code
+  |> string.contains("pub fn ok() -> Response")
+  |> should.be_true
 }
 
 pub fn generate_text_only_test() {
@@ -89,6 +94,11 @@ pub fn generate_text_only_test() {
   // Should have html function with no params (no view file = no data params)
   result.code
   |> string.contains("pub fn render() -> StringTree")
+  |> should.be_true
+
+  // Should also contain the ok() function
+  result.code
+  |> string.contains("pub fn ok() -> Response")
   |> should.be_true
 }
 
@@ -654,6 +664,31 @@ pub fn generate_component_test() {
   // Should use slot argument in concat
   result.code
   |> string.contains("string_tree.concat([")
+  |> should.be_true
+}
+
+pub fn component_does_not_get_ok_function_test() {
+  // Components are meant to be embedded in other templates, not
+  // returned as HTTP responses, so ok() should not be generated.
+  // The response import is also unnecessary in that case.
+  let result =
+    generate(
+      template([VariableNode("title", 1), SlotNode(None, [])]),
+      "component",
+      True,
+    )
+
+  result.code
+  |> string.contains("pub fn ok")
+  |> should.be_false
+
+  result.code
+  |> string.contains("import glimr/http/response")
+  |> should.be_false
+
+  // Should still contain the render function though.
+  result.code
+  |> string.contains("pub fn render(")
   |> should.be_true
 }
 

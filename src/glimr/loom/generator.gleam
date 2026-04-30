@@ -436,8 +436,16 @@ fn generate_module(
   }
 
   let generated_code = html_fn <> live_fns
+
+  // Generate imports conditionally
   let imports =
-    generate_imports(template, component_data, handlers, generated_code)
+    generate_imports(
+      template,
+      is_component,
+      component_data,
+      handlers,
+      generated_code,
+    )
 
   string.join([header, imports, "", html_fn, live_fns], "\n")
 }
@@ -972,15 +980,25 @@ fn build_handler_lookup(
 ///
 fn generate_imports(
   template: Template,
+  is_component: Bool,
   component_data: ComponentDataMap,
   handlers: List(#(String, handler_parser.Handler)),
   generated_code: String,
 ) -> String {
   // Base imports always needed
-  let base_imports = [
-    "import gleam/string_tree.{type StringTree}",
-    "import glimr/loom/runtime",
-  ]
+  let base_imports = case is_component {
+    // Components don't get an `ok()` wrapper, so they don't need
+    // the response import.
+    True -> [
+      "import gleam/string_tree.{type StringTree}",
+      "import glimr/loom/runtime",
+    ]
+    False -> [
+      "import gleam/string_tree.{type StringTree}",
+      "import glimr/loom/runtime",
+      "import glimr/http/response.{type Response}",
+    ]
+  }
 
   // Conditional imports based on what the generated code actually uses,
   // but skip any that the user already declared via @import
@@ -1177,10 +1195,8 @@ fn generate_html_function(
     False -> template.nodes
   }
 
-  // Build function parameters
   let params = generate_function_params(template, is_component)
-
-  // Build prop_types dict for type-aware conversions
+  let ok_args = generate_render_forward_args(template)
   let prop_types = dict.from_list(template.props)
 
   let body_items =
@@ -1196,7 +1212,7 @@ fn generate_html_function(
   let body_code = items_to_code(body_items)
 
   // For live templates (non-components), wrap with live container
-  case template.is_live && !is_component {
+  let html_fn = case template.is_live && !is_component {
     True -> {
       let wrapped =
         generate_live_wrapper(body_code, module_name, template.props)
@@ -1210,6 +1226,20 @@ fn generate_html_function(
       <> body_code
       <> "\n}\n"
     }
+  }
+
+  // Only generate the ok() function for views, not components
+  case is_component {
+    True -> html_fn
+    False ->
+      html_fn
+      <> "pub fn ok("
+      <> params
+      <> ") -> Response {\n"
+      <> "  render("
+      <> ok_args
+      <> ") |> response.string_tree(200)"
+      <> "\n}\n"
   }
 }
 
@@ -1292,6 +1322,33 @@ fn generate_function_params(template: Template, is_component: Bool) -> String {
   }
 
   list.flatten([data_params, slot_params, named_slot_params, attr_params])
+  |> string.join(", ")
+}
+
+/// The generated `ok()` wrapper forwards all of render's
+/// arguments directly. Building the named-arg call mirrors the
+/// parameter list from generate_function_params so a template
+/// with `props(name: String)` becomes `render(name: name)`
+/// here.
+///
+fn generate_render_forward_args(template: Template) -> String {
+  let data_args = template.props |> list.map(fn(p) { p.0 <> ": " <> p.0 })
+
+  let slot_args = case has_default_slot(template.nodes) {
+    True -> ["slot: slot"]
+    False -> []
+  }
+
+  let named_slot_args =
+    collect_named_slots(template.nodes, set.new())
+    |> set.to_list
+    |> list.sort(string.compare)
+    |> list.map(fn(name) {
+      let field = to_field_name(name)
+      "slot_" <> field <> ": slot_" <> field
+    })
+
+  list.flatten([data_args, slot_args, named_slot_args])
   |> string.join(", ")
 }
 
