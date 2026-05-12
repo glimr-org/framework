@@ -185,7 +185,10 @@ fn get_package_path(package: String) -> option.Option(String) {
 /// standard build/packages directory instead of a custom local
 /// path.
 ///
-fn parse_package_path(content: String, package: String) -> option.Option(String) {
+fn parse_package_path(
+  content: String,
+  package: String,
+) -> option.Option(String) {
   case tom.parse(content) {
     Ok(toml) -> {
       case dict.get(toml, "packages") {
@@ -251,7 +254,10 @@ fn scan_directory(dir: String, prefix: String) -> List(CommandInfo) {
 /// from filename and parses description from const or builder
 /// pattern to avoid requiring a specific export.
 ///
-fn parse_command_file(path: String, prefix: String) -> Result(CommandInfo, Nil) {
+fn parse_command_file(
+  path: String,
+  prefix: String,
+) -> Result(CommandInfo, Nil) {
   case simplifile.read(path) {
     Ok(content) -> {
       let name = path_to_command_name(path)

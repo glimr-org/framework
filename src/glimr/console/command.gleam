@@ -341,7 +341,10 @@ pub fn resolve_cache(parsed: Args) -> Result(Args, String) {
 /// error message. Used by run() to chain resolve_connection and
 /// resolve_cache without duplicating error handling.
 ///
-fn resolve_or_error(result: Result(Args, String), next: fn(Args) -> Nil) -> Nil {
+fn resolve_or_error(
+  result: Result(Args, String),
+  next: fn(Args) -> Nil,
+) -> Nil {
   case result {
     Ok(resolved) -> next(resolved)
     Error(msg) -> {
@@ -390,7 +393,10 @@ fn with_db_pool(args: Args, user_handler: fn(Args, DbPool) -> Nil) -> Nil {
 /// dispatch to the adapter, and Database stores start a db pool
 /// first then wrap it with cache.
 ///
-fn with_cache_pool(args: Args, user_handler: fn(Args, CachePool) -> Nil) -> Nil {
+fn with_cache_pool(
+  args: Args,
+  user_handler: fn(Args, CachePool) -> Nil,
+) -> Nil {
   let cache_name = get_option(args, "cache")
   let stores = cache.load_stores()
 

@@ -472,7 +472,8 @@ fn parse_element_with_attrs(
   // When both l-for and l-if are on the same element, l-if goes INSIDE the loop
   // so it can access loop variables (e.g., l-for="item in items" l-if="item.active")
   case lm_for, lm_if {
-    Some(#(collection, items, loop_var, for_line)), Some(#(condition, if_line)) -> {
+    Some(#(collection, items, loop_var, for_line)), Some(#(condition, if_line))
+    -> {
       // Create: EachNode(IfNode(base_nodes))
       let if_node = IfNode([#(Some(condition), if_line, base_nodes)])
       let each_node = EachNode(collection, items, loop_var, [if_node], for_line)

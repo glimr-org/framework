@@ -216,7 +216,11 @@ fn extract_column_list(content: String) -> Option(String) {
 /// splitting would break on the inner `]`, so we count bracket
 /// depth to find the real closing bracket.
 ///
-fn extract_until_balanced_bracket(s: String, depth: Int, acc: String) -> String {
+fn extract_until_balanced_bracket(
+  s: String,
+  depth: Int,
+  acc: String,
+) -> String {
   case depth <= 0 {
     True -> acc
     False -> {
@@ -879,7 +883,10 @@ fn parse_decimal_column(func: String) -> Option(Column) {
 /// for both `on_delete` and `on_update` without duplicating the
 /// variant matching logic.
 ///
-fn parse_foreign_action(s: String, prefix: String) -> Result(ForeignAction, Nil) {
+fn parse_foreign_action(
+  s: String,
+  prefix: String,
+) -> Result(ForeignAction, Nil) {
   let has_prefix =
     string.starts_with(s, prefix) || string.starts_with(s, "schema." <> prefix)
   case has_prefix {

@@ -118,7 +118,11 @@ fn generate_models(
 /// that model without affecting others. The output is
 /// auto-formatted so generated code matches project style.
 ///
-fn process_model(models_path: String, model_name: String, verbose: Bool) -> Nil {
+fn process_model(
+  models_path: String,
+  model_name: String,
+  verbose: Bool,
+) -> Nil {
   let model_path = models_path <> "/" <> model_name
   let schema_path = model_path <> "/" <> model_name <> "_schema.gleam"
   let queries_path = model_path <> "/queries"

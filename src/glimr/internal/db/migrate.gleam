@@ -694,7 +694,10 @@ fn do_apply_pending(
 /// only after all succeed keeps the tracking table accurate on
 /// partial failures.
 ///
-fn apply_single(conn: Connection, migration: Migration) -> Result(Nil, DbError) {
+fn apply_single(
+  conn: Connection,
+  migration: Migration,
+) -> Result(Nil, DbError) {
   let sql = extract_sql(migration.sql)
 
   let statements =
@@ -1083,7 +1086,10 @@ fn sort_changes_by_dependency(changes: List(Change)) -> List(Change) {
 /// references to existing tables don't count as deps because
 /// those tables are already in the database.
 ///
-fn topological_sort(tables: List(Table), all_names: List(String)) -> List(Table) {
+fn topological_sort(
+  tables: List(Table),
+  all_names: List(String),
+) -> List(Table) {
   // Get dependencies for each table (only count deps on tables being created)
   let get_deps = fn(table: Table) -> List(String) {
     table.columns

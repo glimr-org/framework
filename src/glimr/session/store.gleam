@@ -51,8 +51,7 @@ pub fn new(
     String,
     Dict(String, String),
     Dict(String, String),
-  ) ->
-    String,
+  ) -> String,
 ) -> SessionStore {
   SessionStore(
     load: load,
@@ -70,7 +69,9 @@ pub fn new(
 /// than crashing.
 ///
 @deprecated("use glimr/session.load instead")
-pub fn load(session_id: String) -> #(Dict(String, String), Dict(String, String)) {
+pub fn load(
+  session_id: String,
+) -> #(Dict(String, String), Dict(String, String)) {
   with_store(#(dict.new(), dict.new()), fn(store) { store.load(session_id) })
 }
 

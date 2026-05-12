@@ -433,7 +433,11 @@ fn is_valid_identifier(s: String) -> Bool {
 /// in the expression, so the generated handler function doesn't
 /// extract unused values from the JS event object.
 ///
-fn maybe_add_var(vars: List(String), expr: String, var: String) -> List(String) {
+fn maybe_add_var(
+  vars: List(String),
+  expr: String,
+  var: String,
+) -> List(String) {
   case string.contains(expr, var) {
     True -> [var, ..vars]
     False -> vars

@@ -876,7 +876,10 @@ fn write_cache_file(
 /// keeps the file backend from accumulating stale entries
 /// without a cleanup job.
 ///
-fn parse_cache_file(content: String, path: String) -> Result(String, CacheError) {
+fn parse_cache_file(
+  content: String,
+  path: String,
+) -> Result(String, CacheError) {
   use #(expires_str, value) <- result.try(
     string.split_once(content, "\n")
     |> result.replace_error(SerializationError("Invalid cache file format")),

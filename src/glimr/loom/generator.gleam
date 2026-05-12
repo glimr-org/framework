@@ -3838,8 +3838,9 @@ fn generate_node_tree(
       )
     }
 
-    parser.SlotNode(_, _) | parser.SlotDefNode(_, _) | parser.AttributesNode(_) ->
-      acc
+    parser.SlotNode(_, _)
+    | parser.SlotDefNode(_, _)
+    | parser.AttributesNode(_) -> acc
   }
 }
 

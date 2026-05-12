@@ -181,7 +181,10 @@ fn write_cache_file(
 /// right here — this is the lazy cleanup that keeps disk usage
 /// in check without needing a background GC job.
 ///
-fn parse_cache_file(content: String, path: String) -> Result(String, CacheError) {
+fn parse_cache_file(
+  content: String,
+  path: String,
+) -> Result(String, CacheError) {
   use #(expires_str, value) <- result.try(
     string.split_once(content, "\n")
     |> result.replace_error(SerializationError("Invalid cache file format")),

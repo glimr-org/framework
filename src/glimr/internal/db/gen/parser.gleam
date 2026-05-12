@@ -310,7 +310,11 @@ fn is_sql_keyword(s: String) -> Bool {
 /// tracking whether we're inside a string literal. Characters
 /// inside strings are skipped, quotes are preserved.
 ///
-fn do_strip_string_literals(sql: String, acc: String, in_string: Bool) -> String {
+fn do_strip_string_literals(
+  sql: String,
+  acc: String,
+  in_string: Bool,
+) -> String {
   case string.pop_grapheme(sql) {
     Error(_) -> acc
     Ok(#("'", rest)) -> {
@@ -483,7 +487,10 @@ fn do_find_keyword_at_depth_zero(
 /// UPDATE, and DELETE statements. Falls back to empty list if
 /// no RETURNING clause is found.
 ///
-fn extract_returning_columns(sql: String, upper: String) -> List(SelectedColumn) {
+fn extract_returning_columns(
+  sql: String,
+  upper: String,
+) -> List(SelectedColumn) {
   case string.split_once(upper, "RETURNING ") {
     Ok(#(before, _)) -> {
       let offset = string.length(before) + 10

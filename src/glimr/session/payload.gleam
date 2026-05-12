@@ -23,7 +23,10 @@ import gleam/list
 /// Erlang terms wouldn't be readable.
 ///
 @deprecated("use glimr/session.encode_payload instead")
-pub fn encode(data: Dict(String, String), flash: Dict(String, String)) -> String {
+pub fn encode(
+  data: Dict(String, String),
+  flash: Dict(String, String),
+) -> String {
   let to_json_object = fn(d) {
     dict.to_list(d)
     |> list.map(fn(entry) { #(entry.0, json.string(entry.1)) })

@@ -367,8 +367,7 @@ pub fn new(
     String,
     Dict(String, String),
     Dict(String, String),
-  ) ->
-    String,
+  ) -> String,
 ) -> SessionStore {
   SessionStore(
     load: load,
@@ -385,7 +384,9 @@ pub fn new(
 /// sessions aren't set up — reads just return nothing rather
 /// than crashing.
 ///
-pub fn load(session_id: String) -> #(Dict(String, String), Dict(String, String)) {
+pub fn load(
+  session_id: String,
+) -> #(Dict(String, String), Dict(String, String)) {
   with_store(#(dict.new(), dict.new()), fn(store) { store.load(session_id) })
 }
 

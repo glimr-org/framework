@@ -27,7 +27,10 @@ fn template_with_props(
 }
 
 // Helper to create a live template (with is_live: True)
-fn live_template(props: List(#(String, String)), nodes: List(Node)) -> Template {
+fn live_template(
+  props: List(#(String, String)),
+  nodes: List(Node),
+) -> Template {
   Template(imports: [], props: props, nodes: nodes, is_live: True)
 }
 

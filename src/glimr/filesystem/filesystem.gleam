@@ -129,7 +129,10 @@ pub fn write_from_stub_with_variables(
 /// generated output.
 ///
 @internal
-pub fn replace_variables(data: Dict(String, String), content: String) -> String {
+pub fn replace_variables(
+  data: Dict(String, String),
+  content: String,
+) -> String {
   let html =
     dict.fold(data, content, fn(acc, key, value) {
       acc
