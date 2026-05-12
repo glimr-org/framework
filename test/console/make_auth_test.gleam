@@ -480,6 +480,56 @@ pub fn start() -> app.App {
   should.be_true(has_line(result, "user: option.None,"))
 }
 
+/// glimr_app.gleam holds the App constructor alongside several
+/// other functions (route_groups, session_setup, main, etc).
+/// Only the App(...) call should be patched; the other parens
+/// in the file must be left untouched.
+///
+pub fn app_start_only_patches_app_constructor_in_glimr_app_test() {
+  let input =
+    "import app/app.{type App}
+import glimr/cache
+import glimr_sqlite/sqlite
+import mist
+
+fn app() -> App {
+  app.App(
+    db: sqlite.start(\"main\"),
+    cache: cache.start_file(\"main\"),
+  )
+}
+
+fn route_groups() {
+  case name {
+    \"api\" -> api.routes
+    _ -> web.routes
+  }
+}
+
+pub fn main() -> Nil {
+  let assert Ok(_) =
+    glimr_mist.handler(init, config.get_string(\"app.key\"))
+    |> mist.new()
+    |> mist.port(config.listen_port())
+    |> mist.start()
+}"
+
+  let result = make_auth_service.inject_into_app_start(input, "user")
+  let lines = string.split(result, "\n")
+
+  // The new field landed inside the App constructor, after cache.
+  let cache_idx = find_line_index(lines, "cache: cache.start_file", 0)
+  let user_idx = find_line_index(lines, "user: option.None,", 0)
+  should.be_true(user_idx == cache_idx + 1)
+
+  // Exactly one option.None insertion, so the other functions
+  // were not mistakenly patched as constructors.
+  should.equal(count_occurrences(result, "option.None"), 1)
+
+  // The unrelated mist chain was preserved verbatim.
+  should.be_true(has_line(result, "|> mist.port(config.listen_port())"))
+}
+
 // ------------------------------------------------------------- Helpers
 
 fn has_line(content: String, needle: String) -> Bool {
