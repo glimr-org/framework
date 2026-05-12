@@ -488,7 +488,7 @@ pub fn register_in_app(model_name: String, connection: String) -> Nil {
 /// crash with a missing field error.
 ///
 pub fn register_in_app_start(model_name: String) -> Nil {
-  let bootstrap_path = "src/bootstrap/app.gleam"
+  let bootstrap_path = "src/app/app.gleam"
 
   case simplifile.read(bootstrap_path) {
     Error(_) -> {
