@@ -482,18 +482,18 @@ pub fn register_in_app(model_name: String, connection: String) -> Nil {
   }
 }
 
-/// The bootstrap app module creates the initial App value with
-/// all fields set. Without this patch, the new auth field would
-/// be missing from the constructor and every request would
+/// The glimr_app entry module constructs the initial App value
+/// with all fields set. Without this patch, the new auth field
+/// would be missing from the constructor and every request would
 /// crash with a missing field error.
 ///
 pub fn register_in_app_start(model_name: String) -> Nil {
-  let bootstrap_path = "src/app/app.gleam"
+  let app_entry_path = "src/glimr_app.gleam"
 
-  case simplifile.read(bootstrap_path) {
+  case simplifile.read(app_entry_path) {
     Error(_) -> {
       console.line_error(
-        "Could not read " <> bootstrap_path <> " — does it exist?",
+        "Could not read " <> app_entry_path <> " — does it exist?",
       )
     }
 
@@ -502,7 +502,7 @@ pub fn register_in_app_start(model_name: String) -> Nil {
         True -> {
           console.line_warning(
             "Skipped: "
-            <> bootstrap_path
+            <> app_entry_path
             <> " ("
             <> model_name
             <> " already initialized)",
@@ -511,7 +511,7 @@ pub fn register_in_app_start(model_name: String) -> Nil {
         False -> {
           let modified = inject_into_app_start(content, model_name)
           write_and_format(
-            bootstrap_path,
+            app_entry_path,
             original: content,
             modified: modified,
           )
@@ -578,7 +578,7 @@ pub fn inject_into_app(
 }
 
 /// Completes the trio of inject functions — this one handles
-/// the bootstrap app module where App values are first
+/// the glimr_app entry module where App values are first
 /// constructed. Inserts `{model}: option.None` so the new field
 /// has a valid default value.
 ///
@@ -747,7 +747,10 @@ fn find_last_import_index(lines: List(String), current: Int, last: Int) -> Int {
 /// middleware, which is correct since it depends on the
 /// session.
 ///
-fn insert_middleware_entries(lines: List(String), entry: String) -> List(String) {
+fn insert_middleware_entries(
+  lines: List(String),
+  entry: String,
+) -> List(String) {
   insert_middleware_entries_loop(lines, entry, -1, 0, [])
 }
 
