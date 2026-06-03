@@ -154,6 +154,13 @@ pub fn validate_template(
   template: Template,
   source_path: String,
 ) -> Result(Nil, String) {
+  // Live templates round-trip every prop through JSON, so every
+  // prop type must be resolvable through the codec/primitive
+  // recursion. Catching unresolvable types here gives users a
+  // clear loom-level error instead of cryptic Gleam compile
+  // errors in the generated module.
+  use _ <- result.try(validate_live_prop_types(template, source_path))
+
   // Get available variables from template props (with types for validation)
   let data_fields = dict.from_list(template.props)
 
@@ -167,6 +174,37 @@ pub fn validate_template(
 
   // Check all nodes for undefined variables
   validate_nodes(template.nodes, data_fields, slot_vars, set.new(), source_path)
+}
+
+/// Live templates serialize every prop to JSON for the initial
+/// signed token and for the handle() round-trip. Each prop type
+/// must therefore resolve through `type_to_decoder` /
+/// `type_to_encoder`. Surfacing the failure here lets us point
+/// at the template file and recommend the `codec(...)`
+/// directive rather than letting the Gleam compiler complain
+/// about `decode.string` being applied to a non-String prop.
+///
+fn validate_live_prop_types(
+  template: Template,
+  source_path: String,
+) -> Result(Nil, String) {
+  use <- bool.guard(!template.is_live, Ok(Nil))
+
+  let codecs = build_codec_table(template.codecs)
+
+  list.try_each(template.props, fn(prop) {
+    let #(name, type_str) = prop
+    type_to_decoder(type_str, codecs)
+    |> result.map_error(fn(msg) {
+      source_path
+      <> ": live template prop '"
+      <> name
+      <> ": "
+      <> type_str
+      <> "' — "
+      <> msg
+    })
+  })
 }
 
 // ------------------------------------------------------------- Private Functions
@@ -709,14 +747,16 @@ fn generate_handle_json_function(
   template: Template,
   used_vars: UsedSpecialVars,
 ) -> String {
+  let codecs = build_codec_table(template.codecs)
+
   // Generate the props decoder
-  let props_decoder = generate_props_decoder(template.props)
+  let props_decoder = generate_props_decoder(template.props, codecs)
 
   // Generate the call to handle() with extracted props
   let handle_call = generate_handle_call(template.props, used_vars)
 
   // Generate the JSON encoding of the result
-  let result_encoder = generate_result_encoder(template.props)
+  let result_encoder = generate_result_encoder(template.props, codecs)
 
   // Only parse special vars that are used (but keep all params for fixed signature)
   // Use underscore prefix for unused params to avoid warnings
@@ -803,14 +843,17 @@ fn generate_handle_json_function(
 /// ensures the correct field names and types are used without
 /// manual boilerplate.
 ///
-fn generate_props_decoder(props: List(#(String, String))) -> String {
+fn generate_props_decoder(
+  props: List(#(String, String)),
+  codecs: CodecTable,
+) -> String {
   case props {
     [] -> "    decode.success(Nil)\n"
     _ -> {
       let field_decoders =
         props
         |> list.map(fn(p) {
-          let decoder = type_to_decoder(p.1)
+          let decoder = resolve_decoder(p.1, codecs)
           "    use "
           <> p.0
           <> " <- decode.field(\""
@@ -884,11 +927,14 @@ fn generate_handle_call(
 /// encoded with the correct JSON type (string, int, bool,
 /// etc.).
 ///
-fn generate_result_encoder(props: List(#(String, String))) -> String {
+fn generate_result_encoder(
+  props: List(#(String, String)),
+  codecs: CodecTable,
+) -> String {
   case props {
     [] -> "      \"{}\"\n"
     [single] -> {
-      let encoder = type_to_encoder("result", single.1)
+      let encoder = resolve_encoder("result", single.1, codecs)
       "      json.to_string(json.object([#(\""
       <> single.0
       <> "\", "
@@ -901,7 +947,7 @@ fn generate_result_encoder(props: List(#(String, String))) -> String {
       let fields =
         props
         |> list.map(fn(p) {
-          let encoder = type_to_encoder(p.0, p.1)
+          let encoder = resolve_encoder(p.0, p.1, codecs)
           "#(\"" <> p.0 <> "\", " <> encoder <> ")"
         })
         |> string.join(", ")
@@ -916,44 +962,220 @@ fn generate_result_encoder(props: List(#(String, String))) -> String {
   }
 }
 
-/// The props decoder needs type-specific decoders for each
-/// field. Mapping from the type annotation string avoids a full
-/// type system while covering the common prop types that
-/// templates actually use.
+/// A `CodecTable` maps a custom prop type name (e.g. "Image")
+/// to the encoder/decoder function references the user declared
+/// via `codec(...)` in the template frontmatter. The generator
+/// emits these references directly into the generated module so
+/// they are resolved at Gleam compile time via the template's
+/// `@import` lines.
 ///
-fn type_to_decoder(gleam_type: String) -> String {
-  case gleam_type {
-    "String" -> "decode.string"
-    "Int" -> "decode.int"
-    "Float" -> "decode.float"
-    "Bool" -> "decode.bool"
-    "List(String)" -> "decode.list(decode.string)"
-    "List(Int)" -> "decode.list(decode.int)"
-    "List(Float)" -> "decode.list(decode.float)"
-    "List(Bool)" -> "decode.list(decode.bool)"
-    _ -> "decode.string"
-    // Fallback for complex types
+type CodecTable =
+  Dict(String, #(String, String))
+
+/// The recursive type walker hits a codec lookup at every level
+/// of nested generics, and again for every other prop that
+/// shares a type. Scanning the directive list each time would
+/// turn what should be a flat decoder build into quadratic work
+/// as soon as a template has more than a couple of custom
+/// types. Hoisting the lookup into a dict up front keeps each
+/// resolution constant-time.
+///
+fn build_codec_table(codecs: List(#(String, String, String))) -> CodecTable {
+  codecs
+  |> list.map(fn(entry) {
+    let #(type_name, encoder, decoder) = entry
+    #(type_name, #(encoder, decoder))
+  })
+  |> dict.from_list
+}
+
+/// The encoder and decoder builders both need to look at a type
+/// like `List(Image)` and ask "is this a List or Option, and if
+/// so, what's the inner type so I can recurse?". Doing that
+/// parsing inline in three places would either duplicate the
+/// paren matching or accidentally diverge over time. Pulling it
+/// into one helper that returns the head and inner as a tuple
+/// keeps the recursive callers focused on the shape they care
+/// about.
+///
+fn split_generic_type(type_str: String) -> Option(#(String, String)) {
+  case string.split_once(type_str, "(") {
+    Error(_) -> None
+    Ok(#(head, rest)) -> {
+      let rest = string.trim(rest)
+      use <- bool.guard(!string.ends_with(rest, ")"), None)
+      Some(#(string.trim(head), string.drop_end(rest, 1) |> string.trim))
+    }
   }
 }
 
-/// The result encoder needs type-specific encoding for each
-/// prop. Mirroring type_to_decoder ensures the encode/decode
-/// round-trip preserves types correctly between the server and
-/// client.
+/// Each live template prop has to come back from JSON typed
+/// correctly, which means generating the right gleam_json
+/// decoder for whatever type the user wrote in `props(...)`.
+/// Primitives land directly on the matching `decode.*` helper,
+/// nested generics recurse to handle things like
+/// `List(Option(Int))`, and custom records resolve through the
+/// codec table the user set up with `codec(...)`. Returning a
+/// `Result` instead of falling back silently means a typo or an
+/// unsupported shape gets caught by `validate_template` with a
+/// real error message rather than producing generated code that
+/// won't compile.
 ///
-fn type_to_encoder(name: String, gleam_type: String) -> String {
+fn type_to_decoder(
+  gleam_type: String,
+  codecs: CodecTable,
+) -> Result(String, String) {
   case gleam_type {
-    "String" -> "json.string(" <> name <> ")"
-    "Int" -> "json.int(" <> name <> ")"
-    "Float" -> "json.float(" <> name <> ")"
-    "Bool" -> "json.bool(" <> name <> ")"
-    "List(String)" -> "json.array(" <> name <> ", json.string)"
-    "List(Int)" -> "json.array(" <> name <> ", json.int)"
-    "List(Float)" -> "json.array(" <> name <> ", json.float)"
-    "List(Bool)" -> "json.array(" <> name <> ", json.bool)"
-    _ -> "json.string(" <> name <> ")"
-    // Fallback
+    "String" -> Ok("decode.string")
+    "Int" -> Ok("decode.int")
+    "Float" -> Ok("decode.float")
+    "Bool" -> Ok("decode.bool")
+    _ ->
+      case split_generic_type(gleam_type) {
+        Some(#("List", inner)) -> {
+          use inner_dec <- result.try(type_to_decoder(inner, codecs))
+          Ok("decode.list(" <> inner_dec <> ")")
+        }
+        Some(#("Option", inner)) -> {
+          use inner_dec <- result.try(type_to_decoder(inner, codecs))
+          Ok("decode.optional(" <> inner_dec <> ")")
+        }
+        Some(_) -> Error(unsupported_type_message(gleam_type))
+        None ->
+          case dict.get(codecs, gleam_type) {
+            Ok(#(_encoder, decoder)) -> Ok(decoder <> "()")
+            Error(_) -> Error(unsupported_type_message(gleam_type))
+          }
+      }
   }
+}
+
+/// At the top of the encoding chain we always have a named
+/// variable in scope (the prop being encoded), so the goal here
+/// is to emit the encoder *already applied* to that name. For
+/// primitives that's the obvious `json.string(name)` form. The
+/// awkward bit is `List(T)` and `Option(T)`: gleam_json's
+/// `json.array` and `json.nullable` take a per-element encoder
+/// function rather than an applied expression, so the recursive
+/// step has to switch tracks and ask `encoder_fn_for` for the
+/// function reference. Keeping these two forms in separate
+/// functions means generated code stays clean instead of
+/// devolving into `fn(x) { ... }(name)` wrappers.
+///
+fn type_to_encoder(
+  name: String,
+  gleam_type: String,
+  codecs: CodecTable,
+) -> Result(String, String) {
+  case gleam_type {
+    "String" -> Ok("json.string(" <> name <> ")")
+    "Int" -> Ok("json.int(" <> name <> ")")
+    "Float" -> Ok("json.float(" <> name <> ")")
+    "Bool" -> Ok("json.bool(" <> name <> ")")
+    _ ->
+      case split_generic_type(gleam_type) {
+        Some(#("List", inner)) -> {
+          use inner_fn <- result.try(encoder_fn_for(inner, codecs))
+          Ok("json.array(" <> name <> ", " <> inner_fn <> ")")
+        }
+        Some(#("Option", inner)) -> {
+          use inner_fn <- result.try(encoder_fn_for(inner, codecs))
+          Ok("json.nullable(" <> name <> ", " <> inner_fn <> ")")
+        }
+        Some(_) -> Error(unsupported_type_message(gleam_type))
+        None ->
+          case dict.get(codecs, gleam_type) {
+            Ok(#(encoder, _decoder)) -> Ok(encoder <> "(" <> name <> ")")
+            Error(_) -> Error(unsupported_type_message(gleam_type))
+          }
+      }
+  }
+}
+
+/// Whenever an encoder is being passed as the per-element
+/// argument to `json.array` or `json.nullable`, gleam_json
+/// wants a function reference, not an expression with a value
+/// already plugged in. That means for nested shapes like
+/// `List(Option(Image))` the inner encoder has to be reachable
+/// as a value of type `fn(a) -> Json`. Primitives map straight
+/// to the bare `json.*` names, nested generics get wrapped in a
+/// small closure so the recursion has something to hand back,
+/// and custom types resolve through the codec table by name.
+///
+fn encoder_fn_for(
+  gleam_type: String,
+  codecs: CodecTable,
+) -> Result(String, String) {
+  case gleam_type {
+    "String" -> Ok("json.string")
+    "Int" -> Ok("json.int")
+    "Float" -> Ok("json.float")
+    "Bool" -> Ok("json.bool")
+    _ ->
+      case split_generic_type(gleam_type) {
+        Some(#("List", inner)) -> {
+          use inner_fn <- result.try(encoder_fn_for(inner, codecs))
+          Ok("fn(x) { json.array(x, " <> inner_fn <> ") }")
+        }
+        Some(#("Option", inner)) -> {
+          use inner_fn <- result.try(encoder_fn_for(inner, codecs))
+          Ok("fn(x) { json.nullable(x, " <> inner_fn <> ") }")
+        }
+        Some(_) -> Error(unsupported_type_message(gleam_type))
+        None ->
+          case dict.get(codecs, gleam_type) {
+            Ok(#(encoder, _decoder)) -> Ok(encoder)
+            Error(_) -> Error(unsupported_type_message(gleam_type))
+          }
+      }
+  }
+}
+
+/// The same "I don't know how to serialize this type" failure
+/// can pop up from the decoder side, the encoder side, or the
+/// validate_template pass, and it would be confusing if each
+/// one gave the user slightly different guidance. Centralising
+/// the message means whichever path the user hits, they see the
+/// same hint that points them at the `codec(...)` directive
+/// with the exact type name spelled out.
+///
+fn unsupported_type_message(gleam_type: String) -> String {
+  "Loom cannot JSON-serialize the live template prop type '"
+  <> gleam_type
+  <> "'. Supported types are String, Int, Float, Bool, and List/Option of these. For custom types, declare a codec in the template frontmatter: codec("
+  <> gleam_type
+  <> ", encode: encoder_fn, decode: decoder_fn)"
+}
+
+/// All the code around here is busy concatenating Gleam source
+/// into a String, so there's nowhere to bubble a `Result` to.
+/// `validate_template` is supposed to have caught any
+/// unresolvable prop type long before we get here, but if a
+/// caller skipped validation (a unit test poking at the
+/// generator directly, for example) we still need to produce
+/// *some* string. Defaulting to the legacy `decode.string`
+/// fallback at least keeps the Gleam error surface familiar
+/// instead of crashing the compile pipeline.
+///
+fn resolve_decoder(gleam_type: String, codecs: CodecTable) -> String {
+  type_to_decoder(gleam_type, codecs) |> result.unwrap("decode.string")
+}
+
+/// Same boundary problem as `resolve_decoder`: we're inside a
+/// String-building expression with no way to propagate an error
+/// further up. `validate_template` is the real gate against
+/// unsupported types, but in case a caller bypasses it the
+/// `json.string(name)` fallback mirrors the legacy pre-fix
+/// behavior so the failure mode is at least familiar instead of
+/// a crash mid-generation.
+///
+fn resolve_encoder(
+  name: String,
+  gleam_type: String,
+  codecs: CodecTable,
+) -> String {
+  type_to_encoder(name, gleam_type, codecs)
+  |> result.unwrap("json.string(" <> name <> ")")
 }
 
 /// Handler IDs must match between the data-l-* attributes in
@@ -1215,7 +1437,12 @@ fn generate_html_function(
   let html_fn = case template.is_live && !is_component {
     True -> {
       let wrapped =
-        generate_live_wrapper(body_code, module_name, template.props)
+        generate_live_wrapper(
+          body_code,
+          module_name,
+          template.props,
+          build_codec_table(template.codecs),
+        )
       "pub fn render(" <> params <> ") -> StringTree {\n" <> wrapped <> "}\n"
     }
     False -> {
@@ -1253,6 +1480,7 @@ fn generate_live_wrapper(
   body: String,
   module_name: String,
   props: List(#(String, String)),
+  codecs: CodecTable,
 ) -> String {
   // Generate the props JSON encoder expression
   let props_json_expr = case props {
@@ -1261,7 +1489,7 @@ fn generate_live_wrapper(
       let fields =
         props
         |> list.map(fn(p) {
-          let encoder = type_to_encoder(p.0, p.1)
+          let encoder = resolve_encoder(p.0, p.1, codecs)
           "#(\"" <> p.0 <> "\", " <> encoder <> ")"
         })
         |> string.join(", ")
@@ -1617,7 +1845,12 @@ fn generate_node_concat_items(
             "compiled/loom/components/"
             <> { name |> string.replace(":", "/") |> string.replace("-", "_") }
           let props_json_expr =
-            generate_component_props_json(name, attributes, component_data)
+            generate_component_props_json(
+              name,
+              attributes,
+              component_data,
+              dict.new(),
+            )
           [
             StringBatch([
               "runtime.live_component_wrapper(string_tree.to_string("
@@ -3068,6 +3301,7 @@ fn generate_component_props_json(
   component_name: String,
   attributes: List(lexer.ComponentAttr),
   component_data: ComponentDataMap,
+  codecs: CodecTable,
 ) -> String {
   let props = case dict.get(component_data, component_name) {
     Ok(data) -> data.props
@@ -3093,7 +3327,7 @@ fn generate_component_props_json(
           "\"" <> escape_gleam_string(value) <> "\""
         _ -> default_for_type(prop_type)
       }
-      let encoder = type_to_encoder(expr, prop_type)
+      let encoder = resolve_encoder(expr, prop_type, codecs)
       "#(\"" <> prop_name <> "\", " <> encoder <> ")"
     })
     |> string.join(", ")
@@ -3527,7 +3761,8 @@ fn generate_tree_function(
 /// dispatch.
 ///
 fn generate_tree_json_function(template: Template) -> String {
-  let props_decoder = generate_props_decoder(template.props)
+  let codecs = build_codec_table(template.codecs)
+  let props_decoder = generate_props_decoder(template.props, codecs)
   let render_tree_call = generate_render_tree_call(template.props)
 
   "/// JSON wrapper for render_tree() — used by live_socket for dynamic dispatch.\n"
@@ -3797,7 +4032,12 @@ fn generate_node_tree(
             "compiled/loom/components/"
             <> { name |> string.replace(":", "/") |> string.replace("-", "_") }
           let props_json_expr =
-            generate_component_props_json(name, attributes, component_data)
+            generate_component_props_json(
+              name,
+              attributes,
+              component_data,
+              dict.new(),
+            )
           "runtime.live_component_wrapper("
           <> component_code
           <> ", \""

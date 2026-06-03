@@ -30,6 +30,12 @@ pub type Template {
     imports: List(String),
     /// Props from @props directive (name, type pairs)
     props: List(#(String, String)),
+    /// JSON codec functions for custom types referenced in live
+    /// template props, in declaration order. Each entry is
+    /// (type_name, encoder_fn_ref, decoder_fn_ref) where the
+    /// function references are emitted directly into the generated
+    /// module.
+    codecs: List(#(String, String, String)),
     /// Content nodes
     nodes: List(Node),
     /// Whether this template contains l-on:* or l-model attributes
@@ -145,11 +151,9 @@ type BodyContext {
 ///
 pub fn parse(tokens: List(Token)) -> Result(Template, ParserError) {
   // First extract @import and @props directives from the beginning
-  use #(imports, props, remaining_tokens) <- result.try(extract_directives(
-    tokens,
-    [],
-    None,
-  ))
+  use #(imports, props, codecs, remaining_tokens) <- result.try(
+    extract_directives(tokens, [], None, []),
+  )
 
   // Then parse the content nodes
   use nodes <- result.try(parse_nodes(remaining_tokens, [], None))
@@ -157,7 +161,13 @@ pub fn parse(tokens: List(Token)) -> Result(Template, ParserError) {
   // Detect if template contains l-on:* or l-model (makes it "live")
   let is_live = has_live_attributes(nodes)
 
-  Ok(Template(imports: imports, props: props, nodes: nodes, is_live: is_live))
+  Ok(Template(
+    imports: imports,
+    props: props,
+    codecs: codecs,
+    nodes: nodes,
+    is_live: is_live,
+  ))
 }
 
 // ------------------------------------------------------------- Private Functions
@@ -172,32 +182,71 @@ fn extract_directives(
   tokens: List(Token),
   imports_acc: List(String),
   props_acc: Option(List(#(String, String))),
-) -> Result(#(List(String), List(#(String, String)), List(Token)), ParserError) {
+  codecs_acc: List(#(String, String, String)),
+) -> Result(
+  #(
+    List(String),
+    List(#(String, String)),
+    List(#(String, String, String)),
+    List(Token),
+  ),
+  ParserError,
+) {
   case tokens {
-    [] -> Ok(#(list.reverse(imports_acc), option.unwrap(props_acc, []), []))
+    [] ->
+      Ok(
+        #(
+          list.reverse(imports_acc),
+          option.unwrap(props_acc, []),
+          list.reverse(codecs_acc),
+          [],
+        ),
+      )
 
     // Skip leading whitespace text (newlines, spaces between directives)
     [lexer.Text(content), ..rest] -> {
       case is_whitespace_only(content) {
-        True -> extract_directives(rest, imports_acc, props_acc)
+        True -> extract_directives(rest, imports_acc, props_acc, codecs_acc)
         False ->
           // Non-whitespace text - directives phase is over
-          Ok(#(list.reverse(imports_acc), option.unwrap(props_acc, []), tokens))
+          Ok(#(
+            list.reverse(imports_acc),
+            option.unwrap(props_acc, []),
+            list.reverse(codecs_acc),
+            tokens,
+          ))
       }
     }
 
     [lexer.ImportDirective(import_str, _line), ..rest] ->
-      extract_directives(rest, [import_str, ..imports_acc], props_acc)
+      extract_directives(
+        rest,
+        [import_str, ..imports_acc],
+        props_acc,
+        codecs_acc,
+      )
 
     [lexer.PropsDirective(props, line), ..rest] -> {
       case props_acc {
         Some(_) -> Error(DuplicatePropsDirective(line))
-        None -> extract_directives(rest, imports_acc, Some(props))
+        None -> extract_directives(rest, imports_acc, Some(props), codecs_acc)
       }
     }
 
+    [lexer.CodecDirective(type_name, encoder, decoder, _line), ..rest] ->
+      extract_directives(rest, imports_acc, props_acc, [
+        #(type_name, encoder, decoder),
+        ..codecs_acc
+      ])
+
     // Any other token - directives phase is over
-    _ -> Ok(#(list.reverse(imports_acc), option.unwrap(props_acc, []), tokens))
+    _ ->
+      Ok(#(
+        list.reverse(imports_acc),
+        option.unwrap(props_acc, []),
+        list.reverse(codecs_acc),
+        tokens,
+      ))
   }
 }
 
@@ -360,6 +409,9 @@ fn parse_nodes(
 
     [lexer.PropsDirective(_, line), ..] ->
       Error(DirectiveAfterContent("@props", line))
+
+    [lexer.CodecDirective(_, _, _, line), ..] ->
+      Error(DirectiveAfterContent("codec", line))
   }
 }
 
@@ -856,6 +908,9 @@ fn parse_body(
 
     [lexer.PropsDirective(_, line), ..] ->
       Error(DirectiveAfterContent("@props", line))
+
+    [lexer.CodecDirective(_, _, _, line), ..] ->
+      Error(DirectiveAfterContent("codec", line))
   }
 }
 

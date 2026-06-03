@@ -15,7 +15,7 @@ import glimr/loom/parser.{
 
 // Helper to create a template (simplified after layout removal)
 fn template(nodes: List(Node)) -> Template {
-  Template(imports: [], props: [], nodes: nodes, is_live: False)
+  Template(imports: [], props: [], codecs: [], nodes: nodes, is_live: False)
 }
 
 // Helper to create a template with props
@@ -23,7 +23,7 @@ fn template_with_props(
   props: List(#(String, String)),
   nodes: List(Node),
 ) -> Template {
-  Template(imports: [], props: props, nodes: nodes, is_live: False)
+  Template(imports: [], props: props, codecs: [], nodes: nodes, is_live: False)
 }
 
 // Helper to create a live template (with is_live: True)
@@ -31,7 +31,7 @@ fn live_template(
   props: List(#(String, String)),
   nodes: List(Node),
 ) -> Template {
-  Template(imports: [], props: props, nodes: nodes, is_live: True)
+  Template(imports: [], props: props, codecs: [], nodes: nodes, is_live: True)
 }
 
 // Helper to create a simple if node (single branch, no else)
@@ -2438,6 +2438,7 @@ pub fn generate_non_live_template_no_data_attrs_test() {
     Template(
       imports: [],
       props: [#("count", "Int")],
+      codecs: [],
       nodes: [
         ElementNode("button", [LmOn("click", [], "count = count + 1", 1)], [
           TextNode("+"),

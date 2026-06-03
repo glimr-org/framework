@@ -463,6 +463,14 @@ fn lexer_error_to_string(err: lexer.LexerError) -> String {
       "Unterminated props directive at line " <> int.to_string(line)
     lexer.UnterminatedImportDirective(line) ->
       "Unterminated import directive at line " <> int.to_string(line)
+    lexer.InvalidCodecDirective(content, line) ->
+      "Invalid codec directive '"
+      <> content
+      <> "' at line "
+      <> int.to_string(line)
+      <> " (expected: codec(Type, encode: fn, decode: fn))"
+    lexer.UnterminatedCodecDirective(line) ->
+      "Unterminated codec directive at line " <> int.to_string(line)
   }
 }
 

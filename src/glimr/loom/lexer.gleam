@@ -34,6 +34,9 @@ pub type Token {
   ImportDirective(import_str: String, line: Int)
   /// @props directive declaring template parameters
   PropsDirective(props: List(#(String, String)), line: Int)
+  /// codec(...) directive binding a custom prop type to JSON
+  /// encoder/decoder function references
+  CodecDirective(type_name: String, encoder: String, decoder: String, line: Int)
 }
 
 /// Component and element tags support several attribute flavors
@@ -80,6 +83,8 @@ pub type LexerError {
   InvalidImportDirective(content: String, line: Int)
   UnterminatedPropsDirective(line: Int)
   UnterminatedImportDirective(line: Int)
+  InvalidCodecDirective(content: String, line: Int)
+  UnterminatedCodecDirective(line: Int)
 }
 
 // ------------------------------------------------------------- Public Functions
@@ -198,6 +203,26 @@ fn parse_frontmatter_lines(
                 ..acc
               ])
             Error(msg) -> Error(InvalidPropsDirective(msg, line))
+          }
+        }
+
+        "codec(" <> _ -> {
+          let after_codec = string.drop_start(trimmed, 6)
+          use #(codec_str, remaining, next_line) <- result.try(
+            parse_paren_directive_content(
+              after_codec,
+              rest,
+              line,
+              UnterminatedCodecDirective,
+            ),
+          )
+          case parse_codec_content(string.trim(codec_str)) {
+            Ok(#(type_name, encoder, decoder)) ->
+              parse_frontmatter_lines(remaining, next_line, [
+                CodecDirective(type_name, encoder, decoder, line),
+                ..acc
+              ])
+            Error(msg) -> Error(InvalidCodecDirective(msg, line))
           }
         }
 
@@ -1102,6 +1127,38 @@ fn find_matching_paren(
   }
 }
 
+/// Template authors writing a long `props(...)` declaration
+/// almost always want to break it across multiple lines for
+/// readability, which means the lexer can't assume the closing
+/// paren lives on the same line as the opening one.
+/// `codec(...)` has the same shape and the same expectation.
+/// This helper walks both forms in one place: it first looks
+/// for a same-line close, then on miss it stitches the rest of
+/// the block on and tries again, so the directive-level case
+/// branches don't have to repeat the multi-line stitching
+/// dance.
+///
+fn parse_paren_directive_content(
+  after_open: String,
+  rest: String,
+  line: Int,
+  on_unterminated: fn(Int) -> LexerError,
+) -> Result(#(String, String, Int), LexerError) {
+  case find_matching_paren(after_open, 0, "") {
+    Ok(#(content, _)) -> Ok(#(content, rest, line + 1))
+    Error(_) -> {
+      let full = after_open <> "\n" <> rest
+      case find_matching_paren(full, 0, "") {
+        Ok(#(content, after_close)) -> {
+          let remaining = string.trim_start(after_close)
+          Ok(#(content, remaining, line + count_newlines(content) + 1))
+        }
+        Error(_) -> Error(on_unterminated(line))
+      }
+    }
+  }
+}
+
 /// Props content like "name: String, items: List(#(String,
 /// Int))" contains commas inside nested types, so it can't be
 /// split naively — it needs depth-aware comma splitting.
@@ -1169,6 +1226,85 @@ fn parse_prop_parts(
       case parse_single_prop(part) {
         Ok(prop) -> parse_prop_parts(rest, [prop, ..acc])
         Error(e) -> Error(e)
+      }
+    }
+  }
+}
+
+/// Once a user reaches for a custom record like `Image` in
+/// their live template props, Loom needs a way to learn how to
+/// JSON round-trip it. The `codec(TypeName, encode: fn, decode:
+/// fn)` directive is that way, and the three pieces it carries
+/// (the type name and two function references) all need to
+/// survive to code generation intact. Picking them apart here
+/// with strict error messages for missing or misordered pieces
+/// means the user gets a clear "you wrote codec(...) wrong"
+/// hint at template-compile time instead of an inscrutable
+/// Gleam error later about a missing or misnamed function.
+///
+fn parse_codec_content(
+  content: String,
+) -> Result(#(String, String, String), String) {
+  case split_props_at_commas(content) {
+    [type_name, encode_part, decode_part] -> {
+      let type_name = string.trim(type_name)
+      use <- bool.guard(
+        type_name == "",
+        Error("Missing type name in codec(...) directive"),
+      )
+      use encoder_fn <- result.try(parse_codec_kv(encode_part, "encode"))
+      use decoder_fn <- result.try(parse_codec_kv(decode_part, "decode"))
+      Ok(#(type_name, encoder_fn, decoder_fn))
+    }
+    _ ->
+      Error(
+        "codec(...) takes 3 args: Type, encode: encoder_fn, decode: decoder_fn",
+      )
+  }
+}
+
+/// The `encode:` and `decode:` parts of a codec directive both
+/// look identical to the parser, so the caller has to spell out
+/// which one it expects when handing each part to this helper.
+/// That lets us catch the common mistake of writing the labels
+/// in the wrong order or with a typo (`encod: ...`, `decoder:
+/// ...`) up front, naming the exact label we expected, instead
+/// of silently letting either order through and leaving the
+/// user to puzzle out a wrong function reference later in
+/// generated code.
+///
+fn parse_codec_kv(
+  part: String,
+  expected_label: String,
+) -> Result(String, String) {
+  case string.split_once(part, ":") {
+    Error(_) ->
+      Error(
+        "Expected `"
+        <> expected_label
+        <> ": fn` in codec(...), got: '"
+        <> part
+        <> "'",
+      )
+    Ok(#(label, value)) -> {
+      let label = string.trim(label)
+      let value = string.trim(value)
+      case label == expected_label, value {
+        False, _ ->
+          Error(
+            "Expected `"
+            <> expected_label
+            <> ":` in codec(...), got `"
+            <> label
+            <> ":`",
+          )
+        True, "" ->
+          Error(
+            "Missing function reference after `"
+            <> expected_label
+            <> ":` in codec(...)",
+          )
+        True, _ -> Ok(value)
       }
     }
   }

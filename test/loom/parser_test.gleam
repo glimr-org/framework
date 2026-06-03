@@ -16,7 +16,7 @@ import glimr/loom/parser.{
 
 // Helper to make templates more concise
 fn t(nodes: List(Node)) -> Template {
-  Template(imports: [], props: [], nodes: nodes, is_live: False)
+  Template(imports: [], props: [], codecs: [], nodes: nodes, is_live: False)
 }
 
 // Helper to create a simple if node (single branch, no else)

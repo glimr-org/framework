@@ -211,7 +211,7 @@ pub fn original_preserved_test() {
 // ------------------------------------------------------------- Collect Handlers Tests
 
 fn make_template(nodes: List(parser.Node)) -> Template {
-  Template(imports: [], props: [], nodes: nodes, is_live: True)
+  Template(imports: [], props: [], codecs: [], nodes: nodes, is_live: True)
 }
 
 pub fn collect_handlers_empty_template_test() {
